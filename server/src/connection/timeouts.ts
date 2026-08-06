@@ -21,8 +21,20 @@
 // layer derives from this, so the stagger cannot drift and a new long-running
 // tool inherits a correct cascade for free.
 
-/** Default socket timeout for any command that declares no in-game budget. Unchanged behavior. */
-export const QUICK_TIMEOUT_MS = 30_000;
+/**
+ * Default socket timeout for any command that declares no in-game budget.
+ * Overridable via GODOT_MCP_QUICK_TIMEOUT_MS — a cold Godot editor boot can
+ * exceed the 30s default, so deployments that cold-start the editor on the
+ * first tools/call raise this (e.g. to 90s) to let the first call wait out
+ * the warmup instead of failing "Not connected".
+ */
+const QUICK_TIMEOUT_DEFAULT_MS = 30_000;
+export const QUICK_TIMEOUT_MS = (() => {
+    const raw = process.env.GODOT_MCP_QUICK_TIMEOUT_MS;
+    if (raw === undefined || raw === '') return QUICK_TIMEOUT_DEFAULT_MS;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : QUICK_TIMEOUT_DEFAULT_MS;
+})();
 
 /**
  * Hard backstop on the server socket regardless of declared budget — a
