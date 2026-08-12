@@ -290,11 +290,22 @@ export const editorEdit = defineTool({
       }
 
       case 'run': {
-        await godot.sendCommand('run_project', { scene_path: args.scene_path, frozen: args.frozen });
+        // sendCommand resolves the addon's _success({frozen, bridge_ready}) envelope
+        // directly (the WS layer returns response.result), so bridge_ready sits at
+        // the top level here — the agent sees when the D1 gate didn't clear and
+        // knows to retry or stop before stepping.
+        const result = await godot.sendCommand<{ frozen?: boolean; bridge_ready?: boolean }>(
+          'run_project',
+          { scene_path: args.scene_path, frozen: args.frozen }
+        );
         const target = args.scene_path ? `scene: ${args.scene_path}` : 'project';
+        const bridgeReady = result?.bridge_ready === true;
+        const gate = bridgeReady
+          ? ''
+          : ` (bridge_ready: false — game may not be drivable yet; retry or stop)`;
         return args.frozen
-          ? `Running ${target} frozen from frame 0 — use godot_game_time step/thaw to advance`
-          : `Running ${target}`;
+          ? `Running ${target} frozen from frame 0 — use godot_game_time step/thaw to advance${gate}`
+          : `Running ${target}${gate}`;
       }
 
       case 'stop': {

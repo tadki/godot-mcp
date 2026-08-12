@@ -287,23 +287,42 @@ describe('editorEdit tool', () => {
 
   describe('run/stop', () => {
     it('returns appropriate confirmations', async () => {
-      mock.mockResponse({});
       const ctx = createToolContext(mock);
 
+      mock.mockResponse({ bridge_ready: true });
       expect(await editorEdit.execute({ action: 'run' }, ctx)).toBe('Running project');
+      mock.mockResponse({ bridge_ready: true });
       expect(await editorEdit.execute({ action: 'run', scene_path: 'res://test.tscn' }, ctx))
         .toBe('Running scene: res://test.tscn');
       expect(await editorEdit.execute({ action: 'stop' }, ctx)).toBe('Stopped project');
     });
 
     it('passes frozen through to run_project and says so', async () => {
-      mock.mockResponse({});
+      mock.mockResponse({ bridge_ready: true });
       const ctx = createToolContext(mock);
 
       const result = await editorEdit.execute({ action: 'run', frozen: true }, ctx);
       expect(result).toContain('frozen from frame 0');
       expect(mock.calls[0].command).toBe('run_project');
       expect(mock.calls[0].params.frozen).toBe(true);
+    });
+
+    it('surfaces bridge_ready=false from the top-level result (D4 read path)', async () => {
+      // sendCommand resolves the addon envelope ({frozen, bridge_ready}) directly;
+      // the gate must read result.bridge_ready, not a nested result.result.
+      mock.mockResponse({ frozen: true, bridge_ready: false });
+      const ctx = createToolContext(mock);
+
+      const result = await editorEdit.execute({ action: 'run', frozen: true }, ctx);
+      expect(result).toContain('bridge_ready: false');
+    });
+
+    it('omits the gate when bridge_ready is true', async () => {
+      mock.mockResponse({ frozen: true, bridge_ready: true });
+      const ctx = createToolContext(mock);
+
+      const result = await editorEdit.execute({ action: 'run', frozen: true }, ctx);
+      expect(result).not.toContain('bridge_ready');
     });
   });
 
