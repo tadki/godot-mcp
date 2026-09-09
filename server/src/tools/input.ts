@@ -126,25 +126,65 @@ const LookEntrySchema = z.strictObject({
   ...TimingFields,
 });
 
+// SEE-1141 Track D: absolute cursor positioning entries. The coords are in
+// VIEWPORT/canvas space; the bridge maps through get_final_transform() so they
+// land under every stretch config. Honest limitation: the POLLED OS cursor
+// does not move (games that read get_mouse_position() in _process do NOT see
+// these); only event-path code (event.position in _input/_unhandled_input and
+// Control._gui_input/mouse_entered) does. See docs/design/mouse-input-spike.md.
+const MouseMoveEntrySchema = z.strictObject({
+  mouse_move: z
+    .array(z.number())
+    .length(2)
+    .describe(
+      'Absolute mouse move: teleport the virtual cursor to [x, y] in VIEWPORT/canvas ' +
+      'space, injected as a single InputEventMouseMotion with position set and zero ' +
+      'relative. Drives Control._gui_input, mouse_entered/exited, and any _input ' +
+      'handler that reads event.position; does NOT move the polled OS cursor (games ' +
+      'that poll get_mouse_position() will not see this — see the spike doc).'
+    ),
+  ...TimingFields,
+});
+const MouseButtonEntrySchema = z.strictObject({
+  mouse_button: z
+    .strictObject({
+      x: z.number().describe('Viewport/canvas-space x of the click.'),
+      y: z.number().describe('Viewport/canvas-space y of the click.'),
+      button: z
+        .enum(['left', 'right', 'middle', 'wheel_up', 'wheel_down'])
+        .optional()
+        .default('left')
+        .describe('Mouse button (default "left").'),
+    })
+    .describe(
+      'Absolute mouse click at (x, y) in VIEWPORT/canvas space. Emits press at ' +
+      'start_ms and a guaranteed paired release at start_ms+duration_ms (0 = tap). ' +
+      'Drives Control._gui_input and any _input handler that reads event.position; ' +
+      'does NOT move the polled OS cursor (see the spike doc).'
+    ),
+  ...TimingFields,
+});
+
 export const InputEntrySchema = z.union(
-  [ActionEntrySchema, JoyButtonEntrySchema, AxisEntrySchema, StickEntrySchema, KeyEntrySchema, LookEntrySchema],
+  [ActionEntrySchema, JoyButtonEntrySchema, AxisEntrySchema, StickEntrySchema, KeyEntrySchema, LookEntrySchema, MouseMoveEntrySchema, MouseButtonEntrySchema],
   {
     // z.union reports a bare "Invalid input" for every structural miss; the
-    // entries are key-discriminated, so name the six valid shapes to make the
+    // entries are key-discriminated, so name the valid shapes to make the
     // most common authoring mistakes (missing value, typo'd key, no
     // discriminator) actionable.
     error: () =>
       'each input entry must be one of: {action_name, strength?}, {joy_button, device?}, ' +
-      '{axis, value, device?}, {stick, x, y, device?}, {key, physical?}, or {look: [dx, dy]} ' +
+      '{axis, value, device?}, {stick, x, y, device?}, {key, physical?}, {look: [dx, dy]}, ' +
+      '{mouse_move: [x, y]}, or {mouse_button: {x, y, button?}} ' +
       '(all with optional start_ms/duration_ms)',
   }
 );
 export type InputEntry = z.infer<typeof InputEntrySchema>;
 
 // Compile schema entries into the wire vocabulary the game bridge consumes
-// (action | joy_button | axis | key | look): stick sugar becomes a paired axis
-// hold; key and look entries pass through and the bridge expands them (modifier
-// combos into key events; a look into one or more motion events for a sweep).
+// (action | joy_button | axis | key | look | mouse_move | mouse_button): stick
+// sugar becomes a paired axis hold; key/look/mouse entries pass through and the
+// bridge expands them.
 export function compileInputEntries(inputs: InputEntry[]): Record<string, unknown>[] {
   const wire: Record<string, unknown>[] = [];
   for (const e of inputs) {
@@ -166,22 +206,31 @@ export function entryLabel(e: InputEntry): string {
   if ('axis' in e) return `${e.axis}=${e.value}`;
   if ('key' in e) return `key:${e.key}`;
   if ('look' in e) return `look:${e.look[0]},${e.look[1]}`;
+  if ('mouse_move' in e) return `move:${e.mouse_move[0]},${e.mouse_move[1]}`;
+  if ('mouse_button' in e) return `click:${e.mouse_button.x},${e.mouse_button.y}:${e.mouse_button.button ?? 'left'}`;
   return `${e.stick}_stick(${e.x},${e.y})`;
 }
 
 // Version-skew detection (#233/#290/#294, same honesty pattern as the watch
 // timeline): an old bridge silently `continue`s entries it does not understand
-// (dropping look, key, or joypad entries) and ignores the new `strength` field on
-// action entries (injecting at 1.0) — all while the call "succeeds". A new bridge
-// echoes input_kinds; its ABSENCE, or the absence of a given kind's count within
-// it, signals the running addon predates that capability. The newest kinds are
-// checked first because a bridge from an in-between era echoes input_kinds (so the
-// older checks pass) yet still drops the newer entries — only the missing count
-// for that specific kind catches it.
+// (dropping look, key, joypad, or mouse entries) and ignores the new `strength`
+// field on action entries (injecting at 1.0) — all while the call "succeeds". A
+// new bridge echoes input_kinds; its ABSENCE, or the absence of a given kind's
+// count within it, signals the running addon predates that capability. The
+// newest kinds are checked first because a bridge from an in-between era echoes
+// input_kinds (so the older checks pass) yet still drops the newer entries —
+// only the missing count for that specific kind catches it.
 export function inputSkewWarning(
   inputs: InputEntry[],
   inputKinds: Record<string, number> | undefined
 ): string | undefined {
+  const usesMouse = inputs.some((e) => 'mouse_move' in e || 'mouse_button' in e);
+  if (usesMouse && (inputKinds === undefined || !('mouse_move' in inputKinds) || !('mouse_button' in inputKinds))) {
+    return (
+      'WARNING: absolute mouse move/click entries were IGNORED — the running addon predates ' +
+      'mouse-button/mouse-move injection (SEE-1141). Update the godot-mcp addon and restart the Godot editor.'
+    );
+  }
   const usesLook = inputs.some((e) => 'look' in e);
   if (usesLook && (inputKinds === undefined || !('look' in inputKinds))) {
     return (
@@ -198,7 +247,7 @@ export function inputSkewWarning(
   }
   const usesController = inputs.some(
     (e) =>
-      (!('action_name' in e) && !('key' in e) && !('look' in e)) ||
+      (!('action_name' in e) && !('key' in e) && !('look' in e) && !('mouse_move' in e) && !('mouse_button' in e)) ||
       ('strength' in e && e.strength !== undefined)
   );
   if (usesController && inputKinds === undefined) {

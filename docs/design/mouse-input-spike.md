@@ -195,6 +195,16 @@ revisiting if **any** of these appears:
   virtual cursor the bridge feeds, opting in to full drivability. Clean and fully
   capable, but requires modifying the game — out of scope for an unmodified-game
   tool, viable only where you control the game.
+  **Shipped as the SEE-1142 reference implementation** (KingOfLikes-Godot):
+  the bridge owns an `MCPCursor` node under `/root` that
+  `_virtual_mouse_window_pos` keeps updated in viewport space; the game's
+  `utils/mouse_pos.gd` (class `MousePos`) is the sole game-side mcp-aware file,
+  doing capability detection via `get_node_or_null("MCPCursor")` and falling
+  back to the physical cursor when the addon is absent. Polled call sites
+  (`Viewport.get_mouse_position` / `CanvasItem.get_*_mouse_position`) are
+  mechanically replaced with `MousePos.viewport_pos / global_pos / local_pos`
+  with zero if-branches in business code; removing the addon leaves behavior
+  identical. Drag-and-drop E2E becomes fully drivable under injection.
 - Upstream Godot changes to how injected events interact with `get_mouse_position`.
 
 ## Evidence trail
