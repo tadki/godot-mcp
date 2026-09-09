@@ -1,0 +1,16 @@
+[Unit]
+Description=KingOfLikes godot-mcp resident stale-lease reaper (one-shot)
+# Runs the reaper once. Mode (dry-run vs live) is decided by resident-reaper.sh
+# from ~/.multica/godot-reaper.mode — the unit itself is mode-agnostic so the
+# dry-run -> live cutover never needs a daemon-reload.
+
+[Service]
+Type=oneshot
+# KOL_REPO_ROOT points at the checkout that owns the launch toolchain. The
+# installer stamps the absolute path in here; override with a drop-in if the
+# checkout moves.
+ExecStart=%h/KingOfLikes-Godot/.dev/godot-mcp/launch/resident-reaper.sh
+
+# Never let a wedged reaper (a stuck powershell.exe probe, a hung ss) pile up
+# across timer ticks — one-shot plus a hard timeout keeps each tick bounded.
+TimeoutStartSec=120
