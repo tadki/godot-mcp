@@ -7,7 +7,15 @@ const INPUT_TIMEOUT := 30.0
 # before giving up. The natural workflow is run -> immediately drive the game;
 # the session connects before the scene loads, so this short wait absorbs that
 # gap (usually under a second) instead of dispatching input into a void (#241).
-const READY_TIMEOUT := 10.0
+#
+# SEE-1134 D1 grace30: this must stay >= debug_commands.PLAY_RAMP_GRACE (30s),
+# otherwise an immediately-following input call right after a cold run can land
+# inside the editor ramp-up window where is_bridge_ready() is unreliable (the
+# bridge has announced but the editor has not flipped is_playing_scene() yet).
+# Capping at PLAY_RAMP_GRACE keeps the ready-wait from ending before the run
+# gate has had a chance to flip to the stable is_bridge_ready probe. Refs:
+# debug_commands.gd:_await_game_ready (D1 grace30 ramp-up logic).
+const READY_TIMEOUT := 30.0
 
 var _input_map_result: Dictionary = {}
 var _input_map_pending: bool = false
@@ -18,10 +26,8 @@ var _sequence_pending: bool = false
 # signals and attached to the result once the sequence completes.
 var _sequence_captures: Array = []
 
-
 var _type_text_result: Dictionary = {}
 var _type_text_pending: bool = false
-
 
 const _BRIDGE_NOT_READY_MSG := "Game is running but its MCP bridge is not ready to receive input yet (no scene up, or the game just launched). This usually clears within a second of run — retry shortly."
 
@@ -97,10 +103,15 @@ func _get_editor_input_map() -> Dictionary:
 		var event_strings: Array[String] = []
 		for event in events:
 			event_strings.append(_event_to_string(event))
-		actions.append({
-			"name": action_name,
-			"events": event_strings,
-		})
+		(
+			actions
+			. append(
+				{
+					"name": action_name,
+					"events": event_strings,
+				}
+			)
+		)
 	# This map is read from the editor's in-memory InputMap, which is loaded at
 	# startup and goes stale if project.godot's [input] section is edited on disk
 	# (#245). Flag that so the caller knows the map may be incomplete and can
@@ -129,15 +140,23 @@ func _event_to_string(event: InputEvent) -> String:
 				return "Mouse Button %d" % mouse_event.button_index
 	elif event is InputEventJoypadButton:
 		var joy_event := event as InputEventJoypadButton
-		return "Joypad Button %d (%s)" % [joy_event.button_index, MCPJoyNames.button_name(joy_event.button_index)]
+		return (
+			"Joypad Button %d (%s)"
+			% [joy_event.button_index, MCPJoyNames.button_name(joy_event.button_index)]
+		)
 	elif event is InputEventJoypadMotion:
 		# The signed axis_value is the direction bit an agent needs to lift the
 		# binding straight into an injection (e.g. move_left = left_x, value -1.0).
 		var joy_motion := event as InputEventJoypadMotion
-		return "Joypad Axis %d (%s, value %+.1f)" % [joy_motion.axis, MCPJoyNames.axis_name(joy_motion.axis), joy_motion.axis_value]
+		return (
+			"Joypad Axis %d (%s, value %+.1f)"
+			% [joy_motion.axis, MCPJoyNames.axis_name(joy_motion.axis), joy_motion.axis_value]
+		)
 	elif event is InputEventMouseMotion:
 		var mouse_motion := event as InputEventMouseMotion
-		return "Mouse Motion (rel %+.1f, %+.1f)" % [mouse_motion.relative.x, mouse_motion.relative.y]
+		return (
+			"Mouse Motion (rel %+.1f, %+.1f)" % [mouse_motion.relative.x, mouse_motion.relative.y]
+		)
 	return event.as_text()
 
 
@@ -219,16 +238,29 @@ func _on_sequence_completed(result: Dictionary) -> void:
 	_sequence_result = result
 
 
-func _on_sequence_capture(requested_ms: int, actual_ms: int, ok: bool, image_base64: String, width: int, height: int, error: String) -> void:
-	_sequence_captures.append({
-		"requested_ms": requested_ms,
-		"actual_ms": actual_ms,
-		"ok": ok,
-		"image_base64": image_base64,
-		"width": width,
-		"height": height,
-		"error": error,
-	})
+func _on_sequence_capture(
+	requested_ms: int,
+	actual_ms: int,
+	ok: bool,
+	image_base64: String,
+	width: int,
+	height: int,
+	error: String
+) -> void:
+	(
+		_sequence_captures
+		. append(
+			{
+				"requested_ms": requested_ms,
+				"actual_ms": actual_ms,
+				"ok": ok,
+				"image_base64": image_base64,
+				"width": width,
+				"height": height,
+				"error": error,
+			}
+		)
+	)
 
 
 func type_text(params: Dictionary) -> Dictionary:
@@ -248,7 +280,9 @@ func type_text(params: Dictionary) -> Dictionary:
 	# Shared deadline (ready-wait + typing), stamped before the ready-wait so the
 	# gap is folded into the budget (#276); server-pushed budget or local fallback.
 	var op_start := Time.get_ticks_msec()
-	var fallback: float = max(INPUT_TIMEOUT, (text.length() * delay_ms / 1000.0) + 5.0) + READY_TIMEOUT
+	var fallback: float = (
+		max(INPUT_TIMEOUT, (text.length() * delay_ms / 1000.0) + 5.0) + READY_TIMEOUT
+	)
 	var timeout := _pushed_budget(params, fallback)
 
 	if not await _await_bridge_ready(debugger_plugin, op_start, timeout):

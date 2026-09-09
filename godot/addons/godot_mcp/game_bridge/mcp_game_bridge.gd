@@ -1,5 +1,4 @@
 extends Node
-class_name MCPGameBridge
 
 const DEFAULT_MAX_WIDTH := 1024
 const Onscreen := preload("onscreen.gd")
@@ -10,6 +9,23 @@ const MeshValidator := preload("mesh_validator.gd")
 # autoload's _ready; the cap only matters for a scene-less run (a SceneTree-only
 # tool), so it never blocks readiness forever. ~10s at 60 fps.
 const READY_SCENE_WAIT_FRAMES := 600
+
+# Extra idle _process frames waited AFTER current_scene exists before announcing
+# bridge_ready (SEE-1134 D1). The scene's first _process/_physics_process tick
+# carries deferred init (autoloads, first-frame resource loads) that hogs the
+# main thread; a step landing in that window starves the bridge's own _process
+# and times out. Counting elapsed frames was NOT enough: a busy frame can take
+# >1s, so 5 elapsed frames still left the game draining when run returned and the
+# first step collided with it (SEE-1134 D5, Revy N=10: bridge_ready 10/10 true,
+# first step 3/10 timeouts). Readiness now requires frames that are demonstrably
+# IDLE - consecutive process_frame emissions under a wall-delta threshold prove
+# the main thread drained. The bridge runs PROCESS_MODE_ALWAYS so these frames
+# elapse even under launch-frozen (paused): process_frame fires while paused,
+# physics_frame does not, and this wait rides on process_frame precisely so
+# frozen runs still settle.
+const BRIDGE_READY_IDLE_FRAMES := 3  # consecutive fast frames required
+const BRIDGE_READY_IDLE_DELTA_MS := 150  # frame wall-delta counts as idle
+const BRIDGE_READY_IDLE_CAP_MS := 8000  # never delay run past this waiting for idle
 
 var _logger: _MCPGameLogger
 var _profiler: MCPFrameProfiler
@@ -47,6 +63,11 @@ func _ready() -> void:
 	EngineDebugger.register_profiler("mcp_frame_profiler", _profiler)
 	_sampler = MCPRuntimeStateSampler.new()
 	add_child(_sampler)
+	# SEE-1142: expose the virtual cursor under /root so game-side MousePos can
+	# find it by path; game code stays addon-optional (fallback to physical cursor).
+	_mcp_cursor = MCPCursor.new()
+	_mcp_cursor.name = "MCPCursor"
+	get_tree().root.add_child.call_deferred(_mcp_cursor)
 	EngineDebugger.register_message_capture("godot_mcp", _on_debugger_message)
 	set_physics_process(false)  # only counts ticks during a step window
 	MCPLog.info("Game bridge initialized")
@@ -69,6 +90,9 @@ func _exit_tree() -> void:
 	# Guaranteed cleanup: never leave an action latched when the bridge node
 	# leaves the tree (game shutdown / scene change). Safe if nothing is held.
 	_release_held_actions()
+	if is_instance_valid(_mcp_cursor):
+		_mcp_cursor.queue_free()
+		_mcp_cursor = null
 	if EngineDebugger.is_active():
 		EngineDebugger.unregister_message_capture("godot_mcp")
 		if _profiler:
@@ -92,6 +116,27 @@ func _announce_bridge_ready_when_drivable() -> void:
 	# One more frame so a freshly-added scene has had its first _ready/process pass.
 	# process_frame fires even while paused, so launch-frozen runs still report ready.
 	await tree.process_frame
+	# Readiness = demonstrably idle frames, not elapsed frames. A busy frame (first
+	# deferred init, a big resource load) can take >1s, so counting frames let run
+	# return while the game was still draining and the FIRST step after a frozen
+	# launch collided with it (SEE-1134 D5, Revy N=10: bridge_ready 10/10 true, first
+	# step 3/10 timeouts). Measuring the wall delta between process_frame emissions
+	# proves the main thread is actually free. Capped so a game that never idles
+	# still announces after a bounded delay rather than delaying run indefinitely.
+	var last_tick := Time.get_ticks_msec()
+	var idle_streak := 0
+	var idle_total := 0
+	while idle_streak < BRIDGE_READY_IDLE_FRAMES:
+		await tree.process_frame
+		var now := Time.get_ticks_msec()
+		if now - last_tick <= BRIDGE_READY_IDLE_DELTA_MS:
+			idle_streak += 1
+		else:
+			idle_streak = 0
+		last_tick = now
+		idle_total += 1
+		if idle_total * BRIDGE_READY_IDLE_DELTA_MS > BRIDGE_READY_IDLE_CAP_MS:
+			break
 	var scene_path := tree.current_scene.scene_file_path if tree.current_scene else ""
 	_emit_bridge_ready(scene_path)
 
@@ -149,7 +194,13 @@ func _handle_validate_meshes(data: Array) -> void:
 	var tree := get_tree()
 	var result: Dictionary
 	if tree == null or tree.current_scene == null:
-		result = {"checked_meshes": 0, "checked_surfaces": 0, "total_findings": 0, "findings": [], "note": "no current scene"}
+		result = {
+			"checked_meshes": 0,
+			"checked_surfaces": 0,
+			"total_findings": 0,
+			"findings": [],
+			"note": "no current scene"
+		}
 	else:
 		result = MeshValidator.validate(tree.current_scene, max_findings)
 	EngineDebugger.send_message("godot_mcp:game_response", ["validate_meshes", result])
@@ -286,25 +337,57 @@ func _capture_sequence_frame(requested_offset_ms: int) -> void:
 	var actual_ms := Time.get_ticks_msec() - _sequence_start_time
 	var viewport := get_viewport()
 	if viewport == null:
-		_send_sequence_capture(requested_offset_ms, actual_ms, false, "", 0, 0, "NO_VIEWPORT: could not get game viewport")
+		_send_sequence_capture(
+			requested_offset_ms,
+			actual_ms,
+			false,
+			"",
+			0,
+			0,
+			"NO_VIEWPORT: could not get game viewport"
+		)
 		return
 	var image := viewport.get_texture().get_image()
 	if image == null:
-		_send_sequence_capture(requested_offset_ms, actual_ms, false, "", 0, 0, "CAPTURE_FAILED: could not read viewport image")
+		_send_sequence_capture(
+			requested_offset_ms,
+			actual_ms,
+			false,
+			"",
+			0,
+			0,
+			"CAPTURE_FAILED: could not read viewport image"
+		)
 		return
 	if _sequence_capture_max_width > 0 and image.get_width() > _sequence_capture_max_width:
 		var scale_factor := float(_sequence_capture_max_width) / float(image.get_width())
-		image.resize(_sequence_capture_max_width, int(image.get_height() * scale_factor), Image.INTERPOLATE_LANCZOS)
+		image.resize(
+			_sequence_capture_max_width,
+			int(image.get_height() * scale_factor),
+			Image.INTERPOLATE_LANCZOS
+		)
 	var png_buffer := image.save_png_to_buffer()
 	var base64 := Marshalls.raw_to_base64(png_buffer)
-	_send_sequence_capture(requested_offset_ms, actual_ms, true, base64, image.get_width(), image.get_height(), "")
+	_send_sequence_capture(
+		requested_offset_ms, actual_ms, true, base64, image.get_width(), image.get_height(), ""
+	)
 
 
-func _send_sequence_capture(requested_ms: int, actual_ms: int, ok: bool, base64: String, width: int, height: int, error: String) -> void:
+func _send_sequence_capture(
+	requested_ms: int,
+	actual_ms: int,
+	ok: bool,
+	base64: String,
+	width: int,
+	height: int,
+	error: String
+) -> void:
 	# Decrement first: the result is gated on this reaching zero, and a capture
 	# that errors must still release its slot or the sequence would never finish.
 	_sequence_captures_pending = maxi(0, _sequence_captures_pending - 1)
-	EngineDebugger.send_message("godot_mcp:sequence_capture", [requested_ms, actual_ms, ok, base64, width, height, error])
+	EngineDebugger.send_message(
+		"godot_mcp:sequence_capture", [requested_ms, actual_ms, ok, base64, width, height, error]
+	)
 
 
 var _sequence_events: Array = []
@@ -362,13 +445,31 @@ var _active_axes: Dictionary = {}
 # release only fires when it returns to zero. Stores primitives only ({count,
 # physical, code, mask}) so the cleanup loop never touches a freed instance.
 var _held_keys: Dictionary = {}
+# SEE-1141 Track D: last virtual mouse position (window space) for move/click/
+# drag entries. The polled OS cursor does not move when we inject motion (see
+# docs/design/mouse-input-spike.md), so we track the position ourselves and use
+# it as `position`/`global_position` on every mouse event we emit.
+var _virtual_mouse_position: Vector2 = Vector2.ZERO
+var _has_virtual_mouse_position: bool = false
+# SEE-1142: cooperative virtual cursor exposed to game code. Added to /root at
+# _ready so the game's MousePos helper can find it via has_node("/root/MCPCursor").
+var _mcp_cursor: MCPCursor = null
+# SEE-1141 Track D: held-state registry for mouse buttons (key "device:button").
+# A press without its paired release would latch the Input singleton — the
+# cleanup loop releases them just like actions/keys/axes.
+var _held_mouse_buttons: Dictionary = {}
 
 
 # Release any action/button/key still held and re-zero any active axis from an
 # interrupted sequence. A release here is a guaranteed cleanup, never a queued
 # step that a clear could drop. Safe to call when nothing is held.
 func _release_held_actions() -> void:
-	if _held_actions.is_empty() and _held_joy_buttons.is_empty() and _active_axes.is_empty() and _held_keys.is_empty():
+	if (
+		_held_actions.is_empty()
+		and _held_joy_buttons.is_empty()
+		and _active_axes.is_empty()
+		and _held_keys.is_empty()
+	):
 		return
 	for action in _held_actions.keys():
 		var release := InputEventAction.new()
@@ -392,7 +493,19 @@ func _release_held_actions() -> void:
 		Input.parse_input_event(azero)
 	for kkey in _held_keys.keys():
 		var kinfo = _held_keys[kkey]
-		Input.parse_input_event(_make_key_event(bool(kinfo["physical"]), int(kinfo["code"]), int(kinfo["mask"]), false))
+		Input.parse_input_event(
+			_make_key_event(bool(kinfo["physical"]), int(kinfo["code"]), int(kinfo["mask"]), false)
+		)
+	# SEE-1141 Track D: guaranteed mouse-button releases at the last virtual
+	# cursor position.
+	for mkey in _held_mouse_buttons.keys():
+		var minfo = _held_mouse_buttons[mkey]
+		var mrel := InputEventMouseButton.new()
+		mrel.button_index = int(minfo["button"]) as MouseButton
+		mrel.pressed = false
+		mrel.position = minfo["pos"]
+		mrel.global_position = minfo["pos"]
+		Input.parse_input_event(mrel)
 	# Flush so the release takes effect immediately — _exit_tree may not get
 	# another frame, and a cleanup should be deterministic, not deferred.
 	Input.flush_buffered_events()
@@ -400,6 +513,7 @@ func _release_held_actions() -> void:
 	_held_joy_buttons.clear()
 	_active_axes.clear()
 	_held_keys.clear()
+	_held_mouse_buttons.clear()
 
 
 func _on_debugger_message(message: String, data: Array) -> bool:
@@ -504,24 +618,16 @@ func _capture_and_send_screenshot(max_width: int) -> void:
 	# moment the agent LOOKS at a wrong-looking render is when they're
 	# actionable, and riding the same message costs no extra round-trip and
 	# cannot time out on version skew (older receivers ignore the element).
-	EngineDebugger.send_message("godot_mcp:screenshot_result", [
-		true,
-		base64,
-		image.get_width(),
-		image.get_height(),
-		"",
-		_mesh_warnings.duplicate()
-	])
+	EngineDebugger.send_message(
+		"godot_mcp:screenshot_result",
+		[true, base64, image.get_width(), image.get_height(), "", _mesh_warnings.duplicate()]
+	)
 
 
 func _send_screenshot_error(code: String, message: String) -> void:
-	EngineDebugger.send_message("godot_mcp:screenshot_result", [
-		false,
-		"",
-		0,
-		0,
-		"%s: %s" % [code, message]
-	])
+	EngineDebugger.send_message(
+		"godot_mcp:screenshot_result", [false, "", 0, 0, "%s: %s" % [code, message]]
+	)
 
 
 func _handle_find_nodes(data: Array) -> void:
@@ -539,7 +645,9 @@ func _handle_find_nodes(data: Array) -> void:
 	if not root_path.is_empty():
 		search_root = _get_node_from_path(root_path, scene_root)
 		if not search_root:
-			EngineDebugger.send_message("godot_mcp:find_nodes_result", [[], 0, "Root not found: " + root_path])
+			EngineDebugger.send_message(
+				"godot_mcp:find_nodes_result", [[], 0, "Root not found: " + root_path]
+			)
 			return
 
 	var matches: Array = []
@@ -565,7 +673,9 @@ func _get_node_from_path(path: String, scene_root: Node) -> Node:
 	return scene_root.get_node_or_null(path)
 
 
-func _find_recursive(node: Node, scene_root: Node, name_pattern: String, type_filter: String, results: Array) -> void:
+func _find_recursive(
+	node: Node, scene_root: Node, name_pattern: String, type_filter: String, results: Array
+) -> void:
 	var name_matches := name_pattern.is_empty() or node.name.matchn(name_pattern)
 	var type_matches := type_filter.is_empty() or node.is_class(type_filter)
 
@@ -587,51 +697,75 @@ func _handle_get_performance_metrics() -> void:
 		"physics_time_ms": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
 		"navigation_time_ms": Performance.get_monitor(Performance.TIME_NAVIGATION_PROCESS) * 1000.0,
 		"render_objects": int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)),
-		"render_draw_calls": int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
-		"render_primitives": int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)),
+		"render_draw_calls":
+		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
+		"render_primitives":
+		int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)),
 		"render_video_mem": int(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED)),
 		"render_texture_mem": int(Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED)),
 		"render_buffer_mem": int(Performance.get_monitor(Performance.RENDER_BUFFER_MEM_USED)),
-		"physics_2d_active_objects": int(Performance.get_monitor(Performance.PHYSICS_2D_ACTIVE_OBJECTS)),
-		"physics_2d_collision_pairs": int(Performance.get_monitor(Performance.PHYSICS_2D_COLLISION_PAIRS)),
-		"physics_2d_island_count": int(Performance.get_monitor(Performance.PHYSICS_2D_ISLAND_COUNT)),
-		"physics_3d_active_objects": int(Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS)),
-		"physics_3d_collision_pairs": int(Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS)),
-		"physics_3d_island_count": int(Performance.get_monitor(Performance.PHYSICS_3D_ISLAND_COUNT)),
+		"physics_2d_active_objects":
+		int(Performance.get_monitor(Performance.PHYSICS_2D_ACTIVE_OBJECTS)),
+		"physics_2d_collision_pairs":
+		int(Performance.get_monitor(Performance.PHYSICS_2D_COLLISION_PAIRS)),
+		"physics_2d_island_count":
+		int(Performance.get_monitor(Performance.PHYSICS_2D_ISLAND_COUNT)),
+		"physics_3d_active_objects":
+		int(Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS)),
+		"physics_3d_collision_pairs":
+		int(Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS)),
+		"physics_3d_island_count":
+		int(Performance.get_monitor(Performance.PHYSICS_3D_ISLAND_COUNT)),
 		"audio_output_latency": Performance.get_monitor(Performance.AUDIO_OUTPUT_LATENCY),
 		"object_count": int(Performance.get_monitor(Performance.OBJECT_COUNT)),
 		"object_resource_count": int(Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)),
 		"object_node_count": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)),
-		"object_orphan_node_count": int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)),
+		"object_orphan_node_count":
+		int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)),
 		"memory_static": int(Performance.get_monitor(Performance.MEMORY_STATIC)),
 		"memory_static_max": int(Performance.get_monitor(Performance.MEMORY_STATIC_MAX)),
-		"memory_msg_buffer_max": int(Performance.get_monitor(Performance.MEMORY_MESSAGE_BUFFER_MAX)),
+		"memory_msg_buffer_max":
+		int(Performance.get_monitor(Performance.MEMORY_MESSAGE_BUFFER_MAX)),
 		"navigation_active_maps": int(Performance.get_monitor(Performance.NAVIGATION_ACTIVE_MAPS)),
-		"navigation_region_count": int(Performance.get_monitor(Performance.NAVIGATION_REGION_COUNT)),
+		"navigation_region_count":
+		int(Performance.get_monitor(Performance.NAVIGATION_REGION_COUNT)),
 		"navigation_agent_count": int(Performance.get_monitor(Performance.NAVIGATION_AGENT_COUNT)),
 		"navigation_link_count": int(Performance.get_monitor(Performance.NAVIGATION_LINK_COUNT)),
-		"navigation_polygon_count": int(Performance.get_monitor(Performance.NAVIGATION_POLYGON_COUNT)),
+		"navigation_polygon_count":
+		int(Performance.get_monitor(Performance.NAVIGATION_POLYGON_COUNT)),
 		"navigation_edge_count": int(Performance.get_monitor(Performance.NAVIGATION_EDGE_COUNT)),
-		"navigation_edge_merge_count": int(Performance.get_monitor(Performance.NAVIGATION_EDGE_MERGE_COUNT)),
-		"navigation_edge_connection_count": int(Performance.get_monitor(Performance.NAVIGATION_EDGE_CONNECTION_COUNT)),
-		"navigation_edge_free_count": int(Performance.get_monitor(Performance.NAVIGATION_EDGE_FREE_COUNT)),
-		"navigation_obstacle_count": int(Performance.get_monitor(Performance.NAVIGATION_OBSTACLE_COUNT)),
-		"pipeline_compilations_canvas": int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_CANVAS)),
-		"pipeline_compilations_mesh": int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_MESH)),
-		"pipeline_compilations_surface": int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_SURFACE)),
-		"pipeline_compilations_draw": int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_DRAW)),
-		"pipeline_compilations_specialization": int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_SPECIALIZATION)),
+		"navigation_edge_merge_count":
+		int(Performance.get_monitor(Performance.NAVIGATION_EDGE_MERGE_COUNT)),
+		"navigation_edge_connection_count":
+		int(Performance.get_monitor(Performance.NAVIGATION_EDGE_CONNECTION_COUNT)),
+		"navigation_edge_free_count":
+		int(Performance.get_monitor(Performance.NAVIGATION_EDGE_FREE_COUNT)),
+		"navigation_obstacle_count":
+		int(Performance.get_monitor(Performance.NAVIGATION_OBSTACLE_COUNT)),
+		"pipeline_compilations_canvas":
+		int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_CANVAS)),
+		"pipeline_compilations_mesh":
+		int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_MESH)),
+		"pipeline_compilations_surface":
+		int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_SURFACE)),
+		"pipeline_compilations_draw":
+		int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_DRAW)),
+		"pipeline_compilations_specialization":
+		int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_SPECIALIZATION)),
 	}
 
 	var rid := get_viewport().get_viewport_rid()
-	metrics["viewport_render_cpu_ms"] = RenderingServer.viewport_get_measured_render_time_cpu(rid) + RenderingServer.viewport_get_measured_render_time_gpu(rid)
+	metrics["viewport_render_cpu_ms"] = (
+		RenderingServer.viewport_get_measured_render_time_cpu(rid)
+		+ RenderingServer.viewport_get_measured_render_time_gpu(rid)
+	)
 	metrics["viewport_render_gpu_ms"] = RenderingServer.viewport_get_measured_render_time_gpu(rid)
 
 	EngineDebugger.send_message("godot_mcp:performance_metrics_result", [metrics])
 
 
 func _handle_get_profiler_data() -> void:
-	var data := _profiler.get_buffer_data() if _profiler else {}
+	var data: Dictionary = _profiler.get_buffer_data() if _profiler else {}
 	EngineDebugger.send_message("godot_mcp:game_response", ["get_profiler_data", data])
 
 
@@ -639,7 +773,9 @@ func _handle_get_active_processes() -> void:
 	var tree := get_tree()
 	var scene_root := tree.current_scene if tree else null
 	if not scene_root:
-		EngineDebugger.send_message("godot_mcp:game_response", ["get_active_processes", {"processes": []}])
+		EngineDebugger.send_message(
+			"godot_mcp:game_response", ["get_active_processes", {"processes": []}]
+		)
 		return
 
 	var script_map: Dictionary = {}
@@ -649,11 +785,13 @@ func _handle_get_active_processes() -> void:
 	for script_path in script_map:
 		processes.append(script_map[script_path])
 
-	processes.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return a.instance_count > b.instance_count
+	processes.sort_custom(
+		func(a: Dictionary, b: Dictionary) -> bool: return a.instance_count > b.instance_count
 	)
 
-	EngineDebugger.send_message("godot_mcp:game_response", ["get_active_processes", {"processes": processes}])
+	EngineDebugger.send_message(
+		"godot_mcp:game_response", ["get_active_processes", {"processes": processes}]
+	)
 
 
 func _collect_processes(node: Node, scene_root: Node, script_map: Dictionary) -> void:
@@ -700,27 +838,39 @@ func _handle_get_signal_connections(data: Array) -> void:
 	var tree := get_tree()
 	var scene_root := tree.current_scene if tree else null
 	if not scene_root:
-		EngineDebugger.send_message("godot_mcp:game_response", ["get_signal_connections", {"connections": []}])
+		EngineDebugger.send_message(
+			"godot_mcp:game_response", ["get_signal_connections", {"connections": []}]
+		)
 		return
 
 	var search_root: Node = scene_root
 	if not node_path.is_empty():
 		search_root = _get_node_from_path(node_path, scene_root)
 		if not search_root:
-			EngineDebugger.send_message("godot_mcp:game_response", ["get_signal_connections", {"connections": [], "error": "Node not found: " + node_path}])
+			EngineDebugger.send_message(
+				"godot_mcp:game_response",
+				[
+					"get_signal_connections",
+					{"connections": [], "error": "Node not found: " + node_path}
+				]
+			)
 			return
 
 	var connections: Array = []
 	_collect_signal_connections(search_root, scene_root, connections, 0)
 
-	EngineDebugger.send_message("godot_mcp:game_response", ["get_signal_connections", {"connections": connections}])
+	EngineDebugger.send_message(
+		"godot_mcp:game_response", ["get_signal_connections", {"connections": connections}]
+	)
 
 
 const MAX_SIGNAL_CONNECTIONS := 200
 const MAX_SIGNAL_DEPTH := 20
 
 
-func _collect_signal_connections(node: Node, scene_root: Node, connections: Array, depth: int) -> void:
+func _collect_signal_connections(
+	node: Node, scene_root: Node, connections: Array, depth: int
+) -> void:
 	if connections.size() >= MAX_SIGNAL_CONNECTIONS or depth > MAX_SIGNAL_DEPTH:
 		return
 
@@ -737,12 +887,17 @@ func _collect_signal_connections(node: Node, scene_root: Node, connections: Arra
 				target_path = _node_path_string(target as Node, scene_root)
 			else:
 				target_path = str(target)
-			connections.append({
-				"source_path": source_path,
-				"signal_name": sig_name,
-				"target_path": target_path,
-				"method_name": conn.callable.get_method(),
-			})
+			(
+				connections
+				. append(
+					{
+						"source_path": source_path,
+						"signal_name": sig_name,
+						"target_path": target_path,
+						"method_name": conn.callable.get_method(),
+					}
+				)
+			)
 
 	for child in node.get_children():
 		if connections.size() >= MAX_SIGNAL_CONNECTIONS:
@@ -764,13 +919,22 @@ func _handle_get_runtime_state(data: Array) -> void:
 	var tree := get_tree()
 	var scene_root := tree.current_scene if tree else null
 	if not scene_root:
-		EngineDebugger.send_message("godot_mcp:game_response", ["get_runtime_state", {
-			"scene": "",
-			"selection": "fallback",
-			"entity_count": 0,
-			"entities": [],
-			"hint": "No scene is currently running.",
-		}])
+		(
+			EngineDebugger
+			. send_message(
+				"godot_mcp:game_response",
+				[
+					"get_runtime_state",
+					{
+						"scene": "",
+						"selection": "fallback",
+						"entity_count": 0,
+						"entities": [],
+						"hint": "No scene is currently running.",
+					}
+				]
+			)
+		)
 		return
 
 	var select_mode: String = params.get("select", "auto")
@@ -800,9 +964,17 @@ func _handle_get_runtime_state(data: Array) -> void:
 	# Collect entities (skipped entirely when select="none" — explicit paths only)
 	var entities: Array = []
 	if actual_selection != "none":
-		_collect_runtime_state(scene_root, scene_root, actual_selection, group_name,
-			name_filter, type_filter, include_fields,
-			max_nodes, entities)
+		_collect_runtime_state(
+			scene_root,
+			scene_root,
+			actual_selection,
+			group_name,
+			name_filter,
+			type_filter,
+			include_fields,
+			max_nodes,
+			entities
+		)
 
 	# Explicit paths: include nodes the scene walk cannot reach (e.g. autoload
 	# singletons under /root). For each, return _mcp_state() if present, else a
@@ -833,7 +1005,11 @@ func _handle_get_runtime_state(data: Array) -> void:
 	if camera_2d:
 		camera_entity = {
 			"type": "Camera2D",
-			"pos": {"x": snapped(camera_2d.global_position.x, 0.01), "y": snapped(camera_2d.global_position.y, 0.01)},
+			"pos":
+			{
+				"x": snapped(camera_2d.global_position.x, 0.01),
+				"y": snapped(camera_2d.global_position.y, 0.01)
+			},
 			"zoom": {"x": snapped(camera_2d.zoom.x, 0.01), "y": snapped(camera_2d.zoom.y, 0.01)},
 			"camera": true,
 		}
@@ -842,19 +1018,26 @@ func _handle_get_runtime_state(data: Array) -> void:
 
 	var hint := ""
 	if actual_selection == "fallback":
-		hint = ("No nodes found in group '%s' and no _mcp_state() methods detected; " +
-			"showing visible 2D and 3D world nodes (meshes, gridmaps, cameras, lights, " +
-			"physics bodies and trigger areas, and visible CanvasItems). " +
-			"For richer data: add key nodes to the '%s' group, then implement " +
-			"`func _mcp_state() -> Dictionary` on them. " +
-			"In _mcp_state(), include both live runtime values (position, health, score) " +
-			"AND static definition context (puzzle clues, level config, item data) — " +
-			"an agent needs both to understand and verify game state.") % [group_name, group_name]
+		hint = (
+			(
+				"No nodes found in group '%s' and no _mcp_state() methods detected; "
+				+ "showing visible 2D and 3D world nodes (meshes, gridmaps, cameras, lights, "
+				+ "physics bodies and trigger areas, and visible CanvasItems). "
+				+ "For richer data: add key nodes to the '%s' group, then implement "
+				+ "`func _mcp_state() -> Dictionary` on them. "
+				+ "In _mcp_state(), include both live runtime values (position, health, score) "
+				+ "AND static definition context (puzzle clues, level config, item data) — "
+				+ "an agent needs both to understand and verify game state."
+			)
+			% [group_name, group_name]
+		)
 		if not autoloads.is_empty():
-			hint += (" Global game state often lives in autoload singletons (see " +
-				"available_autoloads), which this scene walk does not reach — read them " +
-				"with select=\"none\" and paths: [...]; each returns _mcp_state() if " +
-				"present, else a snapshot of its script variables.")
+			hint += (
+				" Global game state often lives in autoload singletons (see "
+				+ "available_autoloads), which this scene walk does not reach — read them "
+				+ 'with select="none" and paths: [...]; each returns _mcp_state() if '
+				+ "present, else a snapshot of its script variables."
+			)
 
 	var result: Dictionary = {
 		"scene": scene_root.scene_file_path,
@@ -890,9 +1073,17 @@ func _has_mcp_state_nodes(node: Node) -> bool:
 	return false
 
 
-func _collect_runtime_state(node: Node, scene_root: Node, selection: String, group_name: String,
-		name_filter: String, type_filter: String, include_fields: Array,
-		max_nodes: int, results: Array) -> void:
+func _collect_runtime_state(
+	node: Node,
+	scene_root: Node,
+	selection: String,
+	group_name: String,
+	name_filter: String,
+	type_filter: String,
+	include_fields: Array,
+	max_nodes: int,
+	results: Array
+) -> void:
 	if results.size() >= max_nodes:
 		return
 
@@ -924,12 +1115,16 @@ func _collect_runtime_state(node: Node, scene_root: Node, selection: String, gro
 			if node is CanvasItem:
 				include_node = (node as CanvasItem).is_visible_in_tree()
 			elif node is Node3D:
-				include_node = (node as Node3D).is_visible_in_tree() and (
-					node is GeometryInstance3D
-					or node is Light3D
-					or node.is_class("GridMap")
-					or node is Camera3D
-					or node is CollisionObject3D)
+				include_node = (
+					(node as Node3D).is_visible_in_tree()
+					and (
+						node is GeometryInstance3D
+						or node is Light3D
+						or node.is_class("GridMap")
+						or node is Camera3D
+						or node is CollisionObject3D
+					)
+				)
 
 	if include_node:
 		if not name_filter.is_empty() and not node.name.matchn(name_filter):
@@ -945,9 +1140,17 @@ func _collect_runtime_state(node: Node, scene_root: Node, selection: String, gro
 	for child in node.get_children():
 		if results.size() >= max_nodes:
 			return
-		_collect_runtime_state(child, scene_root, selection, group_name,
-			name_filter, type_filter, include_fields,
-			max_nodes, results)
+		_collect_runtime_state(
+			child,
+			scene_root,
+			selection,
+			group_name,
+			name_filter,
+			type_filter,
+			include_fields,
+			max_nodes,
+			results
+		)
 
 
 # _mcp_state() contract: return a Dictionary with two categories —
@@ -957,8 +1160,9 @@ func _collect_runtime_state(node: Node, scene_root: Node, selection: String, gro
 # Optionally include layout geometry (bounds, sizes) to enable programmatic layout checks.
 # Error handling: _mcp_state() runtime errors are non-fatal in GDScript (Godot prints them
 # and the call returns null); the `is Dictionary` check below handles that silently.
-func _extract_node_state(node: Node, scene_root: Node, include_fields: Array,
-		allow_var_snapshot: bool = false) -> Dictionary:
+func _extract_node_state(
+	node: Node, scene_root: Node, include_fields: Array, allow_var_snapshot: bool = false
+) -> Dictionary:
 	var want := include_fields.is_empty()
 	var want_transform := want or include_fields.has("transform")
 	var want_velocity := want or include_fields.has("velocity")
@@ -979,7 +1183,9 @@ func _extract_node_state(node: Node, scene_root: Node, include_fields: Array,
 
 	if want_transform and node is Node2D:
 		var n2d := node as Node2D
-		entity["pos"] = {"x": snapped(n2d.global_position.x, 0.01), "y": snapped(n2d.global_position.y, 0.01)}
+		entity["pos"] = {
+			"x": snapped(n2d.global_position.x, 0.01), "y": snapped(n2d.global_position.y, 0.01)
+		}
 		entity["rot"] = snapped(rad_to_deg(n2d.global_rotation), 0.01)
 		if n2d.scale != Vector2.ONE:
 			entity["scale"] = {"x": snapped(n2d.scale.x, 0.01), "y": snapped(n2d.scale.y, 0.01)}
@@ -1007,12 +1213,18 @@ func _extract_node_state(node: Node, scene_root: Node, include_fields: Array,
 			entity["angvel"] = snapped((node as RigidBody2D).angular_velocity, 0.01)
 		elif node is CharacterBody3D:
 			var v := (node as CharacterBody3D).velocity
-			entity["vel"] = {"x": snapped(v.x, 0.01), "y": snapped(v.y, 0.01), "z": snapped(v.z, 0.01)}
+			entity["vel"] = {
+				"x": snapped(v.x, 0.01), "y": snapped(v.y, 0.01), "z": snapped(v.z, 0.01)
+			}
 		elif node is RigidBody3D:
 			var v := (node as RigidBody3D).linear_velocity
-			entity["vel"] = {"x": snapped(v.x, 0.01), "y": snapped(v.y, 0.01), "z": snapped(v.z, 0.01)}
+			entity["vel"] = {
+				"x": snapped(v.x, 0.01), "y": snapped(v.y, 0.01), "z": snapped(v.z, 0.01)
+			}
 			var av := (node as RigidBody3D).angular_velocity
-			entity["angvel"] = {"x": snapped(av.x, 0.01), "y": snapped(av.y, 0.01), "z": snapped(av.z, 0.01)}
+			entity["angvel"] = {
+				"x": snapped(av.x, 0.01), "y": snapped(av.y, 0.01), "z": snapped(av.z, 0.01)
+			}
 
 	if want_anim:
 		if node is AnimationPlayer:
@@ -1170,36 +1382,73 @@ func _find_camera_2d() -> Camera2D:
 
 func _handle_watch_start(data: Array) -> void:
 	if _sampler == null:
-		EngineDebugger.send_message("godot_mcp:game_response", ["watch_start", {"started": false, "error": "Sampler not initialized"}])
+		EngineDebugger.send_message(
+			"godot_mcp:game_response",
+			["watch_start", {"started": false, "error": "Sampler not initialized"}]
+		)
 		return
 	var specs: Array = data[0] if data.size() > 0 else []
 	var hz: int = data[1] if data.size() > 1 else 20
 	var duration_ms: int = data[2] if data.size() > 2 else 1000
 	var signal_specs: Array = data[3] if data.size() > 3 else []
-	var start_result := _sampler.start(specs, hz, duration_ms, signal_specs)
-	EngineDebugger.send_message("godot_mcp:game_response", ["watch_start", {
-		"started": true,
-		"resolved_fields": start_result.get("resolved_fields", 0),
-		"connected_signals": start_result.get("connected_signals", 0),
-		"unresolved_signals": start_result.get("unresolved_signals", []),
-	}])
+	var start_result: Dictionary = _sampler.start(specs, hz, duration_ms, signal_specs)
+	(
+		EngineDebugger
+		. send_message(
+			"godot_mcp:game_response",
+			[
+				"watch_start",
+				{
+					"started": true,
+					"resolved_fields": start_result.get("resolved_fields", 0),
+					"connected_signals": start_result.get("connected_signals", 0),
+					"unresolved_signals": start_result.get("unresolved_signals", []),
+				}
+			]
+		)
+	)
 
 
 func _handle_watch_collect() -> void:
 	if _sampler == null:
-		EngineDebugger.send_message("godot_mcp:game_response", ["watch_collect", {"window_ms": 0, "sample_count": 0, "fields": {}, "events": [], "events_truncated": false}])
+		EngineDebugger.send_message(
+			"godot_mcp:game_response",
+			[
+				"watch_collect",
+				{
+					"window_ms": 0,
+					"sample_count": 0,
+					"fields": {},
+					"events": [],
+					"events_truncated": false
+				}
+			]
+		)
 		return
 	EngineDebugger.send_message("godot_mcp:game_response", ["watch_collect", _sampler.collect()])
 
 
 func _handle_watch_stop() -> void:
 	if _sampler == null:
-		EngineDebugger.send_message("godot_mcp:game_response", ["watch_stop", {"window_ms": 0, "sample_count": 0, "fields": {}, "events": [], "events_truncated": false}])
+		EngineDebugger.send_message(
+			"godot_mcp:game_response",
+			[
+				"watch_stop",
+				{
+					"window_ms": 0,
+					"sample_count": 0,
+					"fields": {},
+					"events": [],
+					"events_truncated": false
+				}
+			]
+		)
 		return
 	EngineDebugger.send_message("godot_mcp:game_response", ["watch_stop", _sampler.stop()])
 
 
-class _MCPGameLogger extends Logger:
+class _MCPGameLogger:
+	extends Logger
 	var _output: PackedStringArray = []
 	var _max_lines := 1000
 	# Lines trimmed off the front of the ring buffer, ever. Lets a caller hold a
@@ -1217,9 +1466,16 @@ class _MCPGameLogger extends Logger:
 			_dropped += 1
 		_mutex.unlock()
 
-	func _log_error(function: String, file: String, line: int, code: String,
-					rationale: String, editor_notify: bool, error_type: int,
-					script_backtraces: Array[ScriptBacktrace]) -> void:
+	func _log_error(
+		function: String,
+		file: String,
+		line: int,
+		code: String,
+		rationale: String,
+		editor_notify: bool,
+		error_type: int,
+		script_backtraces: Array[ScriptBacktrace]
+	) -> void:
 		_mutex.lock()
 		var msg := "[%s:%d] %s: %s" % [file.get_file(), line, code, rationale]
 		_output.append("[ERROR] " + msg)
@@ -1244,10 +1500,15 @@ func _handle_get_input_map() -> void:
 		var event_strings: Array = []
 		for event in events:
 			event_strings.append(_event_to_string(event))
-		actions.append({
-			"name": action_name,
-			"events": event_strings,
-		})
+		(
+			actions
+			. append(
+				{
+					"name": action_name,
+					"events": event_strings,
+				}
+			)
+		)
 	EngineDebugger.send_message("godot_mcp:input_map_result", [actions, ""])
 
 
@@ -1267,15 +1528,23 @@ func _event_to_string(event: InputEvent) -> String:
 				return "Mouse Button %d" % mouse_event.button_index
 	elif event is InputEventJoypadButton:
 		var joy_event := event as InputEventJoypadButton
-		return "Joypad Button %d (%s)" % [joy_event.button_index, MCPJoyNames.button_name(joy_event.button_index)]
+		return (
+			"Joypad Button %d (%s)"
+			% [joy_event.button_index, MCPJoyNames.button_name(joy_event.button_index)]
+		)
 	elif event is InputEventJoypadMotion:
 		# The signed axis_value is the direction bit an agent needs to lift the
 		# binding straight into an injection (e.g. move_left = left_x, value -1.0).
 		var joy_motion := event as InputEventJoypadMotion
-		return "Joypad Axis %d (%s, value %+.1f)" % [joy_motion.axis, MCPJoyNames.axis_name(joy_motion.axis), joy_motion.axis_value]
+		return (
+			"Joypad Axis %d (%s, value %+.1f)"
+			% [joy_motion.axis, MCPJoyNames.axis_name(joy_motion.axis), joy_motion.axis_value]
+		)
 	elif event is InputEventMouseMotion:
 		var mouse_motion := event as InputEventMouseMotion
-		return "Mouse Motion (rel %+.1f, %+.1f)" % [mouse_motion.relative.x, mouse_motion.relative.y]
+		return (
+			"Mouse Motion (rel %+.1f, %+.1f)" % [mouse_motion.relative.x, mouse_motion.relative.y]
+		)
 	return event.as_text()
 
 
@@ -1291,9 +1560,17 @@ func _handle_execute_input_sequence(data: Array) -> void:
 	_sequence_input_kinds = _new_input_kinds()
 
 	if inputs.is_empty():
-		EngineDebugger.send_message("godot_mcp:input_sequence_result", [{
-			"error": "No inputs provided",
-		}])
+		(
+			EngineDebugger
+			. send_message(
+				"godot_mcp:input_sequence_result",
+				[
+					{
+						"error": "No inputs provided",
+					}
+				]
+			)
+		)
 		return
 
 	# Normalize the optional frame-capture schedule (#239): clamp each offset,
@@ -1314,9 +1591,17 @@ func _handle_execute_input_sequence(data: Array) -> void:
 		var ctx := _build_predicate_context()
 		var rr := _compile_report(report, ctx["names"], ctx["inputs"])
 		if rr.has("error"):
-			EngineDebugger.send_message("godot_mcp:input_sequence_result", [{
-				"error": rr["error"],
-			}])
+			(
+				EngineDebugger
+				. send_message(
+					"godot_mcp:input_sequence_result",
+					[
+						{
+							"error": rr["error"],
+						}
+					]
+				)
+			)
 			return
 		report_compiled = rr["report"]
 		report_inputs = ctx["inputs"]
@@ -1343,9 +1628,17 @@ func _handle_execute_input_sequence(data: Array) -> void:
 
 	var compiled := _compile_input_events(inputs)
 	if compiled.has("error"):
-		EngineDebugger.send_message("godot_mcp:input_sequence_result", [{
-			"error": compiled["error"],
-		}])
+		(
+			EngineDebugger
+			. send_message(
+				"godot_mcp:input_sequence_result",
+				[
+					{
+						"error": compiled["error"],
+					}
+				]
+			)
+		)
 		return
 	_sequence_events = compiled["events"]
 	_sequence_input_kinds = compiled["kinds"]
@@ -1353,7 +1646,9 @@ func _handle_execute_input_sequence(data: Array) -> void:
 	# Baseline the effect probe at the last possible moment before any input fires.
 	_sequence_report = report_compiled
 	_sequence_report_inputs = report_inputs
-	_sequence_report_before = _evaluate_report(report_compiled, report_inputs) if not report_compiled.is_empty() else {}
+	_sequence_report_before = (
+		_evaluate_report(report_compiled, report_inputs) if not report_compiled.is_empty() else {}
+	)
 
 	# Arm the capture schedule (validated and sorted above).
 	_sequence_capture_offsets = capture_offsets
@@ -1369,9 +1664,17 @@ func _handle_type_text(data: Array) -> void:
 	var submit: bool = data[2] if data.size() > 2 else false
 
 	if text.is_empty():
-		EngineDebugger.send_message("godot_mcp:type_text_result", [{
-			"error": "No text provided",
-		}])
+		(
+			EngineDebugger
+			. send_message(
+				"godot_mcp:type_text_result",
+				[
+					{
+						"error": "No text provided",
+					}
+				]
+			)
+		)
 		return
 
 	_type_text_async(text, delay_ms, submit)
@@ -1412,11 +1715,19 @@ func _type_text_async(text: String, delay_ms: int, submit: bool) -> void:
 		enter_release.pressed = false
 		Input.parse_input_event(enter_release)
 
-	EngineDebugger.send_message("godot_mcp:type_text_result", [{
-		"completed": true,
-		"chars_typed": text.length(),
-		"submitted": submit,
-	}])
+	(
+		EngineDebugger
+		. send_message(
+			"godot_mcp:type_text_result",
+			[
+				{
+					"completed": true,
+					"chars_typed": text.length(),
+					"submitted": submit,
+				}
+			]
+		)
+	)
 
 
 # ---------------------------------------------------------------------------
@@ -1466,6 +1777,15 @@ const FREEZE_CONTESTED_THRESHOLD := 10
 # that. The last chunk absorbs the remainder regardless of n, so the summed delta
 # is unchanged — only temporal smoothness past the cap degrades.
 const LOOK_MAX_SUBEVENTS := 256
+# SEE-1141 Track D: name -> MouseButton for the mouse_button entry's `button`
+# field. Kept small on purpose; raw index entry is out of scope for v1.
+const _MOUSE_BUTTON_NAMES := {
+	"left": MOUSE_BUTTON_LEFT,
+	"right": MOUSE_BUTTON_RIGHT,
+	"middle": MOUSE_BUTTON_MIDDLE,
+	"wheel_up": MOUSE_BUTTON_WHEEL_UP,
+	"wheel_down": MOUSE_BUTTON_WHEEL_DOWN,
+}
 
 var _frozen := false
 var _game_paused := false  # the game layer's own pause intent, inferred by observation
@@ -1550,11 +1870,14 @@ func _handle_game_time_freeze(_data: Array) -> void:
 		return
 	var was_frozen := _frozen
 	_engage_freeze()
-	_send_game_time_response("game_time_freeze", {
-		"frozen": true,
-		"was_frozen": was_frozen,
-		"game_paused": _game_paused,
-	})
+	_send_game_time_response(
+		"game_time_freeze",
+		{
+			"frozen": true,
+			"was_frozen": was_frozen,
+			"game_paused": _game_paused,
+		}
+	)
 
 
 func _handle_game_time_thaw(_data: Array) -> void:
@@ -1665,9 +1988,18 @@ func _handle_game_time_step(data: Array) -> void:
 
 func _new_input_kinds() -> Dictionary:
 	# One source of truth for the input_kinds shape so every reset/result site
-	# carries the same keys (#290 added "key", #294 added "look"). A missing key
-	# here would make the server's skew check misfire against our own bridge.
-	return {"action": 0, "joy_button": 0, "axis": 0, "key": 0, "look": 0}
+	# carries the same keys (#290 added "key", #294 added "look", SEE-1141
+	# Track D added "mouse_move"/"mouse_button"). A missing key here would make
+	# the server's skew check misfire against our own bridge.
+	return {
+		"action": 0,
+		"joy_button": 0,
+		"axis": 0,
+		"key": 0,
+		"look": 0,
+		"mouse_move": 0,
+		"mouse_button": 0,
+	}
 
 
 func _compile_input_events(inputs: Array) -> Dictionary:
@@ -1694,29 +2026,80 @@ func _compile_input_events(inputs: Array) -> Dictionary:
 		if input.has("axis"):
 			var axis := MCPJoyNames.axis_index(input["axis"])
 			if axis < 0:
-				return {"error": "Unknown joypad axis: %s (valid: %s)" % [str(input["axis"]), ", ".join(MCPJoyNames.AXES.keys())]}
+				return {
+					"error":
+					(
+						"Unknown joypad axis: %s (valid: %s)"
+						% [str(input["axis"]), ", ".join(MCPJoyNames.AXES.keys())]
+					)
+				}
 			var device: int = int(input.get("device", 0))
 			var value: float = clampf(float(input.get("value", 0.0)), -1.0, 1.0)
 			kinds["axis"] += 1
-			events.append({"time": start_ms, "phase": 1, "complete": 0,
-				"kind": "axis", "axis": axis, "device": device, "value": value})
-			events.append({"time": end_ms, "phase": 0, "complete": 1,
-				"kind": "axis", "axis": axis, "device": device, "value": 0.0})
+			events.append(
+				{
+					"time": start_ms,
+					"phase": 1,
+					"complete": 0,
+					"kind": "axis",
+					"axis": axis,
+					"device": device,
+					"value": value
+				}
+			)
+			events.append(
+				{
+					"time": end_ms,
+					"phase": 0,
+					"complete": 1,
+					"kind": "axis",
+					"axis": axis,
+					"device": device,
+					"value": 0.0
+				}
+			)
 		elif input.has("joy_button"):
 			var button := MCPJoyNames.button_index(input["joy_button"])
 			if button < 0:
-				return {"error": "Unknown joypad button: %s (valid: %s, or a raw index)" % [str(input["joy_button"]), ", ".join(MCPJoyNames.BUTTONS.keys())]}
+				return {
+					"error":
+					(
+						"Unknown joypad button: %s (valid: %s, or a raw index)"
+						% [str(input["joy_button"]), ", ".join(MCPJoyNames.BUTTONS.keys())]
+					)
+				}
 			var bdevice: int = int(input.get("device", 0))
 			kinds["joy_button"] += 1
-			events.append({"time": start_ms, "phase": 1, "complete": 0,
-				"kind": "joy_button", "button": button, "device": bdevice, "is_press": true})
-			events.append({"time": end_ms, "phase": 0, "complete": 1,
-				"kind": "joy_button", "button": button, "device": bdevice, "is_press": false})
+			events.append(
+				{
+					"time": start_ms,
+					"phase": 1,
+					"complete": 0,
+					"kind": "joy_button",
+					"button": button,
+					"device": bdevice,
+					"is_press": true
+				}
+			)
+			events.append(
+				{
+					"time": end_ms,
+					"phase": 0,
+					"complete": 1,
+					"kind": "joy_button",
+					"button": button,
+					"device": bdevice,
+					"is_press": false
+				}
+			)
 		elif input.has("key"):
 			var parsed := MCPKeyNames.parse(input["key"])
 			var code: int = int(parsed["code"])
 			if code == KEY_NONE:
-				return {"error": "Unknown key: %s (e.g. \"a\", \"escape\", \"ctrl+s\", \"shift+f1\")" % str(input["key"])}
+				return {
+					"error":
+					'Unknown key: %s (e.g. "a", "escape", "ctrl+s", "shift+f1")' % str(input["key"])
+				}
 			var mask: int = int(parsed["mask"])
 			var physical: bool = bool(input.get("physical", false))
 			kinds["key"] += 1
@@ -1729,15 +2112,55 @@ func _compile_input_events(inputs: Array) -> Dictionary:
 			# `physical`. Completion credit (1) rides only the base release.
 			var mod_keys := MCPKeyNames.modifier_key_indices(mask)
 			for mk in mod_keys:
-				events.append({"time": start_ms, "phase": 1, "complete": 0,
-					"kind": "key", "code": int(mk), "physical": false, "mask": 0, "is_press": true})
-			events.append({"time": start_ms, "phase": 1, "complete": 0,
-				"kind": "key", "code": code, "physical": physical, "mask": mask, "is_press": true})
-			events.append({"time": end_ms, "phase": 0, "complete": 1,
-				"kind": "key", "code": code, "physical": physical, "mask": mask, "is_press": false})
+				events.append(
+					{
+						"time": start_ms,
+						"phase": 1,
+						"complete": 0,
+						"kind": "key",
+						"code": int(mk),
+						"physical": false,
+						"mask": 0,
+						"is_press": true
+					}
+				)
+			events.append(
+				{
+					"time": start_ms,
+					"phase": 1,
+					"complete": 0,
+					"kind": "key",
+					"code": code,
+					"physical": physical,
+					"mask": mask,
+					"is_press": true
+				}
+			)
+			events.append(
+				{
+					"time": end_ms,
+					"phase": 0,
+					"complete": 1,
+					"kind": "key",
+					"code": code,
+					"physical": physical,
+					"mask": mask,
+					"is_press": false
+				}
+			)
 			for mk in mod_keys:
-				events.append({"time": end_ms, "phase": 0, "complete": 0,
-					"kind": "key", "code": int(mk), "physical": false, "mask": 0, "is_press": false})
+				events.append(
+					{
+						"time": end_ms,
+						"phase": 0,
+						"complete": 0,
+						"kind": "key",
+						"code": int(mk),
+						"physical": false,
+						"mask": 0,
+						"is_press": false
+					}
+				)
 		elif input.has("look"):
 			var look_val: Variant = input["look"]
 			if not (look_val is Array) or (look_val as Array).size() != 2:
@@ -1770,8 +2193,85 @@ func _compile_input_events(inputs: Array) -> Dictionary:
 				if i == n - 1:
 					ex = dx - chunk_x * float(n - 1)
 					ey = dy - chunk_y * float(n - 1)
-				events.append({"time": start_ms + (i * dur) / n, "phase": 1,
-					"complete": (1 if i == n - 1 else 0), "kind": "look", "dx": ex, "dy": ey})
+				events.append(
+					{
+						"time": start_ms + (i * dur) / n,
+						"phase": 1,
+						"complete": 1 if i == n - 1 else 0,
+						"kind": "look",
+						"dx": ex,
+						"dy": ey
+					}
+				)
+		elif input.has("mouse_move"):
+			# SEE-1141 Track D: absolute mouse move. The pair [x, y] is in
+			# VIEWPORT/canvas space; the injector maps it through the viewport's
+			# final transform (handles stretch + content scale) and tracks the
+			# virtual cursor itself — the polled OS cursor does not move (see
+			# docs/design/mouse-input-spike.md); games that POLL
+			# get_mouse_position() will not see this.
+			var mv: Variant = input["mouse_move"]
+			if not (mv is Array) or (mv as Array).size() != 2:
+				return {"error": "mouse_move expects [x, y] (two numbers), got %s" % str(mv)}
+			var mx: Variant = (mv as Array)[0]
+			var my: Variant = (mv as Array)[1]
+			if not (mx is float or mx is int) or not (my is float or my is int):
+				return {"error": "mouse_move expects [x, y] (two numbers), got %s" % str(mv)}
+			kinds["mouse_move"] += 1
+			events.append(
+				{
+					"time": start_ms,
+					"phase": 1,
+					"complete": 1,
+					"kind": "mouse_move",
+					"x": float(mx),
+					"y": float(my)
+				}
+			)
+		elif input.has("mouse_button"):
+			# SEE-1141 Track D: absolute mouse click at a viewport-space
+			# position. Emits press at start_ms and a guaranteed paired release
+			# at end_ms (duration_ms = hold time); the release always fires via
+			# the held-button registry even if the queue is cleared mid-hold.
+			var mb: Variant = input["mouse_button"]
+			if not (mb is Dictionary):
+				return {"error": "mouse_button expects {x, y, button?}, got %s" % str(mb)}
+			var mbd: Dictionary = mb
+			if not mbd.has("x") or not mbd.has("y"):
+				return {"error": "mouse_button expects {x, y, button?}, got %s" % str(mbd)}
+			if (
+				not (mbd["x"] is float or mbd["x"] is int)
+				or not (mbd["y"] is float or mbd["y"] is int)
+			):
+				return {"error": "mouse_button x/y must be numbers, got %s" % str(mbd)}
+			var button_name: String = String(mbd.get("button", "left"))
+			var button_index: int = _MOUSE_BUTTON_NAMES.get(button_name, -1)
+			if button_index < 0:
+				return {
+					"error":
+					(
+						"Unknown mouse button: %s (valid: %s)"
+						% [button_name, ", ".join(_MOUSE_BUTTON_NAMES.keys())]
+					)
+				}
+			kinds["mouse_button"] += 1
+			var press_ev := {
+				"time": start_ms,
+				"phase": 1,
+				"complete": 0,
+				"kind": "mouse_button",
+				"x": float(mbd["x"]),
+				"y": float(mbd["y"]),
+				"button": button_index,
+				"is_press": true
+			}
+			var release_ev := press_ev.duplicate()
+			release_ev["time"] = end_ms
+			release_ev["phase"] = 0
+			release_ev["complete"] = 1
+			release_ev["is_press"] = false
+			events.append(press_ev)
+			events.append(release_ev)
 		else:
 			var action_name: String = input.get("action_name", "")
 			if action_name.is_empty():
@@ -1780,16 +2280,35 @@ func _compile_input_events(inputs: Array) -> Dictionary:
 				return {"error": "Unknown action: %s" % action_name}
 			var strength: float = clampf(float(input.get("strength", 1.0)), 0.0, 1.0)
 			kinds["action"] += 1
-			events.append({"time": start_ms, "phase": 1, "complete": 0,
-				"kind": "action", "action": action_name, "strength": strength, "is_press": true})
-			events.append({"time": end_ms, "phase": 0, "complete": 1,
-				"kind": "action", "action": action_name, "strength": strength, "is_press": false})
+			events.append(
+				{
+					"time": start_ms,
+					"phase": 1,
+					"complete": 0,
+					"kind": "action",
+					"action": action_name,
+					"strength": strength,
+					"is_press": true
+				}
+			)
+			events.append(
+				{
+					"time": end_ms,
+					"phase": 0,
+					"complete": 1,
+					"kind": "action",
+					"action": action_name,
+					"strength": strength,
+					"is_press": false
+				}
+			)
 	# Releases/zero-sets fire before presses/sets at equal time, so a same-time
 	# axis zero can never clobber a follow-on set of the same axis.
-	events.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		if a.time != b.time:
-			return a.time < b.time
-		return a.phase < b.phase
+	events.sort_custom(
+		func(a: Dictionary, b: Dictionary) -> bool:
+			if a.time != b.time:
+				return a.time < b.time
+			return a.phase < b.phase
 	)
 	_cancel_redundant_axis_zeroes(events)
 	return {"events": events, "kinds": kinds}
@@ -1811,7 +2330,12 @@ func _cancel_redundant_axis_zeroes(events: Array) -> void:
 			var j := i + 1
 			while j < events.size() and events[j].time == ev.time:
 				var nx: Dictionary = events[j]
-				if nx.kind == "axis" and nx.phase == 1 and nx.axis == ev.axis and nx.device == ev.device:
+				if (
+					nx.kind == "axis"
+					and nx.phase == 1
+					and nx.axis == ev.axis
+					and nx.device == ev.device
+				):
 					nx.complete = int(nx.complete) + int(ev.complete)
 					events.remove_at(i)
 					i -= 1
@@ -1880,7 +2404,9 @@ func _inject_timeline_event(ev: Dictionary) -> int:
 				if _held_keys.has(kkey):
 					_held_keys[kkey]["count"] = int(_held_keys[kkey]["count"]) + 1
 				else:
-					_held_keys[kkey] = {"count": 1, "physical": physical, "code": code, "mask": int(ev.mask)}
+					_held_keys[kkey] = {
+						"count": 1, "physical": physical, "code": code, "mask": int(ev.mask)
+					}
 					Input.parse_input_event(_make_key_event(physical, code, int(ev.mask), true))
 			elif _held_keys.has(kkey):
 				var n := int(_held_keys[kkey]["count"]) - 1
@@ -1909,7 +2435,56 @@ func _inject_timeline_event(ev: Dictionary) -> int:
 			mm.position = pos
 			mm.global_position = pos
 			Input.parse_input_event(mm)
+		"mouse_move":
+			# SEE-1141 Track D: absolute virtual-cursor move. Target coordinate is
+			# viewport/canvas space; map through the final transform (round-trips
+			# under every stretch config — see the spike doc) and emit ONE motion
+			# event with the ABSOLUTE position and zero relative (this is a
+			# cursor SET, not a drag). Hover/gui_get_hovered_control update; the
+			# POLLED get_mouse_position() does NOT (documented ceiling).
+			var target := _virtual_mouse_window_pos(Vector2(float(ev.x), float(ev.y)))
+			var move_ev := InputEventMouseMotion.new()
+			move_ev.position = target
+			move_ev.global_position = target
+			Input.parse_input_event(move_ev)
+		"mouse_button":
+			# SEE-1141 Track D: absolute click. The button event carries the same
+			# virtual window position; press/release parity and cleanup ride the
+			# _held_mouse_buttons registry exactly like held actions/keys.
+			var btn_pos := _virtual_mouse_window_pos(Vector2(float(ev.x), float(ev.y)))
+			var btn := InputEventMouseButton.new()
+			btn.button_index = int(ev.button) as MouseButton
+			btn.pressed = bool(ev.is_press)
+			btn.position = btn_pos
+			btn.global_position = btn_pos
+			Input.parse_input_event(btn)
+			var mkey := "0:%d" % int(ev.button)
+			if ev.is_press:
+				_held_mouse_buttons[mkey] = {"button": int(ev.button), "pos": btn_pos}
+			else:
+				_held_mouse_buttons.erase(mkey)
 	return int(ev.get("complete", 0))
+
+
+## SEE-1141 Track D: canvas/viewport coords -> window-client coords via the
+## viewport's final transform, and record the virtual cursor. First use seeds
+## from the physical cursor so a click without a prior move still has a sane
+## position.
+func _virtual_mouse_window_pos(canvas_pos: Vector2) -> Vector2:
+	var vp := get_viewport()
+	if vp == null:
+		return canvas_pos
+	if not _has_virtual_mouse_position:
+		_virtual_mouse_position = vp.get_mouse_position()
+		_has_virtual_mouse_position = true
+	var window_pos: Vector2 = vp.get_final_transform() * canvas_pos
+	_virtual_mouse_position = window_pos
+	# SEE-1142: keep the cooperative cursor in viewport space — game code reads
+	# viewport/global coords (same convention as Viewport.get_mouse_position),
+	# not window-client. Inverse of the transform we just applied.
+	if is_instance_valid(_mcp_cursor):
+		_mcp_cursor.set_virtual_global(canvas_pos)
+	return window_pos
 
 
 # Build an InputEventKey. A logical key sets both keycode and physical_keycode
@@ -1987,7 +2562,9 @@ func _compile_report(report: Array, names: PackedStringArray, inputs: Array) -> 
 			return {"error": "report expression parse error (%s): %s" % [s, e.get_error_text()]}
 		e.execute(inputs, self)
 		if e.has_execute_failed():
-			return {"error": "report expression failed to evaluate (%s): %s" % [s, e.get_error_text()]}
+			return {
+				"error": "report expression failed to evaluate (%s): %s" % [s, e.get_error_text()]
+			}
 		compiled.append({"src": s, "expr": e})
 	return {"report": compiled}
 
@@ -2016,7 +2593,9 @@ func _handle_game_time_step_until(data: Array) -> void:
 
 	var src: String = str(params.get("until", "")).strip_edges()
 	if src.is_empty():
-		_send_game_time_response("game_time_step_until", {"error": "step_until requires a non-empty `until` expression"})
+		_send_game_time_response(
+			"game_time_step_until", {"error": "step_until requires a non-empty `until` expression"}
+		)
 		return
 
 	var max_ms: int = int(params.get("max_ms", STEP_DEFAULT_MS))
@@ -2033,11 +2612,16 @@ func _handle_game_time_step_until(data: Array) -> void:
 	var ctx_inputs: Array = ctx["inputs"]
 	var expr := Expression.new()
 	if expr.parse(src, ctx_names) != OK:
-		_send_game_time_response("game_time_step_until", {"error": "predicate parse error: %s" % expr.get_error_text()})
+		_send_game_time_response(
+			"game_time_step_until", {"error": "predicate parse error: %s" % expr.get_error_text()}
+		)
 		return
 	var first_value: Variant = expr.execute(ctx_inputs, self)
 	if expr.has_execute_failed():
-		_send_game_time_response("game_time_step_until", {"error": "predicate failed to evaluate: %s" % expr.get_error_text()})
+		_send_game_time_response(
+			"game_time_step_until",
+			{"error": "predicate failed to evaluate: %s" % expr.get_error_text()}
+		)
 		return
 
 	# Optional readings to return at stop time, validated up front in the same context.
@@ -2172,7 +2756,9 @@ func _step_process(delta: float) -> void:
 func _finish_step() -> void:
 	# Releases are guaranteed cleanup, never queued steps: no holds survive
 	# across the freeze boundary (cross-step holds are a deliberate non-goal).
-	var forced := _held_actions.size() + _held_joy_buttons.size() + _active_axes.size() + _held_keys.size()
+	var forced := (
+		_held_actions.size() + _held_joy_buttons.size() + _active_axes.size() + _held_keys.size()
+	)
 	_release_held_actions()
 	var dropped := _step_events.size()
 	_step_events.clear()
@@ -2261,8 +2847,9 @@ func _ensure_exec_holder() -> Node:
 	_exec_holder.name = "MCPExecHolder"
 	# Stamp attach time on whatever user scripts add, so exec_list can report an
 	# age without trusting the script to record one.
-	_exec_holder.child_entered_tree.connect(func(child: Node) -> void:
-		child.set_meta("mcp_exec_attached_ms", Time.get_ticks_msec()))
+	_exec_holder.child_entered_tree.connect(
+		func(child: Node) -> void: child.set_meta("mcp_exec_attached_ms", Time.get_ticks_msec())
+	)
 	get_tree().root.add_child(_exec_holder)
 	return _exec_holder
 
@@ -2285,7 +2872,9 @@ func _exec_logger_delta(mark: int) -> Array:
 	var lines := _logger.get_output()
 	var start := mark - _logger.get_dropped()
 	if start < 0:
-		out.append("... (log buffer overflowed; %d earlier lines lost — see the game console)" % -start)
+		out.append(
+			"... (log buffer overflowed; %d earlier lines lost — see the game console)" % -start
+		)
 		start = 0
 	for i in range(start, lines.size()):
 		if not lines[i].begins_with("[ERROR] "):
@@ -2317,7 +2906,9 @@ func _handle_exec_run(data: Array) -> void:
 
 	var scan := MCPExecGuard.scan_source(source)
 	if not scan.get("ok", false):
-		_send_exec_response("exec_run", {"error": str(scan.get("message", "exec source rejected"))}, params)
+		_send_exec_response(
+			"exec_run", {"error": str(scan.get("message", "exec source rejected"))}, params
+		)
 		return
 
 	var ctx := _build_exec_context()
@@ -2346,19 +2937,34 @@ func _handle_exec_run(data: Array) -> void:
 
 	# Runtime backstop for the scanner's SYNC_ONLY rule (a string-built await
 	# can slip past a token scan): a suspended call returns a function state.
-	if typeof(result) == TYPE_OBJECT and result != null \
-			and result.get_class() == "GDScriptFunctionState":
-		_send_exec_response("exec_run", {"error":
-			"SCRIPT_SUSPENDED: the script hit an await and suspended (exec is synchronous-only; " +
-			"side effects before the await have already run). Use godot_game_time step/step_until to wait."}, params)
+	if (
+		typeof(result) == TYPE_OBJECT
+		and result != null
+		and result.get_class() == "GDScriptFunctionState"
+	):
+		_send_exec_response(
+			"exec_run",
+			{
+				"error":
+				(
+					"SCRIPT_SUSPENDED: the script hit an await and suspended (exec is synchronous-only; "
+					+ "side effects before the await have already run). Use godot_game_time step/step_until to wait."
+				)
+			},
+			params
+		)
 		return
 
 	var out: Dictionary = {
 		"completed": true,
 		"result": _sanitize_value(result),
 		"duration_ms": duration,
-		"holder_children": _exec_holder.get_child_count() \
-			if _exec_holder != null and is_instance_valid(_exec_holder) else 0,
+		"holder_children":
+		(
+			_exec_holder.get_child_count()
+			if _exec_holder != null and is_instance_valid(_exec_holder)
+			else 0
+		),
 	}
 	var errs := _exec_logger_delta(mark)
 	if not errs.is_empty():
@@ -2376,16 +2982,26 @@ func _handle_exec_list(data: Array) -> void:
 			var s: Variant = child.get_script()
 			if s is GDScript:
 				script_chars = (s as GDScript).source_code.length()
-			nodes.append({
-				"name": str(child.name),
-				"class": child.get_class(),
-				"script_chars": script_chars,
-				"age_ms": now - int(child.get_meta("mcp_exec_attached_ms", now)),
-				# Internal processing too: Timers and tweened nodes drive
-				# themselves internally and would otherwise read as idle.
-				"processing": child.is_processing() or child.is_physics_processing() \
-					or child.is_processing_internal() or child.is_physics_processing_internal(),
-			})
+			(
+				nodes
+				. append(
+					{
+						"name": str(child.name),
+						"class": child.get_class(),
+						"script_chars": script_chars,
+						"age_ms": now - int(child.get_meta("mcp_exec_attached_ms", now)),
+						# Internal processing too: Timers and tweened nodes drive
+						"processing":
+						(
+							# themselves internally and would otherwise read as idle.
+							child.is_processing()
+							or child.is_physics_processing()
+							or child.is_processing_internal()
+							or child.is_physics_processing_internal()
+						),
+					}
+				)
+			)
 	_send_exec_response("exec_list", {"nodes": nodes, "count": nodes.size()}, params)
 
 
@@ -2406,19 +3022,34 @@ func _handle_exec_remove(data: Array) -> void:
 		if _exec_holder != null and is_instance_valid(_exec_holder):
 			for c in _exec_holder.get_children():
 				have.append(str(c.name))
-		_send_exec_response("exec_remove", {"error":
-			"NOT_FOUND: no exec node named '%s' (have: %s)" % [
-				node_name, ", ".join(PackedStringArray(have)) if not have.is_empty() else "none"]}, params)
+		_send_exec_response(
+			"exec_remove",
+			{
+				"error":
+				(
+					"NOT_FOUND: no exec node named '%s' (have: %s)"
+					% [
+						node_name,
+						", ".join(PackedStringArray(have)) if not have.is_empty() else "none"
+					]
+				)
+			},
+			params
+		)
 		return
 	# Detach immediately so a list right after this call already shows it gone;
 	# queue_free still frees the detached node at the end of the frame.
 	_exec_holder.remove_child(child)
 	child.queue_free()
-	_send_exec_response("exec_remove", {
-		"removed": true,
-		"name": node_name,
-		"remaining": _exec_holder.get_child_count(),
-	}, params)
+	_send_exec_response(
+		"exec_remove",
+		{
+			"removed": true,
+			"name": node_name,
+			"remaining": _exec_holder.get_child_count(),
+		},
+		params
+	)
 
 
 func _handle_exec_clear(data: Array) -> void:

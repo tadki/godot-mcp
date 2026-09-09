@@ -73,6 +73,34 @@ func _send_and_wait(msg_type: String, args: Array, timeout: float):
 		_last_error = _error("NO_SESSION", "No active debug session")
 		return null
 
+	# SEE-1134 D1: a step/freeze/thaw landing in the first frames after a frozen
+	# launch races the game bridge's first drivable tick. has_active_session() is
+	# true the instant the debug session opens, but the game's main loop is still
+	# draining first-frame init (autoload warmup, first resource loads), so the
+	# message sits in the queue and the response never comes back inside the
+	# relay timeout. Wait for the bridge's own bridge_ready signal — which the
+	# game emits only once _process is actually ticking past init — before we
+	# send. Bounded so a bridge that never reports ready still fails honestly as
+	# TIMEOUT instead of hanging forever.
+	var ready_start := Time.get_ticks_msec()
+	# The ready-wait and the response-wait below both draw from the same relay
+	# budget, but the server socket only gives relayMs + its margin. If the
+	# ready-wait could consume the full half budget on top of a full-length
+	# response-wait, the socket would kill the request before we could answer
+	# with a typed TIMEOUT (SEE-1134 D5). Cap the pre-send wait so
+	# ready_wait + response_wait stays inside the socket window.
+	var ready_budget := minf(timeout * 0.5, 1.5)
+	while not debugger_plugin.is_bridge_ready():
+		if not EditorInterface.is_playing_scene():
+			_last_error = _error("NOT_RUNNING", "Game stopped before bridge became ready")
+			return null
+		await Engine.get_main_loop().process_frame
+		if (Time.get_ticks_msec() - ready_start) / 1000.0 > ready_budget:
+			_last_error = _error(
+				"BRIDGE_NOT_READY", "Game bridge did not report ready within %.1fs" % ready_budget
+			)
+			return null
+
 	var sent: bool = debugger_plugin.send_game_message(msg_type, args)
 	if not sent:
 		_last_error = _error("SEND_FAILED", "Failed to send message to game")

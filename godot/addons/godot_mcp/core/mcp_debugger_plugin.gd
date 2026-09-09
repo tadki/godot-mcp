@@ -2,14 +2,24 @@
 extends EditorDebuggerPlugin
 class_name MCPDebuggerPlugin
 
-signal screenshot_received(success: bool, image_base64: String, width: int, height: int, error: String)
+signal screenshot_received(
+	success: bool, image_base64: String, width: int, height: int, error: String
+)
 signal performance_metrics_received(metrics: Dictionary)
 signal find_nodes_received(matches: Array, count: int, error: String)
 signal input_map_received(actions: Array, error: String)
 signal input_sequence_completed(result: Dictionary)
-signal sequence_capture_received(requested_ms: int, actual_ms: int, ok: bool, image_base64: String, width: int, height: int, error: String)
+signal sequence_capture_received(
+	requested_ms: int,
+	actual_ms: int,
+	ok: bool,
+	image_base64: String,
+	width: int,
+	height: int,
+	error: String
+)
 signal type_text_completed(result: Dictionary)
-signal bridge_ready()
+signal bridge_ready
 
 var _active_session_id: int = -1
 # True once the running game's bridge has announced it is ready to receive input
@@ -123,6 +133,20 @@ func is_bridge_ready() -> bool:
 	return _bridge_ready and has_active_session()
 
 
+# _bridge_ready without the has_active_session() side effect. Polling
+# is_bridge_ready() right after play_main_scene() is unsafe: during the editor's
+# play-state ramp-up is_playing_scene() is transiently false, and
+# has_active_session() clobbers _active_session_id to -1 as a side effect — so a
+# bridge_ready announce that lands in that window sets _bridge_ready=true but
+# the session id is already gone and every later poll reads false forever (SEE-1134
+# D1 final). run_project polls this during the ramp-up grace window; once
+# is_playing_scene() has been seen true it switches to is_bridge_ready(). Reading
+# the announce flag alone is sufficient there: if the bridge ever announced, the
+# WS connection is up by definition.
+func is_bridge_announced() -> bool:
+	return _bridge_ready
+
+
 func request_screenshot(max_width: int = 1024) -> void:
 	if _active_session_id < 0:
 		screenshot_received.emit(false, "", 0, 0, "No active game session")
@@ -210,14 +234,18 @@ func _handle_input_map_result(data: Array) -> void:
 	input_map_received.emit(actions, error)
 
 
-func request_input_sequence(inputs: Array, report: Array = [], screenshots: Array = [], screenshot_max_width: int = 640) -> void:
+func request_input_sequence(
+	inputs: Array, report: Array = [], screenshots: Array = [], screenshot_max_width: int = 640
+) -> void:
 	if _active_session_id < 0:
 		input_sequence_completed.emit({"error": "No active game session"})
 		return
 	_pending_input_sequence = true
 	var session := get_session(_active_session_id)
 	if session:
-		session.send_message("godot_mcp:execute_input_sequence", [inputs, report, screenshots, screenshot_max_width])
+		session.send_message(
+			"godot_mcp:execute_input_sequence", [inputs, report, screenshots, screenshot_max_width]
+		)
 	else:
 		_pending_input_sequence = false
 		input_sequence_completed.emit({"error": "Could not get debugger session"})
