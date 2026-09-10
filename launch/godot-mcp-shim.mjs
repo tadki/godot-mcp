@@ -131,7 +131,10 @@ const PLACEHOLDER_TOOLS = PLACEHOLDER_TOOL_NAMES.map((name) => ({
 // ~/.multica keyed by agent label (NOT the worktree — a rebuilt worktree must
 // not wipe the cross-session cache value, §6.1).
 const CACHE_FILE = path.join(os.homedir(), '.multica', `godot-mcp-tools-cache-${LABEL}.json`);
-const FORK_CLI = '/mnt/d/GodotProjects/forks/godot-mcp/server/dist/cli.js';
+// §4.5.3 T2 / K5: fork CLI path env-overridable; default relative to this
+// library's own location (launch/ → ../server/dist/cli.js), no D-drive literal.
+const DEFAULT_FORK_CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'server', 'dist', 'cli.js');
+const FORK_CLI = process.env.GODOT_MCP_FORK_CLI || DEFAULT_FORK_CLI;
 
 function readToolsCache() {
     let parsed;

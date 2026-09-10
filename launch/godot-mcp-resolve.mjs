@@ -31,7 +31,14 @@ export const GODOT_MCP_PKG = '@satelliteoflove/godot-mcp';
 // support), so it is NOT opt-in; KOL_GODOT_MCP_CMD remains the explicit override
 // and the npx path stays the fallback when the fork is absent (offline / fresh
 // machine / CI test harness).
-const FORK_CLI = '/mnt/d/GodotProjects/forks/godot-mcp/server/dist/cli.js';
+// §4.5.3 T2 / K5: the fork CLI path is env-overridable (GODOT_MCP_FORK_CLI) and
+// by default resolves relative to this library's OWN location (this file lives
+// in launch/, so the fork CLI is ../server/dist/cli.js) — no D-drive literal.
+const DEFAULT_FORK_CLI = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..', 'server', 'dist', 'cli.js',
+);
+const FORK_CLI = process.env.GODOT_MCP_FORK_CLI || DEFAULT_FORK_CLI;
 function resolveFork() {
     try {
         statSync(FORK_CLI);

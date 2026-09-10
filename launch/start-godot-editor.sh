@@ -86,7 +86,7 @@ Logs:
 
 Examples:
   start-godot-editor.sh Bachi
-  start-godot-editor.sh --port 6551 --worktree /mnt/d/GodotProjects/x
+  start-godot-editor.sh --port 6551 --worktree /path/to/project
 EOF
 }
 
