@@ -32,3 +32,11 @@ fi
 # Fork's own node CLI (was FORK_CLI in launcher :920 / proxy :836 — an absolute
 # machine path; default derives from this library's own location).
 : "${GODOT_MCP_FORK_CLI:=}"
+
+# T2-M1 (Revy QA): every resolved GODOT_MCP_* var MUST be exported. The
+# launcher `exec`s the proxy as a child process, and an alias-derived assignment
+# (KOL_* → GODOT_MCP_*) creates only a SHELL variable — invisible to the child,
+# silently emptying the proxy's isSharedMasterWorktree guard (§7.1 防线 3
+# fail-open). export is idempotent for caller-exported values, so this changes
+# nothing for the canonical path while fixing the legacy-alias path.
+export GODOT_MCP_SHARED_MASTER GODOT_MCP_REPO_DIRNAME GODOT_MCP_WORKSPACES_BASE GODOT_MCP_FORK_CLI

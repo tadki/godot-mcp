@@ -94,6 +94,23 @@ tmp="$(mktemp -d)"
 ( cd "$tmp" && mkdir -p unrelated && probe_iswt "$tmp/unrelated" ) && bad "no project.godot should NOT qualify" || ok "no project.godot rejected"
 rm -rf "$tmp"
 
+echo "== 7. cross-process visibility (T2-M1): resolved vars must survive exec =="
+# The launcher `exec`s the proxy — any env.sh-resolved value that stays a bare
+# shell variable vanishes in the child, fail-opening the proxy's
+# isSharedMasterWorktree guard. These cases run the assertion in a CHILD bash
+# (not the sourcing shell) so only truly exported values can pass.
+# (a) KOL_ legacy injection → canonical visible in child
+r="$(bash -c "export KOL_SHARED_MASTER=/x; . '$LAUNCH/env.sh'; bash -c 'printf %s \"\${GODOT_MCP_SHARED_MASTER-}\"'")"
+[[ "$r" == "/x" ]] && ok "KOL_SHARED_MASTER alias survives exec → child" || bad "KOL alias cross-process = '$r'"
+# (b) canonical injection → still visible in child
+r="$(bash -c "export GODOT_MCP_SHARED_MASTER=/y; . '$LAUNCH/env.sh'; bash -c 'printf %s \"\${GODOT_MCP_SHARED_MASTER-}\"'")"
+[[ "$r" == "/y" ]] && ok "GODOT_MCP_SHARED_MASTER survives exec → child" || bad "canonical cross-process = '$r'"
+# (c) repo dirname alias same guarantee
+r="$(bash -c "export KOL_REPO_DIRNAME=AliasRepo; . '$LAUNCH/env.sh'; bash -c 'printf %s \"\${GODOT_MCP_REPO_DIRNAME-}\"'")"
+[[ "$r" == "AliasRepo" ]] && ok "KOL_REPO_DIRNAME alias survives exec → child" || bad "repo dirname cross-process = '$r'"
+# (d) no injection: vars are set (empty) and exported — child must not die on set -u
+r="$(bash -c "set -u; . '$LAUNCH/env.sh'; bash -c 'printf %s \"<\${GODOT_MCP_SHARED_MASTER-}><\${GODOT_MCP_WORKSPACES_BASE-}>\"'")" && [[ "$r" == "<></home/jerry/multica_workspaces>" || "$r" == "<><"* ]] && ok "unset-injection: exported-empty, set -u safe" || bad "unset-injection cross-process = '$r'"
+
 echo ""
 echo "==== T2 regression: PASS=$PASS FAIL=$FAIL ===="
 [[ "$FAIL" -eq 0 ]]
