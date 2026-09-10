@@ -1,0 +1,27 @@
+{
+  "name": "kole-godot-mcp-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "godot-mcp E2E tests for KingOfLikes game systems (Windows Godot editor + WSL2 agent)",
+  "type": "module",
+  "scripts": {
+    "test": "node run_all.mjs",
+    "test:smoke": "node tests/01_smoke.mjs",
+    "test:title": "node tests/02_title_screen.mjs",
+    "test:newgame": "node tests/03_new_game.mjs",
+    "test:hardware": "node tests/04_hardware.mjs",
+    "test:economy": "node tests/05_economy.mjs",
+    "test:saveload": "node tests/06_save_load.mjs",
+    "test:vendor": "node tests/07_vendor.mjs",
+    "test:shadow": "node tests/08_shadow_console.mjs",
+    "test:infi": "node tests/09_infi.mjs",
+    "test:sane": "node tests/10_sane.mjs",
+    "test:cyber": "node tests/11_cyberdomain.mjs",
+    "test:aidomain": "node tests/12_aidomain.mjs",
+    "test:pause": "node tests/13_pause_menu.mjs",
+    "test:tagmgr": "node tests/14_tag_manager.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  }
+}

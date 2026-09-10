@@ -1,0 +1,7 @@
+node_modules/
+e2e-run.log
+e2e-run*.log
+
+# E2E screenshot artifacts (runtime-generated; matches at any nesting depth,
+# so a relative `screenshots/see903/` path written from a nested cwd is also ignored).
+screenshots/

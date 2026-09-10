@@ -228,7 +228,20 @@ SHARED_MASTER_WORKTREE="${GODOT_MCP_SHARED_MASTER:-}"
 
 _is_shared_master() {
     local p="${1%/}"
+    # T2-M1 follow-up: empty SHARED_MASTER_WORKTREE (K5 默认) must guard NOTHING
+    # — the unanchored '$m'/* pattern with m='' becomes /* and matches every
+    # absolute path, fail-closing all resolutions (T4 wait test failure).
+    [[ -n "$SHARED_MASTER_WORKTREE" ]] || return 1
     [[ "$p" == "$SHARED_MASTER_WORKTREE" || "$p" == "$SHARED_MASTER_WORKTREE"/* ]]
+}
+
+# SEE-1273 T3 / K3: shell 版三落点 worktree 判定（与 proxy isGodotWorktree
+# 同语义）——repo 根 launch/（T4 后 submodule 挂载形态）、legacy
+# .dev/godot-mcp/launch（过渡窗 KOL checkout）、addons/godot_mcp/launch。
+# registry 解析的有效性过滤必须认全部三种布局，否则切换窗解析全落空。
+_has_launch_toolchain() {
+    local wt="${1%/}"
+    [[ -d "$wt/launch" || -d "$wt/.dev/godot-mcp/launch" || -d "$wt/addons/godot_mcp/launch" ]]
 }
 
 # Search a candidate root: up-walk for project.godot, then one-level
@@ -247,7 +260,7 @@ _search_root_for_worktree() {
     done
     for subdir in "$base"/*/; do
         [[ -d "$subdir" ]] || continue
-        if [[ -d "$subdir/.dev/godot-mcp/launch" ]]; then
+        if _has_launch_toolchain "$subdir"; then
             printf '%s\n' "${subdir%/}"
             return 0
         fi
@@ -363,7 +376,7 @@ _resolve_via_runtime_registry() {
                     grep -q "\"agent_id\":[[:space:]]*\"${MULTICA_AGENT_ID}\"" "$meta" || continue
                     hash="$(basename "$(dirname "$meta")")"
                     worktree="$ws_base/$hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
-                    [[ -d "$worktree/.dev/godot-mcp/launch" ]] || continue
+                    _has_launch_toolchain "$worktree" || continue
                     if [[ "$(_encode_workdir_marker "$worktree")" == "$marker" ]]; then
                         printf '%s\n' "$worktree"
                         return 0
@@ -483,7 +496,7 @@ _resolve_via_runtime_registry() {
             grep -q "\"agent_id\":[[:space:]]*\"${MULTICA_AGENT_ID}\"" "$meta" || continue
             hash="$(basename "$(dirname "$meta")")"
             worktree="$ws_base/$hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
-            [[ -d "$worktree/.dev/godot-mcp/launch" ]] || continue
+            _has_launch_toolchain "$worktree" || continue
             mtime="$(stat -c %Y "$meta" 2>/dev/null || echo 0)"
             if (( mtime > best_mtime )); then
                 best_mtime="$mtime"
