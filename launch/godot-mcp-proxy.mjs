@@ -833,7 +833,9 @@ function patchToolsList(result) {
 // layer, not a latch). Atomic mktemp+rename, same discipline as the registry.
 // Mirror of godot-mcp-resolve.mjs FORK_CLI (kept inline: proxy must not gain a
 // dep on the shim/resolve path shape for a cache-mtime nicety; §7.1 D7).
-const FORK_CLI_PATH = '/mnt/d/GodotProjects/forks/godot-mcp/server/dist/cli.js';
+// §4.5.3 T2: env-overridable; default resolves relative to this library's own location.
+const FORK_CLI_PATH = process.env.GODOT_MCP_FORK_CLI
+  || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'server', 'dist', 'cli.js');
 const TOOLS_CACHE_DIR = path.join(os.homedir(), '.multica');
 const TOOLS_CACHE_LABEL = (process.env.KOL_AGENT_NAME || 'unknown').toLowerCase();
 const TOOLS_CACHE_FILE = path.join(TOOLS_CACHE_DIR, `godot-mcp-tools-cache-${TOOLS_CACHE_LABEL}.json`);
@@ -2215,7 +2217,8 @@ async function resolveWorktreeForSpawn() {
 // a manual run, or a regression), fail fast with a structured diagnostic so the
 // agent never rewrites the shared project.godot. Mirrors the write-target guard
 // in configure-mcp-port.sh at resolution time.
-const SHARED_MASTER_WORKTREE = '/mnt/d/GodotProjects/king-of-likes';
+// §4.5.3 T2 / K5: env-overridable; empty default = probe-failure fallback.
+const SHARED_MASTER_WORKTREE = process.env.GODOT_MCP_SHARED_MASTER || '';
 
 function isSharedMasterWorktree(worktree) {
     if (!worktree) return false;
@@ -2226,11 +2229,17 @@ function isSharedMasterWorktree(worktree) {
 // True when `dir` is a Godot project root: has project.godot AND the
 // godot-mcp launch toolchain (proving it is the agent's KingOfLikes-Godot
 // checkout, not an unrelated Godot project).
+//
+// §4.5.3 T2 / K3 dual-location probe: post-reorg launch/ lives at the repo ROOT
+// (submodule mount point); the legacy `.dev/godot-mcp/launch` path still exists
+// during the transition/old-checkout window. Accept either so both layouts are
+// recognized.
 async function isGodotWorktree(dir) {
     try {
         await stat(path.join(dir, 'project.godot'));
-        await stat(path.join(dir, '.dev', 'godot-mcp', 'launch'));
-        return true;
+        const inRepo = await stat(path.join(dir, 'launch')).catch(() => null);
+        const legacy = await stat(path.join(dir, '.dev', 'godot-mcp', 'launch')).catch(() => null);
+        return Boolean(inRepo || legacy);
     } catch {
         return false;
     }
@@ -2353,7 +2362,7 @@ function runScript(scriptPath, args) {
 // to ~/.multica/godot-editor/<runtime_id>.stderr.log so post-mortem analysis
 // can read the exact die message + stage lines (PORT_PROBE_BEGIN/END etc.) that
 // the daemon's `tool_result observed` line never stores. Path mirrors
-// kol_lifecycle_path (kol-runtime.lib.sh §L68): non-solo runtime_ids resolve to
+// kol_lifecycle_path (runtime.lib.sh §L68): non-solo runtime_ids resolve to
 // the per-slot directory form; an empty KOL_RUNTIME_ID (manual invocation)
 // falls back to `unknown.stderr.log` rather than writing into the shared flat
 // name (per-slot isolation beats conflation). Best-effort: any fs error is

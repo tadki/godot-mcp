@@ -41,7 +41,7 @@ case "$MODE" in
 esac
 
 # --- 解析查询对象（与 launcher 同派生逻辑，同降级）---------------------------
-source "$SCRIPT_DIR/kol-runtime.lib.sh"
+source "$SCRIPT_DIR/runtime.lib.sh"
 source "$SCRIPT_DIR/agent-ports.lib.sh" 2>/dev/null || true
 
 AGENT_NAME="${KOL_AGENT_NAME:-${1:-}}"

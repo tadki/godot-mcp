@@ -31,8 +31,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/agent-ports.lib.sh"
 # SEE-1148 P1: lifecycle files migrate to ~/.multica/godot-editor/<runtime_id>.*
 # SEE-1148 P1: runtime_id + lifecycle paths.
-# shellcheck source=kol-runtime.lib.sh
-source "$SCRIPT_DIR/kol-runtime.lib.sh"
+# shellcheck source=runtime.lib.sh
+source "$SCRIPT_DIR/runtime.lib.sh"
 MULTICA_DIR="${HOME}/.multica"
 
 die() { echo "[stop-godot-editor] ERROR: $*" >&2; exit 2; }

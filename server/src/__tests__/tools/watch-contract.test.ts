@@ -29,7 +29,10 @@ import { runtimeState } from '../../tools/runtime-state.js';
 // keys) is pinned from both directions.
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CONTRACT_PATH = resolve(HERE, '../../../../godot/addons/godot_mcp/test/watch_contract.json');
+// §4.5 T1: the addon `test/` subtree (which held watch_contract.json) was
+// dropped from the repo root; the artifact now lives under launch/ (the shared
+// dev-support tree retained in the restructured layout).
+const CONTRACT_PATH = resolve(HERE, '../../../../launch/watch_contract.json');
 
 interface Shape {
   required: string[];

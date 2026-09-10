@@ -59,8 +59,8 @@ source "$SCRIPT_DIR/mcp-sidecar.lib.sh"
 # SEE-1148 P1: derive the per-slot runtime_id so sidecar_write_active can
 # stamp runtime_id / task_id (schema v2). Derives from the sidecar's own
 # worktree anchor once that is resolved below; falls back to KOL_WORKTREE/PWD.
-# shellcheck source=kol-runtime.lib.sh
-source "$SCRIPT_DIR/kol-runtime.lib.sh"
+# shellcheck source=runtime.lib.sh
+source "$SCRIPT_DIR/runtime.lib.sh"
 
 # project.godot path resolution (shared with the marker lib) — still used as
 # the anchor for locating the worktree root (sidecar lives in its .godot/ dir).
@@ -181,11 +181,13 @@ while (( $# > 0 )); do
     esac
 done
 
-# Resolve final port. Precedence: --port flag > KOL_MCP_PORT > agent name
-# (arg or KOL_AGENT_NAME) via the table.
+# Resolve final port. Precedence: --port flag > env port (GODOT_MCP_PORT, then
+# KOL_MCP_PORT legacy alias) > agent name (arg or KOL_AGENT_NAME) via the table.
 PORT=""
 if [[ -n "$EXPLICIT_PORT" ]]; then
     PORT="$EXPLICIT_PORT"
+elif [[ -n "${GODOT_MCP_PORT:-}" ]]; then
+    PORT="$GODOT_MCP_PORT"
 elif [[ -n "${KOL_MCP_PORT:-}" ]]; then
     PORT="$KOL_MCP_PORT"
 else
@@ -224,11 +226,12 @@ echo "[configure-mcp-port] target port   : $PORT"
 guard_write_target() {
     local target="$1"
     # Fail-fast on the known shared D-drive master checkout (absolute path).
-    local known_shared="/mnt/d/GodotProjects/king-of-likes"
+    # §4.5.3 T2 / K5: guard only engages when the env provides the shared path.
+    local known_shared="${GODOT_MCP_SHARED_MASTER:-}"
     local target_dir
     target_dir="$(dirname "$target")"
     if [[ "$target_dir" == "$known_shared" || "$target_dir" == "$known_shared/"* ]]; then
-        die "write-target guard: '$target' is the SHARED D-drive master checkout (/mnt/d/GodotProjects/king-of-likes). Refusing to write a lease there — each agent must configure its PRIVATE worktree (see mcp-multi-port-usage.md §3.7/§7.1)."
+        die "write-target guard: '$target' is the SHARED master checkout. Refusing to write a lease there — each agent must configure its PRIVATE worktree (see mcp-multi-port-usage.md §3.7/§7.1)."
     fi
     # Fail-fast when the target checkout is on branch master (covers any other
     # master checkout, e.g. a differently-mounted path to the same repo).

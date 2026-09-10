@@ -139,7 +139,8 @@ echo "[prepare-worktree] project.godot: $PROJECT_GODOT"
 echo "[prepare-worktree] target port  : $PORT"
 
 # --- SEE-1111 §7.1 防线 3: write-target guard (same as configure-mcp-port.sh) --
-known_shared="/mnt/d/GodotProjects/king-of-likes"
+# §4.5.3 T2 / K5: guard only engages when the env provides the shared path.
+known_shared="${GODOT_MCP_SHARED_MASTER:-}"
 if [[ "$WORKTREE" == "$known_shared" || "$WORKTREE" == "$known_shared/"* ]]; then
     die "write-target guard: '$WORKTREE' is the SHARED D-drive master checkout. Refusing to write a lease there — each agent must prepare its PRIVATE worktree (see mcp-multi-port-usage.md §3.7/§7.1)."
 fi

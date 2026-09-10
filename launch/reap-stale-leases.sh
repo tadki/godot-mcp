@@ -53,8 +53,8 @@ source "$SCRIPT_DIR/mcp-sidecar.lib.sh"
 # shellcheck source=agent-ports.lib.sh
 source "$SCRIPT_DIR/agent-ports.lib.sh"
 # SEE-1148 P1: lifecycle file paths (directory + legacy flat).
-# shellcheck source=kol-runtime.lib.sh
-source "$SCRIPT_DIR/kol-runtime.lib.sh"
+# shellcheck source=runtime.lib.sh
+source "$SCRIPT_DIR/runtime.lib.sh"
 # SEE-1148 P2: arbiter PID-liveness standard (kill -0 + /proc/<pid>/exe node
 # check) — the registry sweep reuses it verbatim so a registry entry is judged
 # by the same rule the arbiter uses to judge a held dir (Atlas 子步骤约束4:
@@ -225,7 +225,7 @@ kill_editor_pid() {
 while IFS= read -r lease; do
     [[ -n "$lease" ]] || continue
     TOTAL=$((TOTAL+1))
-    worktree_dir="$(dirname "$(dirname "$lease")")"   # .../<hash>/workdir/KingOfLikes-Godot
+    worktree_dir="$(dirname "$(dirname "$lease")")"   # .../<hash>/workdir/<repo-dirname>
     project_godot="${worktree_dir}/project.godot"
 
     # Read every field in one node invocation; invalid JSON -> node exits

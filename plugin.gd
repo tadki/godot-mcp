@@ -225,12 +225,22 @@ func _get_listen_port() -> int:
 			"sidecar lease state=active but port %d is out of range; falling through" % lease_port
 		)
 
+	# §4.5.3 T2 / K5: canonical port env is GODOT_MCP_PORT; KOL_MCP_PORT is kept
+	# as a backward-compat of the same value, read FIRST so pre-T2 launchers that
+	# still export it keep working unmodified (alias precedence: KOL wins).
 	var env_port_str := OS.get_environment("KOL_MCP_PORT")
+	if env_port_str.is_empty():
+		env_port_str = OS.get_environment("GODOT_MCP_PORT")
 	if not env_port_str.is_empty():
 		var env_port := int(env_port_str)
 		if env_port >= MCPConstants.PORT_MIN and env_port <= MCPConstants.PORT_MAX:
 			return env_port
-		MCPLog.warn("KOL_MCP_PORT='%s' is not a valid port; falling through" % env_port_str)
+		MCPLog.warn(
+			(
+				"%s='%s' is not a valid port; falling through"
+				% ["KOL_MCP_PORT/GODOT_MCP_PORT", env_port_str]
+			)
+		)
 
 	if _get_port_override_enabled():
 		return _get_port_override()

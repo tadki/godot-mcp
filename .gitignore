@@ -16,24 +16,24 @@ server/src/*.js
 .DS_Store
 Thumbs.db
 
-# Godot test project
+# Godot test project (legacy godot/ tree — retired since SEE-1268 T1)
 godot/*
 !godot/addons/
 godot/addons/*
 !godot/addons/godot_mcp/
-!godot/addons/godot_mcp/**
 godot/.editorconfig
 
 # Godot
 .godot/
 *.import
-# Ignore .uid files in the throwaway test project, but TRACK the ones inside
-# the distributed addon: Godot expects plugin authors to ship script .uid
-# sidecars so the addon's resource identity is stable across machines (a
-# missing sidecar makes any uid:// reference to an addon script fall back to
+# The addon body lives at the repo ROOT since SEE-1268 T1 (no godot/ tree).
+# Track the addon's script .uid sidecars so its resource identity is stable
+# across machines (a missing sidecar makes any uid:// reference fall back to
 # path with a load warning). See Godot VCS docs / 4.4 release notes.
 *.uid
-!godot/addons/godot_mcp/**/*.uid
+!*.gd.uid
+!*.tscn.uid
+!plugin.cfg.uid
 
 # Environment
 .env

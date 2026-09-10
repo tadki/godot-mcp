@@ -20,7 +20,7 @@
 
 KOL_SLOT_FALLBACK="solo"
 
-# kol_runtime_id_regex: the canonical regex matching a real slot runtime_id
+# mcp_runtime_id_regex: the canonical regex matching a real slot runtime_id
 # "<agent>-<hex>". The agent name accepts letters/digits/underscore/hyphen
 # (leading char must be a letter — covers both `Bachi-` and `bachi-` case
 # variance); the slot hash is lowercase hex (8 chars in the legacy bare-dir
@@ -29,11 +29,11 @@ KOL_SLOT_FALLBACK="solo"
 # must never qualify for the legacy-flat lifecycle cleanup (F3). Single source
 # of truth: the reaper and the T15/T16 tests all reference this instead of
 # hardcoding the pattern.
-kol_runtime_id_regex() {
+mcp_runtime_id_regex() {
     printf '%s\n' '^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8,}$'
 }
 
-# kol_slot_hash_for <worktree>: print the hex slot hash or nothing.
+# mcp_slot_hash_for <worktree>: print the hex slot hash or nothing.
 # The multica slot dir is "<prefix>-<hex>" (SEE-1244 并发隔离修复): the current
 # platform names task slots `<workspace>/see-<issue>-<12hex>/…` (e.g.
 # `see-1259-aa4de5376e75`), and the legacy layout used a bare `<8hex>` dir
@@ -45,10 +45,11 @@ kol_runtime_id_regex() {
 # `-separated` component of the slot dir must be hex; if it is, use it as the
 # hash (any length, 8+ hex stable). A slot dir with no trailing hex (not a
 # real slot) still returns nothing → `<agent>-solo`.
-kol_slot_hash_for() {
+mcp_slot_hash_for() {
     local wt="${1:-}" rest h tail
     [[ -n "$wt" ]] || return 1
-    rest="${wt#*/multica_workspaces/*/}"   # drop <home>/multica_workspaces/<ws>/
+    local base="${GODOT_MCP_WORKSPACES_BASE:-${HOME}/multica_workspaces}"
+    rest="${wt#*"${base}"/*/}"   # drop <base>/<ws>/ (base env-overridable, §4.5.3 T2)
     h="${rest%%/*}"                         # first component = the slot dir
     tail="${h##*-}"                         # last -segmented component
     if [[ "$tail" =~ ^[0-9a-f]{8,}$ ]]; then
@@ -58,12 +59,12 @@ kol_slot_hash_for() {
     return 1
 }
 
-# kol_derive_runtime_id <agent_name> [worktree]: print "<agent>-<hash8>" or
+# mcp_derive_runtime_id <agent_name> [worktree]: print "<agent>-<hash8>" or
 # "<agent>-solo". Degrades gracefully — never fails.
-kol_derive_runtime_id() {
+mcp_derive_runtime_id() {
     local agent="${1:-}" wt="${2:-${KOL_WORKTREE:-}}"
     local h
-    h="$(kol_slot_hash_for "$wt" || true)"
+    h="$(mcp_slot_hash_for "$wt" || true)"
     if [[ -z "$agent" ]]; then
         # No agent name either (should not happen on the real paths) — hash alone.
         printf '%s\n' "${h:-$KOL_SLOT_FALLBACK}"
@@ -72,8 +73,8 @@ kol_derive_runtime_id() {
     printf '%s\n' "${agent}-${h:-$KOL_SLOT_FALLBACK}"
 }
 
-# kol_state_dir: the directory-form lifecycle home.
-kol_state_dir() {
+# mcp_state_dir: the directory-form lifecycle home.
+mcp_state_dir() {
     printf '%s\n' "${HOME}/.multica/godot-editor"
 }
 
@@ -109,3 +110,10 @@ kol_lifecycle_path() {
         printf '%s\n' "$legacy"
     fi
 }
+
+
+# --- legacy KOL_* aliases (SEE-1268 §4.5.3 T2): 存量调用零破坏 ---
+kol_slot_hash_for() { mcp_slot_hash_for "$@"; }
+kol_runtime_id_regex() { mcp_runtime_id_regex "$@"; }
+kol_derive_runtime_id() { mcp_derive_runtime_id "$@"; }
+kol_state_dir() { mcp_state_dir "$@"; }

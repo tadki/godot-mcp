@@ -24,7 +24,11 @@
 set -euo pipefail
 
 LAUNCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${LAUNCH_DIR}/../../.." && pwd)"
+# §4.5.3 T2: post-reorg the library IS at the repo root, so the repo root is
+# LAUNCH_DIR's parent (previously ../.. from .dev/godot-mcp/launch). K8 note:
+# the unit's ExecStart is rendered here at INSTALL time — a stale unit must be
+# re-installed (this script) after the checkout moves, never auto-repaired.
+REPO_ROOT="$(cd "${LAUNCH_DIR}/.." && pwd)"
 UNIT_SRC_SERVICE="${LAUNCH_DIR}/godot-mcp-reaper.service"
 UNIT_SRC_TIMER="${LAUNCH_DIR}/godot-mcp-reaper.timer"
 UNIT_DIR="${HOME}/.config/systemd/user"
@@ -52,7 +56,7 @@ case "$cmd" in
         # (LOW-6, Atlas Final Review): sed treats `&` in the replacement as
         # "the whole match" and `|` as the delimiter — a REPO_ROOT containing
         # either would corrupt the unit. awk string assignment is literal.
-        awk -v es="ExecStart=${REPO_ROOT}/.dev/godot-mcp/launch/resident-reaper.sh" \
+        awk -v es="ExecStart=${REPO_ROOT}/launch/resident-reaper.sh" \
             '{ if ($0 ~ /^ExecStart=/) print es; else print $0 }' \
             "$UNIT_SRC_SERVICE" > "${UNIT_DIR}/godot-mcp-reaper.service"
         cp "$UNIT_SRC_TIMER" "${UNIT_DIR}/godot-mcp-reaper.timer"

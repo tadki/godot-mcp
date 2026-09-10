@@ -40,6 +40,8 @@ exec {ORIG_STDIN}<&0
 exec 0</dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=env.sh
+. "${SCRIPT_DIR}/env.sh"
 
 MCP_TIMEOUT_SEC=60
 
@@ -221,7 +223,8 @@ resolve_mcp_host() {
 # falls back to the shared master, $SCRIPT_DIR, or any implicit D-drive path.
 # The shared-master path appears ONLY in the §7.1 防线 3 rejection list
 # (proxy spawn-time guard), never as a launcher resolution candidate.
-SHARED_MASTER_WORKTREE="/mnt/d/GodotProjects/king-of-likes"
+# §4.5.3 T2: env-overridable; empty default = probe-failure fallback (K5 rule)
+SHARED_MASTER_WORKTREE="${GODOT_MCP_SHARED_MASTER:-}"
 
 _is_shared_master() {
     local p="${1%/}"
@@ -300,7 +303,7 @@ _decode_marker_hash() {
     ws_enc="${ws_base#/}"
     ws_enc="${ws_enc////_}"
     prefix=".cc-aligned-_${ws_enc}_"
-    suffix="_workdir_KingOfLikes-Godot"
+    suffix="_workdir_${GODOT_MCP_REPO_DIRNAME}"
     [[ "$marker" == "$prefix"*"$suffix" ]] || return 1
     rest="${marker#"$prefix"}"
     hash="${rest%"$suffix"}"
@@ -319,8 +322,8 @@ _decode_marker_hash() {
 # Prints each candidate dir; nothing printed when no alias exists.
 _ws_base_candidates() {
     local d meta wsid
-    printf '%s\n' "${HOME}/multica_workspaces/${MULTICA_WORKSPACE_ID}"
-    for d in "${HOME}"/multica_workspaces/*/; do
+    printf '%s\n' "${GODOT_MCP_WORKSPACES_BASE}/${MULTICA_WORKSPACE_ID}"
+    for d in "${GODOT_MCP_WORKSPACES_BASE}"/*/; do
         [[ -d "$d" ]] || continue
         # Alias dirs are sibling containers (seed-*), not the UUID one itself.
         [[ "$(basename "$d")" == "$MULTICA_WORKSPACE_ID" ]] && continue
@@ -359,7 +362,7 @@ _resolve_via_runtime_registry() {
                     [[ -f "$meta" ]] || continue
                     grep -q "\"agent_id\":[[:space:]]*\"${MULTICA_AGENT_ID}\"" "$meta" || continue
                     hash="$(basename "$(dirname "$meta")")"
-                    worktree="$ws_base/$hash/workdir/KingOfLikes-Godot"
+                    worktree="$ws_base/$hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
                     [[ -d "$worktree/.dev/godot-mcp/launch" ]] || continue
                     if [[ "$(_encode_workdir_marker "$worktree")" == "$marker" ]]; then
                         printf '%s\n' "$worktree"
@@ -415,7 +418,7 @@ _resolve_via_runtime_registry() {
                     # freshest-mtime winner.
                     grep -q "\"agent_id\":[[:space:]]*\"${MULTICA_AGENT_ID}\"" "$meta" || continue
                 fi
-                worktree="$ws_base/$hash/workdir/KingOfLikes-Godot"
+                worktree="$ws_base/$hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
                 printf '%s\n' "$worktree"
                 return 0
             done
@@ -455,7 +458,7 @@ _resolve_via_runtime_registry() {
                     if [[ -f "$cwd_meta" ]]; then
                         # Cross-agent gate: cwd slot must belong to this agent.
                         if grep -q "\"agent_id\":[[:space:]]*\"${MULTICA_AGENT_ID}\"" "$cwd_meta"; then
-                            printf '%s\n' "$ws_base/$cwd_hash/workdir/KingOfLikes-Godot"
+                            printf '%s\n' "$ws_base/$cwd_hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
                             return 0
                         fi
                         # cwd slot is a different agent's — fall through to freshest-mtime
@@ -463,7 +466,7 @@ _resolve_via_runtime_registry() {
                     else
                         # managed_env not yet written (daemon lag): trust cwd, same B1
                         # lazy-load trust (a2) extends to the runtime hash dir.
-                        printf '%s\n' "$ws_base/$cwd_hash/workdir/KingOfLikes-Godot"
+                        printf '%s\n' "$ws_base/$cwd_hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
                         return 0
                     fi
                 fi
@@ -479,7 +482,7 @@ _resolve_via_runtime_registry() {
             [[ -f "$meta" ]] || continue
             grep -q "\"agent_id\":[[:space:]]*\"${MULTICA_AGENT_ID}\"" "$meta" || continue
             hash="$(basename "$(dirname "$meta")")"
-            worktree="$ws_base/$hash/workdir/KingOfLikes-Godot"
+            worktree="$ws_base/$hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
             [[ -d "$worktree/.dev/godot-mcp/launch" ]] || continue
             mtime="$(stat -c %Y "$meta" 2>/dev/null || echo 0)"
             if (( mtime > best_mtime )); then
@@ -488,7 +491,7 @@ _resolve_via_runtime_registry() {
             fi
         done
         if [[ -n "$best_hash" ]]; then
-            printf '%s\n' "$ws_base/$best_hash/workdir/KingOfLikes-Godot"
+            printf '%s\n' "$ws_base/$best_hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
             return 0
         fi
     done
@@ -567,6 +570,8 @@ PORT=""
 NAME=""
 if [[ -n "$EXPLICIT_PORT" ]]; then
     PORT="$EXPLICIT_PORT"
+elif [[ -n "${GODOT_MCP_PORT:-}" ]]; then
+    PORT="$GODOT_MCP_PORT"
 elif [[ -n "${KOL_MCP_PORT:-}" ]]; then
     PORT="$KOL_MCP_PORT"
 else
@@ -609,7 +614,7 @@ else
     _RETRY_N=0
     while ! CURRENT_WORKTREE="$(resolve_worktree_root)"; do
         if (( _WAITED_S >= _WORKTREE_WAIT_MAX_S )); then
-            die "could not resolve a private Godot worktree after waiting ${_WAITED_S}s (${_RETRY_N} retries, KOL_WORKTREE_WAIT_S=${_WORKTREE_WAIT_MAX_S}); the workdir checkout may never have landed. Re-launch the launcher from your KingOfLikes-Godot workdir (e.g. ~/multica_workspaces/<workspace>/<hash>/workdir/KingOfLikes-Godot), or set KOL_WORKTREE / KOL_PROJECT_GODOT explicitly. Refusing to fall back to the shared master checkout."
+            die "could not resolve a private Godot worktree after waiting ${_WAITED_S}s (${_RETRY_N} retries, KOL_WORKTREE_WAIT_S=${_WORKTREE_WAIT_MAX_S}); the workdir checkout may never have landed. Re-launch the launcher from your Godot workdir (e.g. ~/multica_workspaces/<workspace>/<hash>/workdir/${GODOT_MCP_REPO_DIRNAME}), or set KOL_WORKTREE / KOL_PROJECT_GODOT explicitly. Refusing to fall back to the shared master checkout."
         fi
         _RETRY_N=$(( _RETRY_N + 1 ))
         _WAITED_S=$(( _WAITED_S + _WORKTREE_WAIT_INTERVAL_S ))
@@ -638,8 +643,8 @@ LABEL="$(agent_label_for_port "$PORT")"
 # KOL_RUNTIME_ID so the proxy, helper scripts, and editor cmdline all share
 # one identity for the SAME task slot — even when the same agent owns several
 # concurrent slots (which today collide on a shared per-agent log path).
-# shellcheck source=kol-runtime.lib.sh
-source "${SCRIPT_DIR}/kol-runtime.lib.sh"
+# shellcheck source=runtime.lib.sh
+source "${SCRIPT_DIR}/runtime.lib.sh"
 if [[ -z "${KOL_RUNTIME_ID:-}" ]]; then
     KOL_RUNTIME_ID="$(kol_derive_runtime_id "${KOL_AGENT_NAME:-${LABEL}}" "$CURRENT_WORKTREE")"
 fi
@@ -819,7 +824,10 @@ if (( ARBITER_ON == 1 && EXPLICIT_PORT_GIVEN == 0 )); then
         die "dynamic port pool (6560-6609) exhausted or arbiter failed for runtime_id=${KOL_RUNTIME_ID}; refusing to fall back to shared legacy port ${PORT} (would resurrect same-agent mutual-kick). Free a held port (reap-stale-leases.sh) or pass --port explicitly."
     fi
     # Record the granted port in the launcher env so the proxy + helper
-    # children (configure/start) all bind the SAME dynamic port.
+    # children (configure/start) all bind the SAME dynamic port. §4.5.3 T2:
+    # set BOTH canonical (GODOT_MCP_PORT) and the KOL_ legacy alias so
+    # pre-T2 addon builds that still read KOL_MCP_PORT keep working.
+    export GODOT_MCP_PORT="$PORT"
     export KOL_MCP_PORT="$PORT"
 fi
 
@@ -861,7 +869,7 @@ if [[ -f "$PORT_REGISTRY_PATH" && -n "${KOL_WORKTREE:-}" ]]; then
         ' 2>/dev/null || true
     )"
     if [[ -n "$_wt_holder" ]]; then
-        die "same-worktree contention: worktree ${KOL_WORKTREE} is already served by a LIVE runtime (${_wt_holder}). Concurrency granularity is the worktree — this slot must use its OWN per-slot worktree (multica repo checkout). Re-launch this launcher from this slot's own workdir (~/multica_workspaces/<ws>/<this-slot-hash>/workdir/KingOfLikes-Godot), or set KOL_WORKTREE/KOL_PROJECT_GODOT to a distinct checkout. Refusing to spawn a second editor on one worktree (no queueing, no addon exception)."
+        die "same-worktree contention: worktree ${KOL_WORKTREE} is already served by a LIVE runtime (${_wt_holder}). Concurrency granularity is the worktree — this slot must use its OWN per-slot worktree (multica repo checkout). Re-launch this launcher from this slot's own workdir (~/multica_workspaces/<ws>/<this-slot-hash>/workdir/${GODOT_MCP_REPO_DIRNAME}), or set KOL_WORKTREE/KOL_PROJECT_GODOT to a distinct checkout. Refusing to spawn a second editor on one worktree (no queueing, no addon exception)."
     fi
 fi
 
@@ -917,7 +925,7 @@ export KOL_DIRECT_GODOT_MCP="${KOL_DIRECT_GODOT_MCP:-1}"
 # `node <path>`, so this one export switches the toolchain to the fork. Both
 # exports are DEFAULT-ONLY (${VAR:-...}): an external override (a test harness
 # that mocks npx, or an operator pointing elsewhere) wins, keeping the seam.
-FORK_CLI="/mnt/d/GodotProjects/forks/godot-mcp/server/dist/cli.js"
+FORK_CLI="${GODOT_MCP_FORK_CLI:-${SCRIPT_DIR}/../server/dist/cli.js}"
 if [[ -x "$FORK_CLI" ]]; then
     export KOL_GODOT_MCP_CMD="${KOL_GODOT_MCP_CMD:-$FORK_CLI}"
     export GODOT_MCP_QUICK_TIMEOUT_MS="${GODOT_MCP_QUICK_TIMEOUT_MS:-90000}"
