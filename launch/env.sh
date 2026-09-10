@@ -13,9 +13,12 @@
 # proxy :2218 / configure :227 / prepare-worktree :142). Default = unset:
 # consumers that need it must provide it; probe-failure semantics downstream.
 : "${GODOT_MCP_SHARED_MASTER:=}"
+# KOL_SHARED_MASTER read must tolerate `set -u` in the sourcing launcher — use
+# default-only expansion, not a bare read.
 : "${KOL_SHARED_MASTER:-}"
-[ -n "$KOL_SHARED_MASTER" ] && [ -z "$GODOT_MCP_SHARED_MASTER" ] && \
+if [ -z "${GODOT_MCP_SHARED_MASTER:-}" ] && [ -n "${KOL_SHARED_MASTER:-}" ]; then
   GODOT_MCP_SHARED_MASTER="$KOL_SHARED_MASTER"
+fi
 
 # Workdir checkout dirname under multica workspaces (was literal
 # KingOfLikes-Godot in launcher :303,362,418,458,466,482,491).

@@ -77,18 +77,19 @@ echo "== 5. legacy aliases still resolve =="
 [[ "$(probe '' 'kol_runtime_id_regex')" == '^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8,}$' ]] && ok "kol_runtime_id_regex alias" || bad "kol_runtime_id_regex alias"
 [[ "$(probe '' 'kol_derive_runtime_id Bachi "$HOME/multica_workspaces/seed-ws/5d621003/workdir/KingOfLikes-Godot"')" == "Bachi-5d621003" ]] && ok "kol_derive_runtime_id alias" || bad "kol_derive_runtime_id alias"
 
-echo "== 6. isGodotWorktree dual-probe (proxy helper, static re-implementation) =="
+echo "== 6. isGodotWorktree multi-location probe (proxy helper, static re-implementation) =="
 # Exercise the SAME predicate shape the proxy now uses: project.godot present,
-# and EITHER root launch/ OR legacy .dev/godot-mcp/launch present.
+# and ANY of root launch/ / legacy .dev/godot-mcp/launch / addons/godot_mcp/launch.
 mkproj() { local d="$1"; mkdir -p "$d"; echo 'config_version=5' > "$d/project.godot"; }
 probe_iswt() { # <dir> -> 1 if worktree
     local dir="$1"
     [[ -f "$dir/project.godot" ]] || return 1
-    { [[ -d "$dir/launch" ]] || [[ -d "$dir/.dev/godot-mcp/launch" ]]; }
+    { [[ -d "$dir/launch" ]] || [[ -d "$dir/.dev/godot-mcp/launch" ]] || [[ -d "$dir/addons/godot_mcp/launch" ]]; }
 }
 tmp="$(mktemp -d)"
 ( cd "$tmp" && mkproj root-layout && mkdir -p root-layout/launch && probe_iswt "$tmp/root-layout" ) && ok "root launch/ layout recognized" || bad "root launch/ layout"
 ( cd "$tmp" && mkproj legacy-layout && mkdir -p legacy-layout/.dev/godot-mcp/launch && probe_iswt "$tmp/legacy-layout" ) && ok "legacy .dev/godot-mcp/launch layout recognized" || bad "legacy layout"
+( cd "$tmp" && mkproj submod-layout && mkdir -p submod-layout/addons/godot_mcp/launch && probe_iswt "$tmp/submod-layout" ) && ok "post-T4 addons/godot_mcp/launch layout recognized" || bad "submod layout"
 ( cd "$tmp" && mkproj no-toolchain && probe_iswt "$tmp/no-toolchain" ) && bad "project.godot alone should NOT qualify" || ok "project.godot alone rejected"
 ( cd "$tmp" && mkdir -p unrelated && probe_iswt "$tmp/unrelated" ) && bad "no project.godot should NOT qualify" || ok "no project.godot rejected"
 rm -rf "$tmp"

@@ -2230,16 +2230,22 @@ function isSharedMasterWorktree(worktree) {
 // godot-mcp launch toolchain (proving it is the agent's KingOfLikes-Godot
 // checkout, not an unrelated Godot project).
 //
-// §4.5.3 T2 / K3 dual-location probe: post-reorg launch/ lives at the repo ROOT
-// (submodule mount point); the legacy `.dev/godot-mcp/launch` path still exists
-// during the transition/old-checkout window. Accept either so both layouts are
-// recognized.
+// §4.5.3 T2 / K3 multi-location probe — accept every real layout the toolchain
+// can run from, so worktree resolution never falls through onto the shared
+// master:
+//   (a) repo-root launch/   — standalone install / fork-as-addon at project root
+//   (b) .dev/godot-mcp/launch — legacy KOL layout (transition window)
+//   (c) addons/godot_mcp/launch — post-T4 KOL: addon+launch mounted as a
+//       submodule under <project>/addons/godot_mcp
+// Each is a separate marker; the probe is Monotone (any one suffices, none =
+// not a godot-mcp worktree).
 async function isGodotWorktree(dir) {
     try {
         await stat(path.join(dir, 'project.godot'));
         const inRepo = await stat(path.join(dir, 'launch')).catch(() => null);
         const legacy = await stat(path.join(dir, '.dev', 'godot-mcp', 'launch')).catch(() => null);
-        return Boolean(inRepo || legacy);
+        const submod = await stat(path.join(dir, 'addons', 'godot_mcp', 'launch')).catch(() => null);
+        return Boolean(inRepo || legacy || submod);
     } catch {
         return false;
     }
