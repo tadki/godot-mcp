@@ -273,6 +273,88 @@
                 "look"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mouse_move": {
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "description": "Absolute mouse move: teleport the virtual cursor to [x, y] in VIEWPORT/canvas space, injected as a single InputEventMouseMotion with position set and zero relative. Drives Control._gui_input, mouse_entered/exited, and any _input handler that reads event.position; does NOT move the polled OS cursor (games that poll get_mouse_position() will not see this — see the spike doc)."
+                },
+                "start_ms": {
+                  "default": 0,
+                  "description": "When to start the input (milliseconds from sequence start)",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "duration_ms": {
+                  "default": 0,
+                  "description": "How long to hold the input (0 = instant tap; axes return to 0 at the end)",
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "mouse_move"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mouse_button": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "description": "Viewport/canvas-space x of the click."
+                    },
+                    "y": {
+                      "type": "number",
+                      "description": "Viewport/canvas-space y of the click."
+                    },
+                    "button": {
+                      "default": "left",
+                      "description": "Mouse button (default \"left\").",
+                      "type": "string",
+                      "enum": [
+                        "left",
+                        "right",
+                        "middle",
+                        "wheel_up",
+                        "wheel_down"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Absolute mouse click at (x, y) in VIEWPORT/canvas space. Emits press at start_ms and a guaranteed paired release at start_ms+duration_ms (0 = tap). Drives Control._gui_input and any _input handler that reads event.position; does NOT move the polled OS cursor (see the spike doc)."
+                },
+                "start_ms": {
+                  "default": 0,
+                  "description": "When to start the input (milliseconds from sequence start)",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "duration_ms": {
+                  "default": 0,
+                  "description": "How long to hold the input (0 = instant tap; axes return to 0 at the end)",
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "mouse_button"
+              ],
+              "additionalProperties": false
             }
           ]
         },
