@@ -2221,7 +2221,12 @@ async function resolveWorktreeForSpawn() {
 const SHARED_MASTER_WORKTREE = process.env.GODOT_MCP_SHARED_MASTER || '';
 
 function isSharedMasterWorktree(worktree) {
-    if (!worktree) return false;
+    // AC-M3REORG-011: empty SHARED_MASTER_WORKTREE (K5 probe-failure default)
+    // must guard NOTHING — '' + '/' makes startsWith('/') true for every
+    // absolute path, fail-closing every worktree as "shared master" (the JS
+    // twin of the shell _is_shared_master empty-guard added in T2-M1; this
+    // copy was missed in that sync — Revy 串行测 1/3 caught it).
+    if (!worktree || !SHARED_MASTER_WORKTREE) return false;
     return worktree === SHARED_MASTER_WORKTREE
         || worktree.startsWith(SHARED_MASTER_WORKTREE + '/');
 }
