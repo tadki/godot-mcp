@@ -342,7 +342,13 @@ for (const d of dirs) {
                 }
             }
             // Verdict mirrors the SEE-1078 incident: missing/dangling command = broken registration.
-            g.verdict = (g.command_exists && g.command_executable) ? "ok" : "broken";
+            // SEE-1288: a dangling command under the SEE-1273 T5-F RETIRED legacy
+            // launch path (/.dev/godot-mcp/launch/) is stale /tmp mcp-config
+            // residue, not a live-chain break — downgrade to "stale" so doctor
+            // WARNs (visible hygiene signal) instead of FAILing the current chain.
+            // Every OTHER dangling path keeps verdict=broken (SEE-1078 detection).
+            g.stale_retired_path = !(g.command_exists && g.command_executable) && cmd.includes("/.dev/godot-mcp/launch/");
+            g.verdict = (g.command_exists && g.command_executable) ? "ok" : (g.stale_retired_path ? "stale" : "broken");
             entry.godot_servers.push(g);
         }
     } catch (e) {

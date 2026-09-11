@@ -182,6 +182,12 @@ while IFS= read -r line; do
         add_verdict "WARN" "registration:${cfg_name}" "/tmp/multica-mcp-*/mcp-config.json 中未发现任何 godot-mcp server 条目（可能平台未注入或全部缺失——mcp_config 缺失形态，2026-08-01 事故同款）"
         continue
     fi
+    # SEE-1288: verdict=stale = command 指向 SEE-1273 T5-F 已退役 legacy 路径的
+    # /tmp mcp-config 残留（非当前链路断裂）→ WARN 卫生提示，不计 FAIL。
+    if [[ "$verdict" == "stale" ]]; then
+        add_verdict "WARN" "registration:${cfg_name}/${srv}" "command 指向已退役 legacy 路径: ${cmd}（SEE-1273 T5-F 退役残留 stale mcp-config；清理该 /tmp/multica-mcp-*/ 条目即可，不影响当前链路）"
+        continue
+    fi
     TOTAL_GODOT=$((TOTAL_GODOT+1))
     if [[ "$verdict" == "broken" ]]; then
         add_verdict "FAIL" "registration:${cfg_name}/${srv}" "command 指向失效: ${cmd}（2026-08-01 事故形态：mcp_config 指向已删除路径 → server 拉起失败 → 工具不注册）"
