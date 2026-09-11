@@ -32,7 +32,11 @@
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-LAUNCH_DIR=="$REPO_ROOT/addons/godot_mcp/launch"
+# Run context: the KOL worktree under test (see header note). Default = the
+# enclosing KOL checkout; set KOL_ROOT explicitly when running from the fork
+# checkout (launch/tests/) to point at the KOL worktree being exercised.
+KOL_ROOT="${KOL_ROOT:-$REPO_ROOT}"
+LAUNCH_DIR="${KOL_ROOT}/addons/godot_mcp/launch"
 CONFIGURE="$LAUNCH_DIR/configure-mcp-port.sh"
 RESTORE="$LAUNCH_DIR/restore-godot-original.sh"
 VERIFY="$LAUNCH_DIR/verify-godot-written-back.sh"

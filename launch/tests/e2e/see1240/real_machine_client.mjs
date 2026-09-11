@@ -11,7 +11,22 @@ const PORT = process.env.RM_PORT || '6560';
 const HOST = process.env.RM_HOST || '127.0.0.1';
 // SEE-1273 T3: 双落点（优先 submodule、兜底旧路径）
 import { existsSync as _mcp_exists } from "node:fs";
-const PROXY = process.env.RM_PROXY || "addons/godot_mcp/launch/godot-mcp-proxy.mjs";
+// SEE-1287 AC-FIX-004: run context — these clients drive the godot-mcp
+// proxy. Resolution order:
+//   1. RM_PROXY env (absolute or cwd-relative path) — explicit override;
+//   2. when this file lives inside a KOL checkout (fork mounted as
+//      addons/godot_mcp): <KOL root>/addons/godot_mcp/launch/godot-mcp-proxy.mjs;
+//   3. pure fork checkout fallback: <fork root>/launch/godot-mcp-proxy.mjs.
+// In both default cases the path resolves to an existing file.
+const _this_dir = new URL('.', import.meta.url).pathname.replace(/\/$/, '');
+const _fork_root = new URL('../../../../', import.meta.url).pathname.replace(/\/$/, '');
+const _kol_root = process.env.KOL_ROOT || (() => {
+    const up2 = new URL('../../../../../../', import.meta.url).pathname.replace(/\/$/, '');
+    return _fork_root.endsWith('/addons/godot_mcp') ? up2 : _fork_root;
+})();
+const PROXY = process.env.RM_PROXY || (_fork_root.endsWith('/addons/godot_mcp')
+    ? `${_kol_root}/addons/godot_mcp/launch/godot-mcp-proxy.mjs`
+    : `${_fork_root}/launch/godot-mcp-proxy.mjs`);
 const WORKTREE = process.env.RM_WORKTREE || process.cwd();
 const OUT = process.env.RM_OUT || 'launch/tests/e2e/see1240/rm-client.log';
 

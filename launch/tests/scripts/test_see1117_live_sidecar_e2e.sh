@@ -26,16 +26,25 @@
 # Environment knobs:
 #   KOL_AGENT_NAME  default "Revy"
 #   KOL_MCP_PORT    default 6555
+#   KOL_ROOT        KOL worktree root when running against a KOL checkout
+#                   (this suite drives KOL-side hooks/editor resources via
+#                   HOOKS_DIR under REPO_ROOT — the run context is a KOL
+#                   worktree with the fork mounted as addons/godot_mcp; from
+#                   a pure fork checkout the hook-driven arms need KOL_ROOT).
 
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-LAUNCH_DIR=="$REPO_ROOT/addons/godot_mcp/launch"
-HOOKS_DIR="$REPO_ROOT/.claude/hooks"
+# Run context: the KOL worktree under test (see header note). Default = the
+# enclosing KOL checkout; set KOL_ROOT explicitly when running from the fork
+# checkout (launch/tests/) to point at the KOL worktree being exercised.
+KOL_ROOT="${KOL_ROOT:-$REPO_ROOT}"
+LAUNCH_DIR="${KOL_ROOT}/addons/godot_mcp/launch"
+HOOKS_DIR="${KOL_ROOT}/.claude/hooks"
 POWERSHELL="/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 AGENT="${KOL_AGENT_NAME:-Revy}"
 PORT="${KOL_MCP_PORT:-6555}"
-SIDECAR="$REPO_ROOT/.godot/mcp-lease.json"
+SIDECAR="$KOL_ROOT/.godot/mcp-lease.json"
 EDITOR_LOG="${HOME}/.multica/godot-editor-$(printf '%s' "$AGENT" | tr '[:upper:]' '[:lower:]').log"
 
 PASS=0
@@ -116,11 +125,11 @@ rm -f "$SIDECAR"
 [ ! -f "$SIDECAR" ] && pass "C2-sidecar removed" || fail "C2-sidecar still present"
 
 note "[3/4] git status worktree (must not touch project.godot)"
-if git -C "$REPO_ROOT" diff --quiet HEAD -- project.godot; then
+if git -C "$KOL_ROOT" diff --quiet HEAD -- project.godot; then
     pass "C3-project.godot clean vs HEAD"
 else
     fail "C3-project.godot dirty before start (see diff below)"
-    git -C "$REPO_ROOT" diff HEAD -- project.godot | head -20
+    git -C "$KOL_ROOT" diff HEAD -- project.godot | head -20
 fi
 
 note "[4/4] sidecar absent confirmed"
@@ -140,7 +149,7 @@ else
     fail "B1.pre sidecar wrong: state=$state port=$port lease_id=$lease_id"
 fi
 
-KOL_WORKTREE="$REPO_ROOT" bash "$LAUNCH_DIR/start-godot-editor.sh" "$AGENT" >/dev/null 2>&1 \
+KOL_WORKTREE="$KOL_ROOT" bash "$LAUNCH_DIR/start-godot-editor.sh" "$AGENT" >/dev/null 2>&1 \
     || { fail "B1 editor launch"; }
 
 if wait_for_listen "$PORT" 90; then
@@ -158,11 +167,11 @@ else
 fi
 
 # B3: project.godot byte-identical vs HEAD after editor startup
-if git -C "$REPO_ROOT" diff --quiet HEAD -- project.godot; then
+if git -C "$KOL_ROOT" diff --quiet HEAD -- project.godot; then
     pass "B3 project.godot byte-identical vs HEAD after editor boot"
 else
     fail "B3 project.godot CHANGED by editor boot (Phase 1 P0 regression?)"
-    git -C "$REPO_ROOT" diff HEAD -- project.godot | head -20
+    git -C "$KOL_ROOT" diff HEAD -- project.godot | head -20
 fi
 
 # B4: force ProjectSettings.save via UI is not feasible from bash; instead
@@ -186,7 +195,7 @@ fi
 note "B5: kill editor, rm sidecar, launch editor, expect listen 6550"
 kill_all_editors
 rm -f "$SIDECAR"
-KOL_WORKTREE="$REPO_ROOT" bash "$LAUNCH_DIR/start-godot-editor.sh" "$AGENT" >/dev/null 2>&1
+KOL_WORKTREE="$KOL_ROOT" bash "$LAUNCH_DIR/start-godot-editor.sh" "$AGENT" >/dev/null 2>&1
 # Note: start-godot-editor.sh might refuse if it requires a sidecar — check
 # the actual behavior.
 sleep 5
@@ -208,10 +217,10 @@ fi
 note "B6: released sidecar, editor should still listen 6550"
 kill_all_editors
 bash "$LAUNCH_DIR/configure-mcp-port.sh" --port "$PORT" >/dev/null 2>&1
-bash "$LAUNCH_DIR/restore-godot-original.sh" --project-godot "$REPO_ROOT/project.godot" >/dev/null 2>&1
+bash "$LAUNCH_DIR/restore-godot-original.sh" --project-godot "$KOL_ROOT/project.godot" >/dev/null 2>&1
 state=$(sidecar_field state)
 [ "$state" = "released" ] && pass "B6.pre sidecar state=released" || fail "B6.pre sidecar state=$state"
-KOL_WORKTREE="$REPO_ROOT" bash "$LAUNCH_DIR/start-godot-editor.sh" "$AGENT" >/dev/null 2>&1
+KOL_WORKTREE="$KOL_ROOT" bash "$LAUNCH_DIR/start-godot-editor.sh" "$AGENT" >/dev/null 2>&1
 if wait_for_listen 6550 60; then
     pass "B6 released sidecar -> editor listens on 6550"
 elif wait_for_listen "$PORT" 5; then
@@ -260,7 +269,7 @@ PY
 }
 
 hook_env=(
-    PROJECT_ROOT="$REPO_ROOT"
+    PROJECT_ROOT="$KOL_ROOT"
     MULTICA_AGENT_NAME="Atlas"
     MULTICA_AGENT_ID="fac3e3a1-dcda-498d-8613-e8c2811f3ef5"
 )
@@ -269,15 +278,15 @@ hook_env=(
 kill_all_editors
 bash "$LAUNCH_DIR/configure-mcp-port.sh" --port "$PORT" >/dev/null 2>&1
 
-payload_master="$(build_hook_input "$REPO_ROOT" "HEAD:refs/heads/master")"
+payload_master="$(build_hook_input "$KOL_ROOT" "HEAD:refs/heads/master")"
 (
-    cd "$REPO_ROOT"
+    cd "$KOL_ROOT"
     env "${hook_env[@]}" bash "$HOOKS_DIR/push-guard.sh" <<<"$payload_master" >/dev/null 2>"$TMPROOT.d1.err" 2>&1 || true
 )
 # Use a temp file location we control
 mkdir -p /tmp/see1117-d-hooks
 (
-    cd "$REPO_ROOT"
+    cd "$KOL_ROOT"
     env "${hook_env[@]}" bash "$HOOKS_DIR/push-guard.sh" <<<"$payload_master" >/dev/null 2>/tmp/see1117-d-hooks/d1.err
 )
 rc=$?
@@ -302,7 +311,7 @@ d2_repo="$(mktemp -d -t see1117-d2-XXXXXXXX)"
     git config user.name qa
     git config commit.gpgsign false
     mkdir -p .godot
-    cp "$REPO_ROOT/project.godot" .
+    cp "$KOL_ROOT/project.godot" .
     echo '{"state":"active","port":6555}' > .godot/mcp-lease.json
     git add -A
     git commit -q -m "fixture: sidecar committed by force-add"
@@ -327,8 +336,8 @@ note "D3: active sidecar + auto-pr-on-stop -> sidecar released"
 bash "$LAUNCH_DIR/configure-mcp-port.sh" --port "$PORT" >/dev/null 2>&1
 stop_input='{"stop_hook_active":false}'
 (
-    cd "$REPO_ROOT"
-    PROJECT_ROOT="$REPO_ROOT" \
+    cd "$KOL_ROOT"
+    PROJECT_ROOT="$KOL_ROOT" \
     MULTICA_AGENT_NAME="Revy" \
     MULTICA_TASK_ID="" \
     GITHUB_PERSONAL_ACCESS_TOKEN="" \
@@ -345,8 +354,8 @@ fi
 # D4: sidecar absent + auto-pr-on-stop -> no-op, no error
 rm -f "$SIDECAR"
 (
-    cd "$REPO_ROOT"
-    PROJECT_ROOT="$REPO_ROOT" \
+    cd "$KOL_ROOT"
+    PROJECT_ROOT="$KOL_ROOT" \
     MULTICA_AGENT_NAME="Revy" \
     MULTICA_TASK_ID="" \
     GITHUB_PERSONAL_ACCESS_TOKEN="" \
@@ -361,11 +370,11 @@ else
 fi
 
 # D5: corrupted sidecar + auto-pr-on-stop -> fail-soft, no block
-mkdir -p "$REPO_ROOT/.godot"
+mkdir -p "$KOL_ROOT/.godot"
 echo 'this is not json{{{' > "$SIDECAR"
 (
-    cd "$REPO_ROOT"
-    PROJECT_ROOT="$REPO_ROOT" \
+    cd "$KOL_ROOT"
+    PROJECT_ROOT="$KOL_ROOT" \
     MULTICA_AGENT_NAME="Revy" \
     MULTICA_TASK_ID="" \
     GITHUB_PERSONAL_ACCESS_TOKEN="" \
@@ -393,7 +402,7 @@ for agent_port in "Atlas:6551" "Bachi:6553" "Revy:6555"; do
     agent="${agent_port%%:*}"; port="${agent_port##*:}"
     wt="$f_root/$agent"
     mkdir -p "$wt/.godot"
-    cp "$REPO_ROOT/project.godot" "$wt/"
+    cp "$KOL_ROOT/project.godot" "$wt/"
     ( cd "$wt" && git init -q -b test-f && git config user.email qa@qa && git config user.name qa && git config commit.gpgsign false && git add project.godot && git commit -q -m fixture )
     ( cd "$wt" && KOL_PROJECT_GODOT="$wt/project.godot" bash "$LAUNCH_DIR/configure-mcp-port.sh" --port "$port" ) >/dev/null 2>&1
 done
@@ -430,9 +439,9 @@ stop_input='{"stop_hook_active":false}'
         bash "$HOOKS_DIR/auto-pr-on-stop.sh" <<<"$stop_input" >/dev/null 2>/tmp/see1117-d-hooks/f3.err || true
 )
 # Copy launch toolchain so the hook can find it inside the fixture worktree
-# (SEE-1273 T5-F: the hook resolves via the single landing point
-# $PROJECT_ROOT/addons/godot_mcp/launch/restore-godot-original.sh — the legacy
-# .dev/godot-mcp/launch/ copy this comment referenced was retired in T5-F).
+# (SEE-1273 T5-F: the hook resolves the restore script via the single landing
+# point inside the KOL checkout under test — the legacy .dev/godot-mcp/launch/
+# copy referenced here was retired in T5-F).
 # If missing, the hook falls back to sed on project.godot — which is now a
 # no-op for sidecar — so this arm verifies the fallback does NOT touch other
 # sidecars either.
@@ -450,7 +459,7 @@ rm -rf "$f_root"
 
 note "=== teardown ==="
 kill_all_editors
-bash "$LAUNCH_DIR/restore-godot-original.sh" --project-godot "$REPO_ROOT/project.godot" >/dev/null 2>&1 || true
+bash "$LAUNCH_DIR/restore-godot-original.sh" --project-godot "$KOL_ROOT/project.godot" >/dev/null 2>&1 || true
 
 echo
 echo "=== SEE-1117 Direction 3 live e2e summary ==="

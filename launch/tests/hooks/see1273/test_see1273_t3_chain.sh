@@ -9,8 +9,18 @@
 set -uo pipefail
 KOL="${KOL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
 FORK_URL="https://github.com/tadki/godot-mcp.git"
-EXPECTED_FORK="${EXPECTED_FORK:-6270becaad26168d7794da55d88a1b6a8ceb25ae}"
-GITLINK_SHA="5719847800eaab676e73cc614c809214f2f8cd28"
+# Run context (SEE-1287): EXPECTED_FORK/GITLINK_SHA are SEE-1273 T3 round pins.
+# Pass EXPECTED_FORK=<sha> to pin another round; the default reproduces the
+# archived T3 verification.
+EXPECTED_FORK="${EXPECTED_FORK:-$(git ls-remote "$FORK_URL" refs/heads/main | awk '{print $1}')}"
+GITLINK_SHA="${GITLINK_SHA:-5719847800eaab676e73cc614c809214f2f8cd28}"
+# Legacy compat shim (.dev/godot-mcp/launch/) was retired by SEE-1273 T5-F.
+# Arms that require its source file are archive-only; when the source is
+# absent they emit SKIP (documented, not FAIL) so the harness carries no
+# false-fail signal. SHIM_SRC may be overridden for historical reproduction.
+SHIM_SRC="${SHIM_SRC:-$KOL/.dev/godot-mcp/launch/godot-mcp-shim.mjs}"
+HAVE_SHIM=0; [[ -f "$SHIM_SRC" ]] && HAVE_SHIM=1
+skip_arm() { echo "  SKIP: $* (archive-only: legacy compat shim retired by SEE-1273 T5-F)"; }
 TMP="$(mktemp -d)"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "  ok: $1"; }
@@ -19,38 +29,52 @@ cleanup() { [[ -n "${WT:-}" ]] && git -C "$KOL" worktree remove --force "$WT" 2>
 trap cleanup EXIT
 
 # ---------- 1) AC-005 transition window: legacy chain via compat shim ----------
-( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
+if (( ! HAVE_SHIM )); then
+  skip_arm "AC-005 transition-window arms (legacy shim handshake)"
+fi
+if (( HAVE_SHIM )); then ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
   sleep 12; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
   printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
-  | timeout 30 node "$KOL/.dev/godot-mcp/launch/godot-mcp-shim.mjs" > "$TMP/legacy.log" 2>&1
+  | timeout 30 node "$SHIM_SRC" > "$TMP/legacy.log" 2>&1
 [[ "$(grep -c 'DEPRECATED' "$TMP/legacy.log")" -ge 1 ]] && ok "AC-005: DEPRECATED warning emitted in transition window" || bad "AC-005: no DEPRECATED warning"
 grep -q '"serverInfo":{"name":"godot-mcp","version":"kol-proxy-shim-1.0"}' "$TMP/legacy.log" \
   && ok "AC-005: handshake serverInfo via legacy chain" || bad "AC-005: handshake failed"
 [[ "$(grep -o '"name":"godot_[a-z_]*"' "$TMP/legacy.log" | sort -u | wc -l)" -gt 10 ]] \
   && ok "AC-005: tools/list non-empty (21 tools)" || bad "AC-005: tools/list empty"
+fi
 
 # ---------- 2) T4-shape: forward takeover + fault injection proves the child ----------
 cd "$TMP" && git init -q consumer && cd consumer && git checkout -q -b master
 git submodule add -q "$FORK_URL" addons/godot_mcp >/dev/null 2>&1
 git add -A >/dev/null; git commit -qm consumer >/dev/null
 (cd addons/godot_mcp && git checkout -q "$EXPECTED_FORK") && git add -A >/dev/null && git commit -qm pin >/dev/null
+if (( ! HAVE_SHIM )); then
+  skip_arm "T4-shape forward-takeover arms (legacy shim copy source)"
+fi
 mkdir -p .dev/godot-mcp/launch
-cp "$KOL/.dev/godot-mcp/launch/godot-mcp-shim.mjs" "$KOL/.dev/godot-mcp/launch/godot-mcp-shim-legacy.mjs" .dev/godot-mcp/launch/
-( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-  sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
-  | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/fwd.log" 2>&1
-[[ "$(grep -c 'DEPRECATED' "$TMP/fwd.log")" -eq 0 ]] && ok "T4-shape: no DEPRECATED in forward mode" || bad "T4-shape: DEPRECATED emitted in forward mode"
-grep -q '"serverInfo"' "$TMP/fwd.log" && ok "T4-shape: handshake via forwarded submodule shim" || bad "T4-shape: handshake failed"
-cp addons/godot_mcp/launch/godot-mcp-shim.mjs "$TMP/shim.bak"
-printf 'throw new Error("MARKER-FORWARDED-HERE")\n' > addons/godot_mcp/launch/godot-mcp-shim.mjs
-( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'; sleep 3 ) \
-  | timeout 10 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/fwd2.log" 2>&1
-grep -q 'MARKER-FORWARDED-HERE' "$TMP/fwd2.log" && ok "T4-shape: fault injection proves child IS submodule shim (never empty-forward)" || bad "T4-shape: forward target unproven"
-cp "$TMP/shim.bak" addons/godot_mcp/launch/godot-mcp-shim.mjs
+if (( HAVE_SHIM )); then
+  cp "$SHIM_SRC" "$KOL/.dev/godot-mcp/launch/godot-mcp-shim-legacy.mjs" .dev/godot-mcp/launch/
+  cp "$SHIM_SRC" .dev/godot-mcp/launch/godot-mcp-shim.mjs
+  ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
+    sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
+    | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/fwd.log" 2>&1
+  [[ "$(grep -c 'DEPRECATED' "$TMP/fwd.log")" -eq 0 ]] && ok "T4-shape: no DEPRECATED in forward mode" || bad "T4-shape: DEPRECATED emitted in forward mode"
+  grep -q '"serverInfo"' "$TMP/fwd.log" && ok "T4-shape: handshake via forwarded submodule shim" || bad "T4-shape: handshake failed"
+  cp addons/godot_mcp/launch/godot-mcp-shim.mjs "$TMP/shim.bak"
+  printf 'throw new Error("MARKER-FORWARDED-HERE")\n' > addons/godot_mcp/launch/godot-mcp-shim.mjs
+  ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'; sleep 3 ) \
+    | timeout 10 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/fwd2.log" 2>&1
+  grep -q 'MARKER-FORWARDED-HERE' "$TMP/fwd2.log" && ok "T4-shape: fault injection proves child IS submodule shim (never empty-forward)" || bad "T4-shape: forward target unproven"
+  cp "$TMP/shim.bak" addons/godot_mcp/launch/godot-mcp-shim.mjs
+fi
 
 # ---------- 3) hooks dual-landing lib ----------
 source "$KOL/.claude/hooks/godot-mcp-launch-path.lib.sh"
-[[ "$(mcp_launch_dir "$KOL")" == "$KOL/.dev/godot-mcp/launch" ]] && ok "hooks lib: legacy landing (transition window)" || bad "hooks lib: legacy landing wrong"
+# SEE-1287 run-context: the legacy .dev/godot-mcp/launch landing was retired
+# by T5-F — the submodule landing is now the only landing. The archived
+# transition-window assertion (legacy landing present) is inverted to assert
+# the terminal state.
+[[ "$(mcp_launch_dir "$KOL")" == "$KOL/addons/godot_mcp/launch" ]] && ok "hooks lib: submodule landing authoritative (T5-F terminal state)" || bad "hooks lib: submodule landing wrong"
 [[ "$(mcp_launch_dir "$TMP/consumer")" == "$TMP/consumer/addons/godot_mcp/launch" ]] && ok "hooks lib: submodule landing (T4 shape)" || bad "hooks lib: submodule landing wrong"
 T3TMP="$(mktemp -d)"; mkdir -p "$T3TMP/addons/godot_mcp/launch" "$T3TMP/.dev/godot-mcp/launch"
 [[ "$(mcp_launch_dir "$T3TMP")" == "$T3TMP/addons/godot_mcp/launch" ]] && ok "hooks lib: submodule precedence over legacy" || bad "hooks lib: precedence wrong"

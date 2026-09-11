@@ -25,8 +25,12 @@
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-LAUNCH_DIR=="$REPO_ROOT/addons/godot_mcp/launch"
-HOOKS_DIR="$REPO_ROOT/.claude/hooks"
+# Run context: the KOL worktree under test (see header note). Default = the
+# enclosing KOL checkout; set KOL_ROOT explicitly when running from the fork
+# checkout (launch/tests/) to point at the KOL worktree being exercised.
+KOL_ROOT="${KOL_ROOT:-$REPO_ROOT}"
+LAUNCH_DIR="${KOL_ROOT}/addons/godot_mcp/launch"
+HOOKS_DIR="${KOL_ROOT}/.claude/hooks"
 CONFIGURE="$LAUNCH_DIR/configure-mcp-port.sh"
 
 PASS=0
@@ -81,7 +85,7 @@ for agent in Atlas Archi Bachi Fronti Revy Refacty; do
         git config user.email qa@example.com
         git config user.name qa
         git config commit.gpgsign false
-        cp "$REPO_ROOT/project.godot" .
+        cp "$KOL_ROOT/project.godot" .
         git add project.godot
         git commit -q -m "fixture $agent"
     )
@@ -148,10 +152,10 @@ done
 # restore-godot-original.sh. Without this mirror the hook falls back to a
 # legacy sed on project.godot which would be a silent no-op for sidecar
 # state (and we want to prove the REAL path).
-mkdir -p "$TMPROOT/Bachi/.dev/godot-mcp/launch"
+mkdir -p "$TMPROOT/Bachi/addons/godot_mcp/launch"
 cp "$LAUNCH_DIR"/*.sh "$LAUNCH_DIR"/*.lib.sh "$LAUNCH_DIR"/agent-ports.json \
-    "$TMPROOT/Bachi/.dev/godot-mcp/launch/" 2>/dev/null
-chmod +x "$TMPROOT/Bachi/.dev/godot-mcp/launch/"*.sh
+    "$TMPROOT/Bachi/addons/godot_mcp/launch/" 2>/dev/null
+chmod +x "$TMPROOT/Bachi/addons/godot_mcp/launch/"*.sh
 
 stop_input='{"stop_hook_active":false}'
 (

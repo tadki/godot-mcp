@@ -18,7 +18,11 @@
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-LAUNCH_DIR=="$REPO_ROOT/addons/godot_mcp/launch"
+# Run context: the KOL worktree under test (see header note). Default = the
+# enclosing KOL checkout; set KOL_ROOT explicitly when running from the fork
+# checkout (launch/tests/) to point at the KOL worktree being exercised.
+KOL_ROOT="${KOL_ROOT:-$REPO_ROOT}"
+LAUNCH_DIR="${KOL_ROOT}/addons/godot_mcp/launch"
 POWERSHELL="/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 AGENT="${KOL_AGENT_NAME:-Revy}"
 PORT="${KOL_MCP_PORT:-6555}"
@@ -69,11 +73,11 @@ fi
 note "L1: configure $AGENT -> marker pin $PORT, launch editor, expect listen $PORT"
 
 # Pin the marker in the worktree.
-( cd "$REPO_ROOT" && bash "$LAUNCH_DIR/configure-mcp-port.sh" --port "$PORT" ) >/dev/null 2>&1 \
+( cd "$KOL_ROOT" && bash "$LAUNCH_DIR/configure-mcp-port.sh" --port "$PORT" ) >/dev/null 2>&1 \
     || { fail "L1 configure"; exit 1; }
 
 # Sanity: marker must read back true/$PORT from the worktree project.godot.
-got=$(python3 - "$REPO_ROOT/project.godot" <<'PY'
+got=$(python3 - "$KOL_ROOT/project.godot" <<'PY'
 import re, sys
 src = open(sys.argv[1], encoding='utf-8').read()
 m = re.search(r'# \[MCP-AGENT-CONFIG-BEGIN\](.*?)# \[MCP-AGENT-CONFIG-END\]', src, re.S)
@@ -90,7 +94,7 @@ else
 fi
 
 # Launch the editor.
-KOL_WORKTREE="$REPO_ROOT" bash "$LAUNCH_DIR/start-godot-editor.sh" "$AGENT" >/dev/null 2>&1 \
+KOL_WORKTREE="$KOL_ROOT" bash "$LAUNCH_DIR/start-godot-editor.sh" "$AGENT" >/dev/null 2>&1 \
     || { fail "L1 start-godot-editor launch"; exit 1; }
 
 # Wait for the editor to bind a port (up to 60s).
@@ -112,7 +116,7 @@ fi
 # === L2: marker block survives editor ProjectSettings.save() =================
 
 note "L2: marker block in project.godot must survive editor save cycle"
-post=$(python3 - "$REPO_ROOT/project.godot" <<'PY'
+post=$(python3 - "$KOL_ROOT/project.godot" <<'PY'
 import re, sys
 src = open(sys.argv[1], encoding='utf-8').read()
 m = re.search(r'# \[MCP-AGENT-CONFIG-BEGIN\](.*?)# \[MCP-AGENT-CONFIG-END\]', src, re.S)
@@ -134,7 +138,7 @@ else
 fi
 
 # Verify [gui] section header not absorbed into a bogus key.
-if grep -q '^\[gui\]$' "$REPO_ROOT/project.godot"; then
+if grep -q '^\[gui\]$' "$KOL_ROOT/project.godot"; then
     pass "L2.2 [gui] section header intact"
 else
     fail "L2.2 [gui] section header corrupted (merged into marker key)"
@@ -143,7 +147,7 @@ fi
 # === teardown ================================================================
 
 note "teardown: restore marker + kill editor"
-bash "$LAUNCH_DIR/restore-godot-original.sh" --project-godot "$REPO_ROOT/project.godot" >/dev/null 2>&1 || true
+bash "$LAUNCH_DIR/restore-godot-original.sh" --project-godot "$KOL_ROOT/project.godot" >/dev/null 2>&1 || true
 post_pid="$(editor_pid)"
 [ -n "$post_pid" ] && kill_editor "$post_pid"
 

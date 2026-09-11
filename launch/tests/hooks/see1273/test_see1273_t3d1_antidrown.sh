@@ -2,7 +2,10 @@
 # T3-D1 修复的防放水对照：确认无祖先关系（tip 对象齐备 + sha 确实不在 remote）
 # 仍必须判 dangling——修复不能把真 dangling 也放行。
 set -uo pipefail
-KOL=/home/jerry/multica_workspaces/seed-478690824e46/see-1273-38dc1c167594/workdir/KingOfLikes-Godot
+# Run context (SEE-1287): KOL_ROOT must point at a KingOfLikes-Godot checkout
+# providing .claude/hooks/lib/gitlink-probe.sh. The original hardcoded path
+# referenced the retired SEE-1273 QA worktree.
+KOL="${KOL_ROOT:?KOL_ROOT must point at a KingOfLikes-Godot checkout with .claude/hooks/lib/gitlink-probe.sh}"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 PASS=0; FAIL=0

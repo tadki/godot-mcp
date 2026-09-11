@@ -8,7 +8,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 import { existsSync as _mcp_exists } from "node:fs";
-const _proxy_default = "addons/godot_mcp/launch/godot-mcp-proxy.mjs"; // SEE-1273 T5-F: 单落点
+const _proxy_default = path.resolve(new URL("../../../launch/godot-mcp-proxy.mjs", import.meta.url).pathname); // SEE-1273 T5-F 单落点（fork 根 = launch/；argv[2] 或 KOL 场景传 KOL proxy 绝对路径可覆盖）
 const PROXY = path.resolve(process.argv[2] || _proxy_default);
 const src = readFileSync(PROXY, 'utf8');
 

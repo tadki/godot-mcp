@@ -23,8 +23,13 @@
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-LAUNCH_DIR="$REPO_ROOT/addons/godot_mcp/launch"
-HOOKS_DIR="$REPO_ROOT/.claude/hooks"
+# Run context: the KOL worktree under test. Default = the enclosing KOL
+# checkout (KOL repo layout); set KOL_ROOT explicitly when this suite runs
+# from the fork checkout (launch/tests/) so KOL resources (project.godot,
+# .claude/hooks) resolve against the KOL worktree being exercised.
+KOL_ROOT="${KOL_ROOT:-$REPO_ROOT}"
+LAUNCH_DIR="${KOL_ROOT}/addons/godot_mcp/launch"
+HOOKS_DIR="${KOL_ROOT}/.claude/hooks"
 CONFIGURE="$LAUNCH_DIR/configure-mcp-port.sh"
 RESTORE="$LAUNCH_DIR/restore-godot-original.sh"
 VERIFY="$LAUNCH_DIR/verify-godot-written-back.sh"
@@ -56,11 +61,11 @@ make_worktree() {
         git config user.email qa@example.com
         git config user.name qa
         git config commit.gpgsign false
-        cp "$REPO_ROOT/project.godot" "$dir/project.godot"
+        cp "$KOL_ROOT/project.godot" "$dir/project.godot"
         # Start the fixture from the HEAD blob, not the working tree — the
         # working tree may be mid-lease (per-agent pinned) which would poison
         # the "original" baseline.
-        git -C "$REPO_ROOT" show HEAD:project.godot > "$dir/project.godot"
+        git -C "$KOL_ROOT" show HEAD:project.godot > "$dir/project.godot"
         git add project.godot
         git commit -q -m "fixture: project.godot at HEAD"
     )
@@ -172,7 +177,7 @@ note "S7: master write-target guard rejects D-drive master"
 # beginning with /mnt/d/GodotProjects/king-of-likes must be refused.
 fake_d="$TMPROOT/d-drive"
 mkdir -p "$fake_d"
-cp "$REPO_ROOT/project.godot" "$fake_d/project.godot"
+cp "$KOL_ROOT/project.godot" "$fake_d/project.godot"
 # Simulate the known shared path by overriding KOL_PROJECT_GODOT with a path
 # we then pass through the guard. configure-mcp-port.sh's guard matches the
 # literal /mnt/d/GodotProjects/king-of-likes prefix; we reproduce that check
@@ -188,7 +193,7 @@ mkdir -p "$master_dir"
     git config user.email qa@example.com
     git config user.name qa
     git config commit.gpgsign false
-    git -C "$REPO_ROOT" show HEAD:project.godot > project.godot
+    git -C "$KOL_ROOT" show HEAD:project.godot > project.godot
     git add project.godot
     git commit -q -m "master fixture"
 )
@@ -223,7 +228,7 @@ mkdir -p "$guard_repo"
     git config user.email qa@example.com
     git config user.name qa
     git config commit.gpgsign false
-    git -C "$REPO_ROOT" show HEAD:project.godot > project.godot
+    git -C "$KOL_ROOT" show HEAD:project.godot > project.godot
     git add project.godot
     git commit -q -m "fixture: clean marker"
     # Create a fake origin/master ref pointing at HEAD so the push-guard's
@@ -262,7 +267,7 @@ PY
 # shared-branch Check 6, without needing WORKING_BRANCH metadata (which would
 # require a live `multica` CLI and MULTICA_TASK_ID).
 hook_env=(
-    PROJECT_ROOT="$REPO_ROOT"
+    PROJECT_ROOT="$KOL_ROOT"
     MULTICA_AGENT_NAME="Atlas"
     MULTICA_AGENT_ID="fac3e3a1-dcda-498d-8613-e8c2811f3ef5"
 )
@@ -304,14 +309,14 @@ fi
 
 note "S10: auto-pr-on-stop restores marker unconditionally"
 stop_repo="$TMPROOT/auto-pr-stop"
-mkdir -p "$stop_repo/.dev/godot-mcp/launch"
+mkdir -p "$stop_repo/addons/godot_mcp/launch"
 (
     cd "$stop_repo"
     git init -q -b feat/see-1117-test
     git config user.email qa@example.com
     git config user.name qa
     git config commit.gpgsign false
-    git -C "$REPO_ROOT" show HEAD:project.godot > project.godot
+    git -C "$KOL_ROOT" show HEAD:project.godot > project.godot
     git add project.godot
     git commit -q -m "fixture"
     # Pin marker.
@@ -327,12 +332,13 @@ PY
     # expected to restore it BEFORE the auto-commit step.
 )
 # The hook cd's into $PROJECT_ROOT when it has .git, and resolves
-# restore-godot-original.sh as $PROJECT_ROOT/.dev/godot-mcp/launch/... — so
-# mirror the launch toolchain into the fixture repo (copy, not symlink, so
-# restore/verify see PROJECT_ROOT = fixture).
-cp "$LAUNCH_DIR"/*.sh "$LAUNCH_DIR"/*.lib.sh "$stop_repo/.dev/godot-mcp/launch/" 2>/dev/null || true
-cp "$LAUNCH_DIR"/agent-ports.json "$stop_repo/.dev/godot-mcp/launch/" 2>/dev/null || true
-chmod +x "$stop_repo/.dev/godot-mcp/launch/"*.sh
+# restore-godot-original.sh via the SEE-1273 T5-F single landing point
+# $PROJECT_ROOT/addons/godot_mcp/launch/... — so mirror the launch toolchain
+# into the fixture repo (copy, not symlink, so restore/verify see
+# PROJECT_ROOT = fixture).
+cp "$LAUNCH_DIR"/*.sh "$LAUNCH_DIR"/*.lib.sh "$stop_repo/addons/godot_mcp/launch/" 2>/dev/null || true
+cp "$LAUNCH_DIR"/agent-ports.json "$stop_repo/addons/godot_mcp/launch/" 2>/dev/null || true
+chmod +x "$stop_repo/addons/godot_mcp/launch/"*.sh
 
 # Stop hook payload: stop_hook_active=false so it proceeds.
 stop_input='{"stop_hook_active":false}'
@@ -352,8 +358,8 @@ assert_marker "$stop_repo/project.godot" false 6550 "S10 auto-pr-on-stop restore
 
 note "S11: push-guard fallback when launch toolchain is missing"
 # Reuse the push-guard-repo, pin the marker again, but this time point
-# PROJECT_ROOT at a directory WITHOUT .dev/godot-mcp/launch/ so the guard
-# falls back to its legacy grep.
+# PROJECT_ROOT at a directory WITHOUT the addons/godot_mcp/launch/ toolchain
+# so the guard falls back to its legacy grep.
 (
     cd "$guard_repo"
     python3 - <<'PY'
@@ -400,7 +406,7 @@ mkdir -p "$div_repo"
     git config user.email qa@example.com
     git config user.name qa
     git config commit.gpgsign false
-    git -C "$REPO_ROOT" show HEAD:project.godot > project.godot
+    git -C "$KOL_ROOT" show HEAD:project.godot > project.godot
     # Marker stays at original (false/6550), but inject a stray
     # port_override_enabled=true OUTSIDE the marker block — insert it right
     # after the [godot_mcp] section header.
@@ -455,7 +461,7 @@ note "S12: verify exit 0 when marker section absent"
 no_marker="$TMPROOT/no-marker"
 mkdir -p "$no_marker"
 # Build a project.godot without the marker block (strip it).
-python3 - "$REPO_ROOT/project.godot" "$no_marker/project.godot" <<'PY'
+python3 - "$KOL_ROOT/project.godot" "$no_marker/project.godot" <<'PY'
 import re, sys
 src = open(sys.argv[1], encoding='utf-8').read()
 stripped = re.sub(
@@ -483,7 +489,7 @@ mkdir -p "$no_section"
     git config user.name qa
     git config commit.gpgsign false
 )
-python3 - "$REPO_ROOT/project.godot" "$no_section/project.godot" <<'PY'
+python3 - "$KOL_ROOT/project.godot" "$no_section/project.godot" <<'PY'
 import re, sys
 src = open(sys.argv[1], encoding='utf-8').read()
 # Strip the marker block AND the [godot_mcp] section header + its keys.
@@ -526,7 +532,7 @@ mkdir -p "$eof_repo"
     git config user.name qa
     git config commit.gpgsign false
 )
-python3 - "$REPO_ROOT/project.godot" "$eof_repo/project.godot" <<'PY'
+python3 - "$KOL_ROOT/project.godot" "$eof_repo/project.godot" <<'PY'
 import re, sys
 src = open(sys.argv[1], encoding='utf-8').read()
 # Extract the marker block.

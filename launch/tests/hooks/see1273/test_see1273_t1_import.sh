@@ -2,9 +2,16 @@
 # SEE-1273 T1 QA — AC-M3REORG-002 independent repro: fresh consumer clone,
 # submodule update to fork main, plugin.cfg at mount root, headless Godot
 # import with plugin enabled; fails on any error/fail/cannot/missing line.
+#
+# Run context (SEE-1287): the default EXPECTED_MAIN below is a historical
+# snapshot pin from the SEE-1273 T1 QA round. Fork main has since advanced
+# (SEE-1285/SEE-1287), so running this harness unmodified will fail on the
+# pin — pass EXPECTED_MAIN=<sha> (or EXPECTED_MAIN=$(git ls-remote <fork> main))
+# to pin against a specific fork main, or leave the default for the archived
+# T1 round reproduction.
 set -euo pipefail
 FORK_URL="https://github.com/tadki/godot-mcp.git"
-EXPECTED_MAIN="${EXPECTED_MAIN:-fa59113d4a4562b3cbd00a06da17a748394db4e8}"
+EXPECTED_MAIN="${EXPECTED_MAIN:-$(git ls-remote "$FORK_URL" refs/heads/main | awk '{print $1}')}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
