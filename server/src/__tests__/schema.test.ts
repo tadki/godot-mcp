@@ -42,3 +42,10 @@ describe('toInputSchema', () => {
     expect(result).not.toHaveProperty('$schema');
   });
 });
+
+// SEE-1285 e2e TEMPORARY red-CI probe 2 — reverted by the next commit immediately
+describe('SEE-1285 e2e red probe 2 (temporary)', () => {
+  it('temporary probe that fails by design (see1285 retest)', () => {
+    expect(true).toBe(false);
+  });
+});
