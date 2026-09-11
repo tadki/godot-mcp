@@ -958,6 +958,22 @@ export KOL_DIRECT_GODOT_MCP="${KOL_DIRECT_GODOT_MCP:-1}"
 # exports are DEFAULT-ONLY (${VAR:-...}): an external override (a test harness
 # that mocks npx, or an operator pointing elsewhere) wins, keeping the seam.
 FORK_CLI="${GODOT_MCP_FORK_CLI:-${SCRIPT_DIR}/../server/dist/cli.js}"
+FORK_SERVER_DIR="${SCRIPT_DIR}/../server"
+# SEE-1288 (build fallback): server/dist/ is gitignored, so a fresh submodule
+# checkout has no fork CLI and the wiring above silently degraded to upstream
+# npx (30s QUICK_TIMEOUT → first-call timeout). When the default path is
+# missing but the submodule ships the server source, build it once; dist +
+# node_modules stay gitignored, nothing build-shaped is committed. Explicit
+# GODOT_MCP_FORK_CLI overrides pointing at a missing path do NOT trigger the
+# build (the operator said where the CLI lives — respect it, keep WARNING).
+if [[ ! -x "$FORK_CLI" && -z "${GODOT_MCP_FORK_CLI:-}" && -f "${FORK_SERVER_DIR}/package.json" && -d "${FORK_SERVER_DIR}/src" ]]; then
+    log "fork CLI missing at ${FORK_CLI}; building from ${FORK_SERVER_DIR} (one-time, gitignored output)..."
+    if (cd "${FORK_SERVER_DIR}" && npm ci --no-audit --no-fund >/dev/null 2>&1 && npm run build >/dev/null 2>&1 && chmod +x "${FORK_SERVER_DIR}/dist/cli.js"); then
+        log "fork CLI build OK: ${FORK_SERVER_DIR}/dist/cli.js"
+    else
+        log "WARNING: fork CLI build failed in ${FORK_SERVER_DIR} (see server build logs); keeping upstream godot-mcp."
+    fi
+fi
 if [[ -x "$FORK_CLI" ]]; then
     export KOL_GODOT_MCP_CMD="${KOL_GODOT_MCP_CMD:-$FORK_CLI}"
     export GODOT_MCP_QUICK_TIMEOUT_MS="${GODOT_MCP_QUICK_TIMEOUT_MS:-90000}"
