@@ -1,8 +1,8 @@
 // SEE-1129 integration check: both predicates combined as the proxy uses them.
 // SEE-1273 T3: 过渡窗 import 旧路径（T4 gitlink 切换后随测试树归属裁决调整）
-import { decideReuse } from '../../../addons/godot_mcp/launch/see1129-reuse-predicate.mjs';
+import { decideReuse } from '../../../../launch/see1129-reuse-predicate.mjs';
 // SEE-1273 T3: 过渡窗 import 旧路径（T4 gitlink 切换后随测试树归属裁决调整）
-import { decideSidecarGuard } from '../../../addons/godot_mcp/launch/see1129-sidecar-guard-predicate.mjs';
+import { decideSidecarGuard } from '../../../../launch/see1129-sidecar-guard-predicate.mjs';
 
 const cases = [
   // [holderAgent, ourAgent, holderWT, ourWT, expectAgent, expectGuard, label]

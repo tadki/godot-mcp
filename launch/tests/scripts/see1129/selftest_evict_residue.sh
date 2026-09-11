@@ -22,12 +22,12 @@
 # boundary-matrix test already covers).
 
 set -u
-cd "$(dirname "$0")/../../.." || exit 1
+cd "$(dirname "$0")/../../../.." || exit 1
 
-LAUNCH="./addons/godot_mcp/launch"
+LAUNCH="./launch"
 STOP="$LAUNCH/stop-godot-editor.sh"
 REAPER="$LAUNCH/reap-stale-leases.sh"
-PREDICATE="./addons/godot_mcp/launch/see1129-sidecar-guard-predicate.mjs"
+PREDICATE="./launch/see1129-sidecar-guard-predicate.mjs"
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "ok   - $*"; }

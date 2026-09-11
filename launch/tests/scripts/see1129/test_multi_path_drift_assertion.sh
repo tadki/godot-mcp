@@ -10,7 +10,7 @@
 # 本 mock 直接验证 resolveWorktreeForSpawn 的语义：在隔离 fs 沙箱里构造 marker
 # anchor + 残留 slot，断言函数不再静默漂移。绝不碰真实 ~/.multica 或真实工作区。
 set -u
-cd "$(dirname "$0")/../../.." || exit 1
+cd "$(dirname "$0")/../../../.." || exit 1
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "ok   - $*"; }
@@ -34,7 +34,7 @@ WT_OLD="$(mk_wt c508560b)"   # 残留 slot（路径 B 漂移前会错选这个�
 WT_NEW="$(mk_wt 7a634b21)"   # 本 slot（marker / 路径 A 的正确结果）
 
 # 内联脚本：复制 proxy.mjs resolveWorktreeForSpawn 的修复后语义，跑 4 个 case。
-PROXY="./addons/godot_mcp/launch/godot-mcp-proxy.mjs"
+PROXY="./launch/godot-mcp-proxy.mjs"
 INLINE='
 import fs from "node:fs"; import path from "node:path";
 const stat=fs.promises.stat, readdir=fs.promises.readdir;

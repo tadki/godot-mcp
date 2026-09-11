@@ -27,9 +27,9 @@
 # exercises the release-layer shell scripts.
 
 set -u
-cd "$(dirname "$0")/../../.." || exit 1
+cd "$(dirname "$0")/../../../.." || exit 1
 
-LAUNCH="./addons/godot_mcp/launch"
+LAUNCH="./launch"
 REAPER="$LAUNCH/reap-stale-leases.sh"
 STOP="$LAUNCH/stop-godot-editor.sh"
 SIDECAR_LIB="$LAUNCH/mcp-sidecar.lib.sh"

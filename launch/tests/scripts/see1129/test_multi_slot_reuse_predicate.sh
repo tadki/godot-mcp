@@ -18,9 +18,9 @@
 # live Godot/editor/port.
 
 set -u
-cd "$(dirname "$0")/../../.." || exit 1
+cd "$(dirname "$0")/../../../.." || exit 1
 
-PREDICATE="./addons/godot_mcp/launch/see1129-reuse-predicate.mjs"
+PREDICATE="./launch/see1129-reuse-predicate.mjs"
 
 PASS=0
 FAIL=0

@@ -22,9 +22,9 @@
 # spawn fresh for 7a634b21 → get_info returns 7a634b21.
 
 set -u
-cd "$(dirname "$0")/../../.." || exit 1
+cd "$(dirname "$0")/../../../.." || exit 1
 
-PREDICATE="./addons/godot_mcp/launch/see1129-sidecar-guard-predicate.mjs"
+PREDICATE="./launch/see1129-sidecar-guard-predicate.mjs"
 
 PASS=0
 FAIL=0
