@@ -49,7 +49,15 @@ function findRepoRoot() {
     return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 }
 const REPO_ROOT = findRepoRoot();
-const LAUNCHER_PATH = path.join(REPO_ROOT, '.dev', 'godot-mcp', 'launch', 'godot-mcp-launcher.sh');
+// SEE-1273 T4: the shim now lives INSIDE the submodule (addons/godot_mcp/launch/)
+// after the T1 restructure, so its own directory holds the launcher. Prefer the
+// sibling launcher (this file's dir), fall back to the legacy .dev/godot-mcp/
+// launch layout for checkouts mounted differently during the transition window.
+const LAUNCHER_PATH = (() => {
+    const sibling = path.join(path.dirname(fileURLToPath(import.meta.url)), 'godot-mcp-launcher.sh');
+    if (fs.existsSync(sibling)) return sibling;
+    return path.join(REPO_ROOT, '.dev', 'godot-mcp', 'launch', 'godot-mcp-launcher.sh');
+})();
 
 // --- agent label (§2.1) -------------------------------------------------------
 // Same resolution chain as the launcher: argv → env fallbacks. Used only for
