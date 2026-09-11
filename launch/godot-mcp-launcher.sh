@@ -40,6 +40,25 @@ exec {ORIG_STDIN}<&0
 exec 0</dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# AC-M3REORG-013: KOL 专属值注入（唯一落点 <repo_root>/.dev/env/kol-mcp.env）。
+# T3 只在 repo-checkout hook 里 source，导致 daemon 直拉链（systemd → shim →
+# launcher → proxy）拿不到 KOL_SHARED_MASTER，防线 3 在该链退化为空串。
+# 在此向上找 5 层 source（存在才 source）——必须在 env.sh 之前，env.sh 的
+# KOL_* 别名链要靠它填充 GODOT_MCP_SHARED_MASTER。非 KOL 检出（standalone
+# fork）找不到文件，静默 no-op，不引入任何 KOL 概念到库内。
+_kol_env_root="$SCRIPT_DIR"
+for _ in 1 2 3 4 5; do
+    _kol_env_root="$(dirname "$_kol_env_root")"
+    [ "$_kol_env_root" = "/" ] && break
+    if [ -f "$_kol_env_root/.dev/env/kol-mcp.env" ]; then
+        # shellcheck source=/dev/null
+        . "$_kol_env_root/.dev/env/kol-mcp.env"
+        break
+    fi
+done
+unset _kol_env_root
+
 # shellcheck source=env.sh
 . "${SCRIPT_DIR}/env.sh"
 

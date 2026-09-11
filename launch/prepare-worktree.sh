@@ -140,8 +140,11 @@ echo "[prepare-worktree] target port  : $PORT"
 
 # --- SEE-1111 §7.1 防线 3: write-target guard (same as configure-mcp-port.sh) --
 # §4.5.3 T2 / K5: guard only engages when the env provides the shared path.
+# AC-M3REORG-013: empty known_shared must guard NOTHING — '$x' == "$known_shared/"
+# with known_shared='' degenerates to '/*' and matches every absolute path
+# (shell twin of the JS guard fixed in 8d51b13; Revy 串行 3/3 caught this).
 known_shared="${GODOT_MCP_SHARED_MASTER:-}"
-if [[ "$WORKTREE" == "$known_shared" || "$WORKTREE" == "$known_shared/"* ]]; then
+if [[ -n "$known_shared" ]] && [[ "$WORKTREE" == "$known_shared" || "$WORKTREE" == "$known_shared/"* ]]; then
     die "write-target guard: '$WORKTREE' is the SHARED D-drive master checkout. Refusing to write a lease there — each agent must prepare its PRIVATE worktree (see mcp-multi-port-usage.md §3.7/§7.1)."
 fi
 if command -v git >/dev/null 2>&1 && [[ -e "$WORKTREE/.git" ]]; then

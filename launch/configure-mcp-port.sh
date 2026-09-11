@@ -227,10 +227,13 @@ guard_write_target() {
     local target="$1"
     # Fail-fast on the known shared D-drive master checkout (absolute path).
     # §4.5.3 T2 / K5: guard only engages when the env provides the shared path.
+    # AC-M3REORG-013: empty known_shared must guard NOTHING — the '$x' ==
+    # "$known_shared/" pattern degenerates to '/*' when known_shared='' and
+    # matches every absolute path (shell twin of the JS guard fixed in 8d51b13).
     local known_shared="${GODOT_MCP_SHARED_MASTER:-}"
     local target_dir
     target_dir="$(dirname "$target")"
-    if [[ "$target_dir" == "$known_shared" || "$target_dir" == "$known_shared/"* ]]; then
+    if [[ -n "$known_shared" ]] && [[ "$target_dir" == "$known_shared" || "$target_dir" == "$known_shared/"* ]]; then
         die "write-target guard: '$target' is the SHARED master checkout. Refusing to write a lease there — each agent must configure its PRIVATE worktree (see mcp-multi-port-usage.md §3.7/§7.1)."
     fi
     # Fail-fast when the target checkout is on branch master (covers any other
