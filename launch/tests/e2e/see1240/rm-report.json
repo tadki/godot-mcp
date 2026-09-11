@@ -1,0 +1,49 @@
+{
+ "steps": [
+  {
+   "name": "initialize",
+   "ok": true,
+   "detail": "\"\""
+  },
+  {
+   "name": "warm trigger (get_project_info)",
+   "ok": true,
+   "detail": "Error: Unknown tool: get_project_info\n[godot-mcp warmup 0.1s | spawn→0.0s plugin→?s listen→?s tcp→?s ws→?s init→?s]"
+  },
+  {
+   "name": "run frozen=true",
+   "ok": true,
+   "detail": "Running scene: res://scenes/ui/title_screen/title_screen.tscn frozen from frame 0 — use godot_game_time step/thaw to adv"
+  },
+  {
+   "name": "exec reachable",
+   "ok": true,
+   "detail": "Error: [EXEC_ERROR] exec compile error: [-9223371918575400384.gd:6] Parse Error: Identifier \"found\" not declared in the current scope.: "
+  },
+  {
+   "name": "RED stale detection",
+   "ok": true,
+   "detail": "latency=175 stale=true"
+  },
+  {
+   "name": "GREEN auto_step fresh",
+   "ok": true,
+   "detail": "{\"captured_at_ms\":1788631042884,\"capture_latency_ms\":214,\"auto_step\":{\"frames\":1,\"ok\":true},\"stale\":false}"
+  },
+  {
+   "name": "image content present",
+   "ok": true,
+   "detail": "21088 b64 chars"
+  },
+  {
+   "name": "exports path in response",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "green frame saved",
+   "ok": true,
+   "detail": ".dev/tests/see1240/rm-green-frame.png"
+  }
+ ]
+}
