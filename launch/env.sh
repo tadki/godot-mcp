@@ -90,11 +90,13 @@ _kol_alias_export GODOT_MCP_START_SH        KOL_START_SH
 _kol_alias_export GODOT_MCP_STOP_SH         KOL_STOP_SH
 _kol_alias_export GODOT_MCP_REAP_SH         KOL_REAP_SH
 _kol_alias_export GODOT_MCP_PREPARE_SH      KOL_PREPARE_SH
-_kol_alias_export GODOT_MCP_PORT_REGISTRY_PATH GODOT_MCP_PORT_REGISTRY_PATH_OVERRIDE KOL_PORT_REGISTRY_PATH_OVERRIDE
+# PORT_REGISTRY_PATH canonical gets the legacy override name as its alias
+# (KOL_PORT_REGISTRY_PATH_OVERRIDE). The OVERRIDE canonical is kept one round
+# for back-compat with ②a-era callers that already used it.
+_kol_alias_export GODOT_MCP_PORT_REGISTRY_PATH KOL_PORT_REGISTRY_PATH_OVERRIDE
 _kol_alias_export GODOT_MCP_PORT_REGISTRY_PATH_OVERRIDE KOL_PORT_REGISTRY_PATH_OVERRIDE
 _kol_alias_export GODOT_MCP_WORKSPACE_ID    MULTICA_WORKSPACE_ID
 _kol_alias_export GODOT_MCP_AGENT_ID        MULTICA_AGENT_ID
-_kol_alias_export GODOT_MCP_WORKSPACES_BASE_OVERRIDE KOL_WORKSPACES_BASE
 _kol_alias_export GODOT_MCP_WORKTREE_WAIT_S KOL_WORKTREE_WAIT_S
 _kol_alias_export GODOT_MCP_PROGRESS_PROTOCOL KOL_PROGRESS_PROTOCOL
 _kol_alias_export GODOT_MCP_STAGE_LOG       KOL_STAGE_LOG
