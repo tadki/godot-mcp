@@ -1,5 +1,23 @@
 name: Release
 
+# SEE-1291 AC-CI-003 — publication jobs are gated OFF by default.
+#
+# This fork (tadki/godot-mcp) cannot complete the upstream publication path:
+#   - `publish` pushes `@satelliteoflove/godot-mcp` to npm — the
+#     `satelliteoflove` npm scope is owned by the upstream author, so any
+#     release merged here fails with 403 no matter what secrets exist.
+#   - `publish-registry` authenticates to the MCP Registry via GitHub OIDC as
+#     `github:tadki`, but `server/server.json` still declares
+#     `io.github.satelliteoflove/godot-mcp` — a namespace the OIDC identity
+#     cannot claim, so the publish is rejected after all 5 retries.
+# Both jobs therefore accumulate guaranteed-failure runs on every release.
+#
+# Disposition (disabled, not fixed): re-pointing the npm scope and the MCP
+# Registry namespace to tadki is a product decision (users pin the old
+# package name; the addon shim spawns `npx @satelliteoflove/godot-mcp`), not
+# a CI edit. Set the repo variable ENABLE_UPSTREAM_PUBLISH to 'true' to
+# restore the upstream path once such a migration is decided.
+
 on:
   push:
     branches: [main]
@@ -77,7 +95,8 @@ jobs:
 
   publish:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created || inputs.force_publish }}
+    # SEE-1291: gated off — see header comment (upstream npm scope conflict).
+    if: ${{ vars.ENABLE_UPSTREAM_PUBLISH == 'true' && (needs.release-please.outputs.release_created || inputs.force_publish) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -118,14 +137,14 @@ jobs:
             godot-mcp-addon-${{ needs.release-please.outputs.version }}.zip \
             --clobber
 
-  # Publish server.json to the official MCP Registry. Runs only on a real release
-  # and only after `npm publish` succeeds, because the registry validates the
-  # mcpName against the published npm tarball. Auth is GitHub OIDC — no secrets:
-  # the io.github.satelliteoflove/* namespace is owned by this repo's owner, and
-  # the id-token permission lets the runner prove that identity to the registry.
+  # Publish server.json to the official MCP Registry. SEE-1291: gated off —
+  # see header comment (OIDC identity github:tadki cannot claim the
+  # io.github.satelliteoflove/* namespace). Runs only on a real release and
+  # only after `npm publish` succeeds, because the registry validates the
+  # mcpName against the published npm tarball. Auth is GitHub OIDC — no secrets.
   publish-registry:
     needs: [release-please, publish]
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: ${{ vars.ENABLE_UPSTREAM_PUBLISH == 'true' && needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write

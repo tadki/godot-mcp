@@ -1,0 +1,177 @@
+name: Launch Special (heavy/env tier)
+
+# SEE-1291 AC-CI-002 — specialist tier for the launch/tests entries that do
+# NOT belong in the push/PR fast tier (launch-ci.yml). Three buckets:
+#
+#   long    — suites measured ≥ ~2min (t14 reaper grace guard needs ~90s+ of
+#             real clock; see1240 d1/ws5 minutes-scale). Green, just slow.
+#   env     — entries that need the WSL dev box: Windows Godot via /mnt/d,
+#             the KOL consumer checkout (KOL_ROOT), a live editor, or a real
+#             `npx @satelliteoflove/godot-mcp` against a bound addon. On a
+#             GitHub runner they cannot pass; kept here as documented stubs
+#             (preflight probe proves the requirement, then skips).
+#   drift   — suites that are currently RED in a clean checkout on main
+#             (pre-existing, recorded in the SEE-1291 drift ledger): timing
+#             flaky on runners, SEE-1287 path-drift fixtures, or KOL-coupled
+#             by design. Refacty's drift workstream owns the fix/retire
+#             decision; once an entry is green it graduates into
+#             launch-ci.yml.
+#
+# Manual dispatch runs everything runnable headless and reports per-entry
+# status without failing the workflow (continue-on-error evidence runs) —
+# the point is a periodic, greppable health snapshot, not a gate. The
+# weekly cron does the same so drift does not rot silently.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: 'Which bucket to run (long|env|drift|all)'
+        type: choice
+        default: all
+        options: [all, long, env, drift]
+  schedule:
+    # Sundays 03:07 UTC — off-minute per house convention.
+    - cron: '7 3 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  long-suites:
+    if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' || inputs.bucket == 'long' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Build server CLI
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      - name: Long green suites (slow but stable)
+        run: |
+          set -uo pipefail
+          FAIL=0
+          for t in \
+            launch/tests/scripts/test_see1148_t14_reaper_grace_guard.sh \
+            launch/tests/scripts/test_see1240_ws5_giveup_rearm.sh \
+            ; do
+            echo "::group::bash $t"
+            if timeout 600 bash "$t"; then echo "[special:long] PASS $t"
+            else echo "::error::[special:long] FAIL $t (rc=$?)"; FAIL=1; fi
+            echo "::endgroup::"
+          done
+          exit $FAIL
+
+  env-bound:
+    if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' || inputs.bucket == 'env' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - name: e2e MCP client deps install (proves the tree is intact)
+        run: npm ci --no-audit --no-fund
+        working-directory: launch/tests/e2e/godot-mcp
+      - name: Environment-bound suites are dev-box only (documented skip)
+        # These require a live Windows Godot editor (WSL2 gateway binding),
+        # KOL_ROOT consumer checkout, or /mnt/d fork paths — unreachable from
+        # a GitHub runner. Recorded as an explicit skip so the tree's
+        # non-CI-executable surface stays visible in the Actions log.
+        run: |
+          echo "[special:env] SKIPPED on runner — require WSL2 dev box:"
+          echo "  launch/tests/e2e/godot-mcp/run_all.mjs        (31 KOL game e2e, live Windows editor)"
+          echo "  launch/tests/e2e/see1240/, see1240_qa/        (real-machine clients, KOL_ROOT)"
+          echo "  launch/tests/hooks/see1273/test_see1273_t1_import.sh (godot headless import)"
+          echo "  launch/tests/hooks/see1273/test_see1273_t3/t4_chain.sh (KOL shim replay)"
+          echo "  launch/test_see1273_t2_param.sh               (runs green headless — see long bucket note)"
+
+  drift-watch:
+    if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' || inputs.bucket == 'drift' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Build server CLI
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      - name: Drift-red suites (evidence runs, non-blocking)
+        run: |
+          set -uo pipefail
+          for t in \
+            launch/tests/scripts/test_see1045_stdio_proxy.sh \
+            launch/tests/scripts/test_see1070_host_mirror_parity.sh \
+            launch/tests/scripts/test_see1070_proxy_exec_hints.sh \
+            launch/tests/scripts/test_see1070_proxy_screenshot_hint.sh \
+            launch/tests/scripts/test_see1070_warmup_self_heal.sh \
+            launch/tests/scripts/test_see1085_t6_editor_busy.sh \
+            launch/tests/scripts/test_see1085_t7_resolver.mjs \
+            launch/tests/scripts/test_see1085_t8_direct_node.sh \
+            launch/tests/scripts/test_see1085_t9_editor_gone.sh \
+            launch/tests/scripts/test_see1110_e1_cold_warmup_timeline.sh \
+            launch/tests/scripts/test_see1117_cold_reuse_cli_gate.sh \
+            launch/tests/scripts/test_see1085_t10_takeover_success.sh \
+            launch/tests/scripts/test_see1085_t11_takeover_timeout.sh \
+            launch/tests/scripts/test_see1110_e2_editor_busy_channelA.sh \
+            launch/tests/scripts/test_see1110_e3_lease_exit_channelA.sh \
+            launch/tests/scripts/test_see1110_stage_parser.mjs \
+            launch/tests/scripts/test_see1111_e5_concurrent_5agent.sh \
+            launch/tests/scripts/test_see1111_fork_wiring.sh \
+            launch/tests/scripts/test_see1111_gitignore_prepare_worktree.sh \
+            launch/tests/scripts/test_see1111_linked_worktree_fixes.sh \
+            launch/tests/scripts/test_see1111_warmup_hint.sh \
+            launch/tests/scripts/test_see1111_worktree_isolation.sh \
+            launch/tests/scripts/test_see1117_live_e2e_editor_port.sh \
+            launch/tests/scripts/test_see1117_phase1_marker_lifecycle.sh \
+            launch/tests/scripts/test_see1117_sidecar_lifecycle.sh \
+            launch/tests/scripts/test_see1117_suite_f_prime_6agents.sh \
+            launch/tests/scripts/test_see1152_configure_async_reaper.sh \
+            launch/tests/scripts/test_see1152_mcp_daily_call_stability.sh \
+            launch/tests/scripts/test_see1152_reaper_held_sweep.sh \
+            launch/tests/scripts/test_see1170_channel1.sh \
+            launch/tests/scripts/test_see1170_fix_round2.sh \
+            launch/tests/scripts/test_see1240_exec_constraints_proxy.sh \
+            launch/tests/scripts/test_see1240_proxy_integration.sh \
+            launch/tests/scripts/test_see1244_cache_closure.mjs \
+            launch/tests/scripts/test_see1244_proxy_tools_cache.mjs \
+            launch/tests/scripts/test_see1244_runtime_held_wait.sh \
+            launch/tests/scripts/test_see976_mcp_multi_port.sh \
+            launch/tests/scripts/test_see986_autopilots_doc.sh \
+            launch/tests/scripts/test_see990_live_gate_6port_sweep.sh \
+            launch/tests/scripts/test_see990_mcp_ready_gate.sh \
+            launch/tests/scripts/test_see1117_live_sidecar_e2e.sh \
+            launch/tests/scripts/test_see1148_p3_reclaim.sh \
+            launch/tests/hooks/test_see1091_reconfigure_after_stop_converges.sh \
+            launch/tests/hooks/test_see1070_stop_hook_projectgodot_isolation.sh \
+            launch/tests/hooks/test_see1111_stop_hook_sanitizes_master.sh \
+            launch/tests/abtest/test_see1009_ws_vs_tcp_gate_ab.sh \
+            launch/tests/e2e/test_see1009_multi_port_addon_version.sh \
+            launch/tests/e2e/test_see1009_mcp_tool_visibility_e2e.sh \
+            ; do
+            [ -f "$t" ] || { echo "[special:drift] MISSING $t"; continue; }
+            echo "::group::$t"
+            case "$t" in
+              *.mjs) timeout 180 node "$t" && echo "[special:drift] PASS (drift fixed → graduate)" \
+                     || echo "::warning::[special:drift] RED $t" ;;
+              *.sh)  timeout 180 bash "$t" && echo "[special:drift] PASS (drift fixed → graduate)" \
+                     || echo "::warning::[special:drift] RED $t" ;;
+            esac
+            echo "::endgroup::"
+          done
+          exit 0

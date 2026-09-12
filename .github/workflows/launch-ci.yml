@@ -1,0 +1,154 @@
+name: Launch CI (fast tier)
+
+# SEE-1291 AC-CI-001/002 — fast tier for the launch/ control-plane test tree.
+#
+# Scope: every launch/tests entry point that is verified green in a clean
+# checkout on ubuntu-latest (headless, mock npx/ws-listener on PATH, no real
+# editor, no KOL worktree, no Windows). Long-running / environment-bound /
+# currently-red suites are NOT here — they live in launch-special.yml.
+#
+# Two parallel jobs to stay under the 10-minute budget: shell harnesses
+# (bootstrap a server build first — the launcher rebuilds server/dist when
+# missing, which several harnesses exercise via the fork-CLI path) and the
+# pure-node unit tests.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  shell-harnesses:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Build server CLI (fork-CLI path used by launch harnesses)
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      - name: Run fast-tier shell harnesses
+        timeout-minutes: 8
+        run: |
+          set -uo pipefail
+          PASS=0; FAIL=0; FAILED=()
+          while IFS= read -r t; do
+            [ -z "$t" ] && continue
+            echo "::group::bash $t"
+            if timeout 180 bash "$t"; then
+              PASS=$((PASS+1)); echo "[fast-tier] PASS $t"
+            else
+              rc=$?
+              FAIL=$((FAIL+1)); FAILED+=("$t (rc=$rc)")
+              echo "[fast-tier] FAIL $t (rc=$rc)"
+            fi
+            echo "::endgroup::"
+          done <<'LIST'
+          launch/tests/scripts/test_ac_m3reorg_013_shell_guard_empty.sh
+          launch/tests/scripts/test_see1070_proxy_default_port_guard.sh
+          launch/tests/scripts/test_see1077_lease_fast_fail.sh
+          launch/tests/scripts/test_see1085_t1_cold_spawn.sh
+          launch/tests/scripts/test_see1085_t2_hot_reuse.sh
+          launch/tests/scripts/test_see1085_t3_spawn_fail.sh
+          launch/tests/scripts/test_see1085_t4_lease_respawn.sh
+          launch/tests/scripts/test_see1085_t5_dedup.sh
+          launch/tests/scripts/test_see1110_e5_multi_agent_channelA.sh
+          launch/tests/scripts/test_see1111_cold_start_gate.sh
+          launch/tests/scripts/test_see1111_defect6_wsprobe_first_call.sh
+          launch/tests/scripts/test_see1111_defect7_respawn.sh
+          launch/tests/scripts/test_see1111_defect8_respawn_probe.sh
+          launch/tests/scripts/test_see1111_defect9_npx_death_gate.sh
+          launch/tests/scripts/test_see1111_spawn_prepare_generates_project_godot.sh
+          launch/tests/scripts/test_see1111_timeline_negative_degradation.sh
+          launch/tests/scripts/test_see1111_ws_handshake_gate.sh
+          launch/tests/scripts/test_see1148_b6_fastfail_race.sh
+          launch/tests/scripts/test_see1148_p24_dynamic_release.sh
+          launch/tests/scripts/test_see1148_p3_intentional_release.sh
+          launch/tests/scripts/test_see1148_p3_t16_live_editor.sh
+          launch/tests/scripts/test_see1148_port_arbiter.sh
+          launch/tests/scripts/test_see1148_registry_concurrent.sh
+          launch/tests/scripts/test_see1148_t15_reaper_port_sweep.sh
+          launch/tests/scripts/test_see1148_t16_runtime_identity.sh
+          launch/tests/scripts/test_see1152_reaper_registry_sweep.sh
+          launch/tests/scripts/test_see1164_adversarial_revy.sh
+          launch/tests/scripts/test_see1164_persist_stderr.sh
+          launch/tests/scripts/test_see1164_port_die_adversarial_revy.sh
+          launch/tests/scripts/test_see1164_port_die_owner.sh
+          launch/tests/scripts/test_see1240_d1_corrupt_accounting.sh
+          launch/tests/scripts/test_see1240_ws4_status_doctor.sh
+          launch/tests/scripts/test_see1240_ws7_grace_race.sh
+          launch/tests/scripts/test_see1244_shim_degrade.sh
+          launch/tests/scripts/test_see1244_tier1_wait.sh
+          launch/tests/scripts/test_see1288_build_fallback_negative.sh
+          launch/tests/scripts/test_see986_autopilot_descriptions.sh
+          launch/tests/scripts/test_see990_live_gate_race.sh
+          launch/tests/scripts/see1129/test_multi_path_drift_assertion.sh
+          launch/tests/scripts/see1129/test_multi_slot_reuse_predicate.sh
+          launch/tests/scripts/see1129/test_runtime_registry_marker.sh
+          launch/tests/scripts/see1129/test_sidecar_guard_predicate.sh
+          launch/tests/scripts/see1137/test_reaper_headless_orphan_sweep.sh
+          LIST
+          echo "=============================================="
+          echo "[fast-tier shell] PASS=$PASS FAIL=$FAIL"
+          if [ "$FAIL" -gt 0 ]; then
+            printf '  FAILED: %s\n' "${FAILED[@]}"
+            exit 1
+          fi
+
+  node-units:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - name: Run fast-tier node unit tests
+        timeout-minutes: 4
+        run: |
+          set -uo pipefail
+          PASS=0; FAIL=0; FAILED=()
+          while IFS= read -r t; do
+            [ -z "$t" ] && continue
+            echo "::group::node $t"
+            if timeout 120 node "$t"; then
+              PASS=$((PASS+1)); echo "[fast-tier] PASS $t"
+            else
+              rc=$?
+              FAIL=$((FAIL+1)); FAILED+=("$t (rc=$rc)")
+              echo "[fast-tier] FAIL $t (rc=$rc)"
+            fi
+            echo "::endgroup::"
+          done <<'LIST'
+          launch/tests/scripts/see1129/selftest_integration_combined.mjs
+          launch/tests/scripts/see1129/test_anchor_passthrough.mjs
+          launch/tests/scripts/see1129/test_release_after_start_race.mjs
+          launch/tests/scripts/see1129/test_reuse_short_circuit.mjs
+          launch/tests/scripts/test_ac_m3reorg_011_shared_master_guard.mjs
+          launch/tests/scripts/test_see1152_stage_log.mjs
+          launch/tests/scripts/test_see1170_channel3.mjs
+          launch/tests/scripts/test_see1240_exec_constraints.mjs
+          launch/tests/scripts/test_see1240_screenshot_contract.mjs
+          launch/tests/scripts/test_see1240_ui_tools.mjs
+          launch/tests/scripts/test_see1244_rechain.mjs
+          launch/tests/scripts/test_see1244_shim_handoff.mjs
+          launch/tests/scripts/test_see1244_shim_handshake.mjs
+          launch/tests/scripts/test_see1244_shim_placeholder.mjs
+          launch/tests/scripts/test_see1244_v2_gate.mjs
+          LIST
+          echo "=============================================="
+          echo "[fast-tier node] PASS=$PASS FAIL=$FAIL"
+          if [ "$FAIL" -gt 0 ]; then
+            printf '  FAILED: %s\n' "${FAILED[@]}"
+            exit 1
+          fi
