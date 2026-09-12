@@ -66,7 +66,11 @@ write_lease "$FRONTI_WT/.godot/mcp-lease.json"  Fronti 6551 600
 # intended "looks dead" signal that the grace guard must override).
 # SEE-1291 H2: KOL_REAP_DISABLE_PWSH=1 must ride env -i (the /mnt/c
 # absolute fallback survives PATH stripping — SEE-1242 A-2 precedent).
-OUT="$(env -i PATH="/usr/bin:/bin" HOME="$TMP" KOL_REAP_GRACE_S=120 KOL_REAP_DISABLE_PWSH=1 \
+# SEE-1291 (runner fix): keep the real node's dir on the isolated PATH — the
+# reaper no-ops without node (`node not found`), and setup-node installs it
+# outside /usr/bin on GitHub runners.
+NODE_DIR="$(dirname "$(command -v node)")"
+OUT="$(env -i PATH="$NODE_DIR:/usr/bin:/bin" HOME="$TMP" KOL_REAP_GRACE_S=120 KOL_REAP_DISABLE_PWSH=1 \
     bash "$REAPER" --root "$FAKE_ROOT" --dry-run 2>&1 || true)"
 
 echo "----- reaper output -----"
