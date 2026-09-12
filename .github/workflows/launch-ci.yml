@@ -89,7 +89,9 @@ jobs:
           launch/tests/scripts/test_see1164_port_die_adversarial_revy.sh
           launch/tests/scripts/test_see1164_port_die_owner.sh
           launch/tests/scripts/test_see1240_d1_corrupt_accounting.sh
+          launch/tests/scripts/test_see1240_ws4_status_doctor.sh
           launch/tests/scripts/test_see1240_ws7_grace_race.sh
+          launch/tests/scripts/test_see1148_t16_runtime_identity.sh
           launch/tests/scripts/test_see1244_shim_degrade.sh
           launch/tests/scripts/test_see1244_tier1_wait.sh
           launch/tests/scripts/test_see1288_build_fallback_negative.sh
