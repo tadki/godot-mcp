@@ -80,14 +80,19 @@ EOF
 chmod +x "$MOCK_BIN/npm"
 
 out="$SBOX/t1b.out"
-PATH="$MOCK_BIN:$PATH" bash "$MOCK_LAUNCH/godot-mcp-launcher-snippet.sh" > "$out" 2>&1
+T1_HOME="$SBOX/t1home"; mkdir -p "$T1_HOME"
+PATH="$MOCK_BIN:$PATH" HOME="$T1_HOME" KOL_RUNTIME_ID=see1288-t1 bash "$MOCK_LAUNCH/godot-mcp-launcher-snippet.sh" > "$out" 2>&1
 rc=$?
 # The product computes FORK_SERVER_DIR as SCRIPT_DIR/../server (=<launch>/../server);
 # match the stable "fork CLI build failed" tail + server path, not the mock's
-# literal MOCK_SERVER spelling.
-if grep -q "WARNING: fork CLI build failed in .*/server (see server build logs)" "$out"; then
-    ok "build-fail → WARNING 'fork CLI build failed' logged"
-else ko "missing build-failed WARNING (got: $(grep 'WARNING\|LOG\|PROBE' "$out" | head -3))"; fi
+# literal MOCK_SERVER spelling. SEE-1288 MEDIUM-1: the WARNING must also point
+# at an on-disk build log that actually contains the npm error output.
+if grep -q "WARNING: fork CLI build failed in .*/server; full npm output saved to .*godot-mcp-fork-build-see1288-t1\.log; keeping upstream godot-mcp" "$out"; then
+    ok "build-fail → WARNING names the on-disk build log (MEDIUM-1)"
+else ko "WARNING does not name the build log (got: $(grep 'WARNING\|LOG\|PROBE' "$out" | head -3))"; fi
+BUILD_LOG="$T1_HOME/.multica/godot-mcp-fork-build-see1288-t1.log"
+[[ -f "$BUILD_LOG" ]] && ok "build log file exists at \$HOME/.multica/ (runtime_id-tagged)" || ko "build log missing: $BUILD_LOG"
+grep -q "mock npm ci FAILED" "$BUILD_LOG" && ok "build log contains the npm error output" || ko "build log missing npm error output"
 grep -q "PROBE-EXEC godot-mcp-proxy.mjs" "$out" && ok "launcher continued to exec proxy after build fail" || ko "launcher did not continue after build fail"
 [[ "$rc" == "0" ]] && ok "harness exit 0 (no abort on build fail)" || ko "harness rc=$rc (expected 0)"
 
