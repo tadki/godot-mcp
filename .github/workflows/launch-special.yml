@@ -144,6 +144,7 @@ jobs:
             launch/tests/scripts/test_see1152_configure_async_reaper.sh \
             launch/tests/scripts/test_see1152_mcp_daily_call_stability.sh \
             launch/tests/scripts/test_see1152_reaper_held_sweep.sh \
+            launch/tests/scripts/test_see1244_shim_handoff.mjs \
             launch/tests/scripts/test_see1170_channel1.sh \
             launch/tests/scripts/test_see1170_fix_round2.sh \
             launch/tests/scripts/test_see1240_exec_constraints_proxy.sh \

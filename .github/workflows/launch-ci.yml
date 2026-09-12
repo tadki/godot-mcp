@@ -141,7 +141,6 @@ jobs:
           launch/tests/scripts/test_see1240_screenshot_contract.mjs
           launch/tests/scripts/test_see1240_ui_tools.mjs
           launch/tests/scripts/test_see1244_rechain.mjs
-          launch/tests/scripts/test_see1244_shim_handoff.mjs
           launch/tests/scripts/test_see1244_shim_handshake.mjs
           launch/tests/scripts/test_see1244_shim_placeholder.mjs
           launch/tests/scripts/test_see1244_v2_gate.mjs
