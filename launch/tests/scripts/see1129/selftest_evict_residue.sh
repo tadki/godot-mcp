@@ -38,6 +38,10 @@ BASE="/tmp/kol-see1129-selftest-${SUF}"
 rm -rf "$BASE"; mkdir -p "$BASE"
 export HOME="$BASE/home"; mkdir -p "$HOME/.multica"
 export TMPDIR="$BASE/tmp"; mkdir -p "$TMPDIR"
+# SEE-1291 H2: hermetic — the /mnt/c powershell.exe absolute fallback survives
+# PATH stripping (SEE-1242 A-2 precedent in test_lease_lifecycle_boundary_matrix.sh),
+# so the explicit kill-switch is required on WSL hosts.
+export KOL_REAP_DISABLE_PWSH=1
 
 WS="11111111-2222-3333-4444-555555555555"
 ARCHI_OLD="$BASE/ws/${WS}/c508560b/workdir/KingOfLikes-Godot"   # residual holder's project

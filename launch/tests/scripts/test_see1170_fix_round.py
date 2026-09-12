@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """SEE-1170 修复轮复测 — find_bare_repo_path walk 修复的对抗性复核
 
 目标 1：
@@ -13,7 +14,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+# SEE-1291 H2: local_repo_check lives in the KOL consumer repo, not this fork.
+# Anchor via KOL_ROOT (explicit env, else the enclosing superproject when this
+# is a submodule checkout); give fix_round.py an interpreter shebang too.
+_KOL_ROOT = os.environ.get("KOL_ROOT") or subprocess.run(
+    ["git", "-C", str(Path(__file__).resolve().parents[3]),
+     "rev-parse", "--show-superproject-working-tree"],
+    capture_output=True, text=True).stdout.strip()
+REPO_ROOT = Path(_KOL_ROOT or Path(__file__).resolve().parents[3])
 sys.path.insert(0, str(REPO_ROOT / ".dev" / "autopilots"))
 import local_repo_check as lrc  # noqa: E402
 

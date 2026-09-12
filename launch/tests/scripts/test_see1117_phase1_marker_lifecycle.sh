@@ -1,58 +1,119 @@
 #!/usr/bin/env bash
-# SEE-1117 Phase 1 QA — verify configure / restore / verify / push-guard /
+# SEE-1117 Phase 1 QA — configure / restore / verify / push-guard /
 # auto-pr-on-stop lifecycle in isolated temp worktrees.
 #
-# Cases (mirroring Atlas's QA checklist in issue comment 88ba8d21):
-#   S1..S5   lease happy path on Atlas port 6551
-#   S6       same path on Revy port 6555
-#   S7       configure refuses D-drive master target
-#   S8, S9   push-guard rejects pinned marker commit; after restore it allows
-#   S10      auto-pr-on-stop restores marker unconditionally
-#   S11      toolchain-missing fallback in push-guard still blocks port_override=true
-#   S12      verify exit 0 when marker section absent
-#   S13      configure appends marker when [godot_mcp] section missing
-#   S14      configure handles marker block at EOF (no trailing section)
+# SEE-1291 drift adjudication (docs/SEE-1291-phase1-drift-adjudication.md):
+# the Phase-1 project.godot marker channel is RETIRED (SEE-1117 Direction 3 +
+# SEE-1240 WS-8 — mcp_write_marker has zero production call sites; per-agent
+# lease state lives only in the gitignored sidecar .godot/mcp-lease.json).
+# Arms re-scoped or retired accordingly; this suite now asserts the SIDECAR
+# lifecycle and the push-guard sidecar invariants:
 #
-# All assertions are grep / exit-code / byte-diff based — no "looks right".
+#   S-atlas / S-revy (ports 6551/6555) — the lease round-trip:
+#     S-x.1 configure writes sidecar state=active, port=$port, project.godot untouched
+#     S-x.2 verify exit 1 while sidecar active
+#     S-x.3 restore sets sidecar state=released
+#     S-x.4 verify exit 0 after restore
+#     S-x.5 project.godot byte-identical vs HEAD after the round-trip
+#   S7       configure refuses a master-branch checkout (write-target guard)
+#   S8       push-guard Check A: HEAD tree carrying .godot/mcp-lease.json rejected (rc=2)
+#            [KOL-coupled: needs $KOL_ROOT/.claude/hooks]
+#   S9       push-guard Check B: worktree sidecar state=active → rc=0 + soft warn
+#            [KOL-coupled]
+#   S10      auto-pr-on-stop releases the sidecar (lease-end backstop)
+#            [KOL-coupled]
 #
-# Run from repo root:
+# Retired arms (removed; rationale + replacement coverage in the adjudication
+# doc): S11/S11b fallback-grep arms (the legacy grep no longer exists), S12
+# marker-absent verify (duplicate of Suite A A7), S13 configure-appends-marker
+# and S14 marker-at-EOF (the marker write path is dead code — zero call sites).
+#
+# All assertions are grep / exit-code / JSON-field / byte-diff based.
+#
+# Run context: works from BOTH layouts.
+#   - fork checkout (this repo): KOL_ROOT unset → self-contained arms run
+#     against this checkout's launch/; hook-driven arms (S8/S9/S10) need a
+#     KOL worktree — they are reported as ENV-LIMITED (never silently PASSed)
+#     when $KOL_ROOT/.claude/hooks is absent. CI: run the KOL-coupled tier
+#     with KOL_ROOT pointing at a KOL checkout.
+#   - KOL checkout (fork mounted as addons/godot_mcp): auto-resolves.
+#
 #   bash launch/tests/scripts/test_see1117_phase1_marker_lifecycle.sh
 #
-# Exit 0 on all-pass, non-zero with a printed FAIL list otherwise.
+# Exit 0 on all-pass (ENV-LIMITED arms are tallied separately, never counted
+# as pass), non-zero with a printed FAIL list otherwise.
 
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-# Run context: the KOL worktree under test. Default = the enclosing KOL
-# checkout (KOL repo layout); set KOL_ROOT explicitly when this suite runs
-# from the fork checkout (launch/tests/) so KOL resources (project.godot,
-# .claude/hooks) resolve against the KOL worktree being exercised.
-KOL_ROOT="${KOL_ROOT:-$REPO_ROOT}"
-LAUNCH_DIR="${KOL_ROOT}/addons/godot_mcp/launch"
-HOOKS_DIR="${KOL_ROOT}/.claude/hooks"
+# KOL_ROOT: the KingOfLikes-Godot worktree that owns project.godot +
+# .claude/hooks. Resolution order: explicit env → enclosing superproject
+# (submodule checkout) → this repo (fork; hook arms become ENV-LIMITED).
+KOL_ROOT="${KOL_ROOT:-}"
+if [[ -z "$KOL_ROOT" ]]; then
+    KOL_ROOT="$(git -C "$REPO_ROOT" rev-parse --show-superproject-working-tree 2>/dev/null || true)"
+fi
+[[ -z "$KOL_ROOT" ]] && KOL_ROOT="$REPO_ROOT"
+
+# LAUNCH_DIR: the launch toolchain under test. The fork's own launch/ wins so
+# the suite always exercises THIS checkout's scripts; fall back to the KOL
+# submodule mount when running from a KOL-layout checkout.
+if [[ -d "$REPO_ROOT/launch" ]]; then
+    LAUNCH_DIR="$REPO_ROOT/launch"
+else
+    LAUNCH_DIR="$KOL_ROOT/addons/godot_mcp/launch"
+fi
+HOOKS_DIR="$KOL_ROOT/.claude/hooks"
 CONFIGURE="$LAUNCH_DIR/configure-mcp-port.sh"
 RESTORE="$LAUNCH_DIR/restore-godot-original.sh"
 VERIFY="$LAUNCH_DIR/verify-godot-written-back.sh"
 PUSH_GUARD="$HOOKS_DIR/push-guard.sh"
 AUTO_PR_STOP="$HOOKS_DIR/auto-pr-on-stop.sh"
 
+HOOKS_AVAILABLE=0
+if [[ -f "$PUSH_GUARD" && -f "$AUTO_PR_STOP" ]]; then
+    HOOKS_AVAILABLE=1
+fi
+
 PASS_COUNT=0
 FAIL_COUNT=0
+ENV_LIMITED_COUNT=0
 declare -a FAILED_CASES=()
+declare -a ENV_LIMITED_CASES=()
 
 TMPROOT="$(mktemp -d -t see1117-qa-XXXXXXXX)"
 trap 'rm -rf "$TMPROOT"' EXIT
 
-note()  { printf '[qa] %s\n' "$*"; }
-pass()  { PASS_COUNT=$((PASS_COUNT+1)); printf '  [PASS] %s\n' "$*"; }
-fail()  { FAIL_COUNT=$((FAIL_COUNT+1)); FAILED_CASES+=("$1"); printf '  [FAIL] %s\n' "$*"; }
+note()   { printf '[qa] %s\n' "$*"; }
+pass()   { PASS_COUNT=$((PASS_COUNT+1)); printf '  [PASS] %s\n' "$*"; }
+fail()   { FAIL_COUNT=$((FAIL_COUNT+1)); FAILED_CASES+=("$1"); printf '  [FAIL] %s\n' "$*"; }
+limited(){ ENV_LIMITED_COUNT=$((ENV_LIMITED_COUNT+1)); ENV_LIMITED_CASES+=("$1"); printf '  [ENV-LIMITED] %s (needs KOL worktree: set KOL_ROOT)\n' "$1"; }
+
+# Synthetic fixture project.godot — mirrors the tracked WS-8 endgame state:
+# static machine-level bind constants only, no per-agent runtime keys, no
+# marker block. Self-contained so the suite runs from a pure fork checkout.
+write_fixture_project_godot() {
+    cat > "$1/project.godot" <<'EOF'
+; Engine configuration file.
+config_version=5
+
+[application]
+
+config/name="see1117-qa-fixture"
+
+[godot_mcp]
+
+bind_mode=1
+custom_bind_ip=""
+EOF
+}
 
 # --- fixture helpers --------------------------------------------------------
 
 make_worktree() {
-    # Build an isolated git repo with the current project.godot committed, so
-    # configure/verify/restore operate on a private copy and we never touch the
-    # shared working tree.
+    # Build an isolated git repo with a committed project.godot, so
+    # configure/verify/restore operate on a private copy and we never touch
+    # any shared working tree.
     local dir="$1"
     mkdir -p "$dir"
     (
@@ -61,92 +122,77 @@ make_worktree() {
         git config user.email qa@example.com
         git config user.name qa
         git config commit.gpgsign false
-        cp "$KOL_ROOT/project.godot" "$dir/project.godot"
-        # Start the fixture from the HEAD blob, not the working tree — the
-        # working tree may be mid-lease (per-agent pinned) which would poison
-        # the "original" baseline.
-        git -C "$KOL_ROOT" show HEAD:project.godot > "$dir/project.godot"
+        if [[ -f "$KOL_ROOT/project.godot" ]]; then
+            # KOL worktree available: use its HEAD blob (repo-shape fidelity).
+            git -C "$KOL_ROOT" show HEAD:project.godot > "$dir/project.godot"
+        else
+            write_fixture_project_godot "$dir"
+        fi
         git add project.godot
         git commit -q -m "fixture: project.godot at HEAD"
     )
 }
 
-set_marker() {
-    # set_marker <file> <enabled> <port> — in-place edit of the two port_*
-    # lines inside the marker block. Assumes the marker block exists.
-    local file="$1" enabled="$2" port="$3"
-    python3 - "$file" "$enabled" "$port" <<'PY'
-import re, sys
-path, enabled, port = sys.argv[1], sys.argv[2], sys.argv[3]
-src = open(path, encoding='utf-8').read()
-new, n1 = re.subn(r'^port_override_enabled=.*$',
-                  f'port_override_enabled={enabled}', src,
-                  count=1, flags=re.M)
-new, n2 = re.subn(r'^port_override=.*$',
-                  f'port_override={port}', new,
-                  count=1, flags=re.M)
-if n1 != 1 or n2 != 1:
-    sys.exit('marker block missing in fixture')
-open(path, 'w', encoding='utf-8').write(new)
-PY
+sidecar_field() {
+    # sidecar_field <sidecar.json> <field> — empty string when absent/invalid.
+    local sc="$1" f="$2"
+    [ -f "$sc" ] || return 0
+    SIDE_FIELD="$f" node -e '
+        let raw = "";
+        process.stdin.on("data", c => raw += c);
+        process.stdin.on("end", () => {
+            try {
+                const o = JSON.parse(raw);
+                const v = o[process.env.SIDE_FIELD];
+                process.stdout.write(v === null || v === undefined ? "" : String(v));
+            } catch (e) { process.stdout.write(""); }
+        });
+    ' < "$sc" 2>/dev/null
 }
 
-read_marker() {
-    # read_marker <file> -> "enabled port"
-    python3 - "$1" <<'PY'
-import re, sys
-src = open(sys.argv[1], encoding='utf-8').read()
-m = re.search(
-    r'# \[MCP-AGENT-CONFIG-BEGIN\](.*?)# \[MCP-AGENT-CONFIG-END\]',
-    src, re.S)
-if not m:
-    sys.exit(1)
-block = m.group(1)
-en = re.search(r'^port_override_enabled=(.*)$', block, re.M)
-po = re.search(r'^port_override=(.*)$', block, re.M)
-print((en.group(1).strip() if en else '') + ' ' + (po.group(1).strip() if po else ''))
-PY
-}
+sidecar_path() { printf '%s/.godot/mcp-lease.json' "$(dirname "$1")"; }
 
-assert_marker() {
-    # assert_marker <file> <expected_enabled> <expected_port> <case-name>
-    local file="$1" want_en="$2" want_port="$3" name="$4"
-    local got
-    got="$(read_marker "$file")" || { fail "$name: read_marker failed on $file"; return 1; }
-    local got_en="${got% *}" got_port="${got##* }"
-    if [[ "$got_en" == "$want_en" && "$got_port" == "$want_port" ]]; then
-        pass "$name (marker=$got_en/$got_port)"
+assert_sidecar() {
+    # assert_sidecar <project.godot> <expected_state> <expected_port> <case>
+    local pg="$1" want_state="$2" want_port="$3" name="$4"
+    local sc
+    sc="$(sidecar_path "$pg")"
+    local got_state got_port
+    got_state="$(sidecar_field "$sc" state)"
+    got_port="$(sidecar_field "$sc" port)"
+    if [[ "$got_state" == "$want_state" && "$got_port" == "$want_port" ]]; then
+        pass "$name (sidecar=$got_state/$got_port)"
     else
-        fail "$name: marker=$got_en/$got_port, expected $want_en/$want_port"
+        fail "$name: sidecar=$got_state/$got_port, expected $want_state/$want_port ($sc)"
     fi
 }
 
-# --- S1..S5: lease happy path on port 6551 ----------------------------------
+# --- S-atlas / S-revy: lease round-trip on ports 6551/6555 -------------------
 
 test_happy_path() {
     local port="$1" tag="$2"
-    note "S-$tag: lease happy path on port $port"
+    note "S-$tag: lease round-trip on port $port (sidecar semantics)"
     local dir="$TMPROOT/happy-$port"
     make_worktree "$dir"
 
     ( cd "$dir" && KOL_PROJECT_GODOT="$dir/project.godot" bash "$CONFIGURE" --port "$port" ) \
         >"$dir/configure.log" 2>&1 \
         || { fail "S-$tag configure"; return; }
-    assert_marker "$dir/project.godot" true "$port" "S-$tag.1 configure pinned marker"
+    assert_sidecar "$dir/project.godot" active "$port" "S-$tag.1 configure wrote active sidecar"
 
     ( cd "$dir" && bash "$VERIFY" --project-godot "$dir/project.godot" ) \
         >"$dir/verify-pinned.log" 2>&1
     local rc=$?
     if (( rc == 1 )); then
-        pass "S-$tag.2 verify exit 1 on pinned marker"
+        pass "S-$tag.2 verify exit 1 on active lease"
     else
-        fail "S-$tag.2 verify exit=$rc on pinned marker (want 1)"
+        fail "S-$tag.2 verify exit=$rc on active lease (want 1)"
     fi
 
     ( cd "$dir" && bash "$RESTORE" --project-godot "$dir/project.godot" ) \
         >"$dir/restore.log" 2>&1 \
         || { fail "S-$tag.3 restore"; return; }
-    assert_marker "$dir/project.godot" false 6550 "S-$tag.3 restore marker"
+    assert_sidecar "$dir/project.godot" released "$port" "S-$tag.3 restore released sidecar"
 
     ( cd "$dir" && bash "$VERIFY" --project-godot "$dir/project.godot" ) \
         >"$dir/verify-restored.log" 2>&1
@@ -157,8 +203,8 @@ test_happy_path() {
         fail "S-$tag.4 verify exit=$rc after restore (want 0)"
     fi
 
-    # S5: byte-identical vs HEAD (the fixture's HEAD, which mirrors the repo's
-    # HEAD:project.godot blob).
+    # S5: byte-identical vs HEAD — the addon never writes project.godot
+    # (SEE-1117 Direction 3 P1 contract).
     if git -C "$dir" diff --quiet HEAD -- project.godot; then
         pass "S-$tag.5 byte-identical vs HEAD after configure+restore"
     else
@@ -172,19 +218,7 @@ test_happy_path 6555 revy
 
 # --- S7: master write-target guard ------------------------------------------
 
-note "S7: master write-target guard rejects D-drive master"
-# Synthetic D-drive path — the guard uses string prefix matching, so any path
-# beginning with /mnt/d/GodotProjects/king-of-likes must be refused.
-fake_d="$TMPROOT/d-drive"
-mkdir -p "$fake_d"
-cp "$KOL_ROOT/project.godot" "$fake_d/project.godot"
-# Simulate the known shared path by overriding KOL_PROJECT_GODOT with a path
-# we then pass through the guard. configure-mcp-port.sh's guard matches the
-# literal /mnt/d/GodotProjects/king-of-likes prefix; we reproduce that check
-# by pointing at a path we symlink under that prefix when /mnt/d is writable,
-# else we exercise the master-branch guard path via a master-branch fixture.
-
-# Branch-based check: target checkout on branch master must be refused.
+note "S7: master write-target guard"
 master_dir="$TMPROOT/master-checkout"
 mkdir -p "$master_dir"
 (
@@ -193,7 +227,11 @@ mkdir -p "$master_dir"
     git config user.email qa@example.com
     git config user.name qa
     git config commit.gpgsign false
-    git -C "$KOL_ROOT" show HEAD:project.godot > project.godot
+    if [[ -f "$KOL_ROOT/project.godot" ]]; then
+        git -C "$KOL_ROOT" show HEAD:project.godot > project.godot
+    else
+        write_fixture_project_godot "$master_dir"
+    fi
     git add project.godot
     git commit -q -m "master fixture"
 )
@@ -205,53 +243,13 @@ else
     fail "S7 master-branch guard rc=$rc, output: $out"
 fi
 
-# Literal-path check: skip when /mnt/d is not writable in this WSL runtime.
-if [[ -d /mnt/d ]] && touch /mnt/d/.see1117_qa_canary 2>/dev/null; then
-    rm -f /mnt/d/.see1117_qa_canary
-    # We cannot safely create /mnt/d/GodotProjects/king-of-likes here (it's the
-    # real master checkout). The branch-based check above already covers the
-    # guard's semantic; the literal-path arm is a string compare on the same
-    # condition. Skip and note.
-    note "S7 literal D-drive path test skipped (would touch real master checkout); branch-based arm covers the guard."
-else
-    note "S7 literal D-drive path test skipped (no /mnt/d access in this runtime)."
-fi
+# --- hook-driven arms: S8/S9 (push-guard sidecar checks), S10 (stop hook) ----
+# These exercise KOL-repo hooks (.claude/hooks). Without a KOL worktree they
+# are reported ENV-LIMITED — an explicit, tallied non-pass state, never a
+# silent skip. See the adjudication doc for the CI tier that owns them.
 
-# --- S8/S9: push-guard rejects pinned marker; passes after restore ----------
-
-note "S8/S9: push-guard on pinned vs restored marker"
-guard_repo="$TMPROOT/push-guard-repo"
-mkdir -p "$guard_repo"
-(
-    cd "$guard_repo"
-    git init -q -b shared/SEE-1117
-    git config user.email qa@example.com
-    git config user.name qa
-    git config commit.gpgsign false
-    git -C "$KOL_ROOT" show HEAD:project.godot > project.godot
-    git add project.godot
-    git commit -q -m "fixture: clean marker"
-    # Create a fake origin/master ref pointing at HEAD so the push-guard's
-    # master-ancestry check (git merge-base --is-ancestor origin/master HEAD)
-    # passes without needing a real remote.
-    git update-ref refs/remotes/origin/master HEAD
-    git update-ref refs/remotes/origin/shared/SEE-1117 HEAD
-    # Pin the marker to a per-agent value and commit.
-    python3 - <<'PY'
-import re
-path = 'project.godot'
-src = open(path, encoding='utf-8').read()
-src = re.sub(r'^port_override_enabled=.*$', 'port_override_enabled=true', src, count=1, flags=re.M)
-src = re.sub(r'^port_override=.*$', 'port_override=6551', src, count=1, flags=re.M)
-open(path, 'w', encoding='utf-8').write(src)
-PY
-    git add project.godot
-    git commit -q -m "wip: pin marker (should be rejected)"
-)
-
-# Build the JSON payload push-guard reads from stdin.
 build_hook_input() {
-    # build_hook_input <git-dir> <refspec>
+    # build_hook_input <git-dir> <refspec> — PreToolUse JSON payload.
     python3 - "$1" "$2" <<'PY'
 import json, sys
 git_dir, refspec = sys.argv[1], sys.argv[2]
@@ -260,319 +258,135 @@ print(json.dumps({"tool_input": {"command": cmd}}))
 PY
 }
 
-# Trigger the marker guard via the master-push path: Atlas/Archi are allowed
-# to push to master, but the port-override guard still runs against
-# HEAD:project.godot. We set MULTICA_AGENT_NAME=Atlas and push refspec
-# HEAD:refs/heads/master. This exercises the same verify.sh code path as the
-# shared-branch Check 6, without needing WORKING_BRANCH metadata (which would
-# require a live `multica` CLI and MULTICA_TASK_ID).
-hook_env=(
-    PROJECT_ROOT="$KOL_ROOT"
+# The guard's host-repo scoping (SEE-1268) keys on PROJECT_ROOT == the push's
+# git root. Point PROJECT_ROOT at the fixture repo so the master-push path
+# reaches run_sidecar_guard hermetically (no live multica metadata needed).
+hook_env_base=(
     MULTICA_AGENT_NAME="Atlas"
     MULTICA_AGENT_ID="fac3e3a1-dcda-498d-8613-e8c2811f3ef5"
 )
 
-payload_pinned="$(build_hook_input "$guard_repo" "HEAD:refs/heads/master")"
-(
-    cd "$guard_repo"
-    env "${hook_env[@]}" bash "$PUSH_GUARD" <<<"$payload_pinned" >/dev/null 2>"$guard_repo/guard-pinned.err"
-)
-rc=$?
-if (( rc == 2 )) && grep -q "marker" "$guard_repo/guard-pinned.err"; then
-    pass "S8 push-guard rejects commit with pinned marker (rc=2)"
-else
-    fail "S8 push-guard rc=$rc, stderr: $(cat "$guard_repo/guard-pinned.err")"
-fi
-
-# Restore + amend -> guard should allow the push through. The amend may be
-# empty when restore brings the tree back to the pre-pin state (because we
-# never edited anything else), so use --allow-empty to keep the commit.
-(
-    cd "$guard_repo"
-    KOL_PROJECT_GODOT="$PWD/project.godot" bash "$RESTORE" --project-godot "$PWD/project.godot" >/dev/null 2>&1
-    git add project.godot
-    git commit -q --amend --no-edit --allow-empty
-)
-
-(
-    cd "$guard_repo"
-    env "${hook_env[@]}" bash "$PUSH_GUARD" <<<"$payload_pinned" >/dev/null 2>"$guard_repo/guard-restored.err"
-)
-rc=$?
-if (( rc == 0 )); then
-    pass "S9 push-guard allows push after restore (rc=0)"
-else
-    fail "S9 push-guard rc=$rc after restore, stderr: $(cat "$guard_repo/guard-restored.err")"
-fi
-
-# --- S10: auto-pr-on-stop restores marker on session end --------------------
-
-note "S10: auto-pr-on-stop restores marker unconditionally"
-stop_repo="$TMPROOT/auto-pr-stop"
-mkdir -p "$stop_repo/addons/godot_mcp/launch"
-(
-    cd "$stop_repo"
-    git init -q -b feat/see-1117-test
-    git config user.email qa@example.com
-    git config user.name qa
-    git config commit.gpgsign false
-    git -C "$KOL_ROOT" show HEAD:project.godot > project.godot
-    git add project.godot
-    git commit -q -m "fixture"
-    # Pin marker.
-    python3 - <<'PY'
-import re
-path = 'project.godot'
-src = open(path, encoding='utf-8').read()
-src = re.sub(r'^port_override_enabled=.*$', 'port_override_enabled=true', src, count=1, flags=re.M)
-src = re.sub(r'^port_override=.*$', 'port_override=6555', src, count=1, flags=re.M)
-open(path, 'w', encoding='utf-8').write(src)
-PY
-    # Leave the pinned marker in the working tree but unstaged — the hook is
-    # expected to restore it BEFORE the auto-commit step.
-)
-# The hook cd's into $PROJECT_ROOT when it has .git, and resolves
-# restore-godot-original.sh via the SEE-1273 T5-F single landing point
-# $PROJECT_ROOT/addons/godot_mcp/launch/... — so mirror the launch toolchain
-# into the fixture repo (copy, not symlink, so restore/verify see
-# PROJECT_ROOT = fixture).
-cp "$LAUNCH_DIR"/*.sh "$LAUNCH_DIR"/*.lib.sh "$stop_repo/addons/godot_mcp/launch/" 2>/dev/null || true
-cp "$LAUNCH_DIR"/agent-ports.json "$stop_repo/addons/godot_mcp/launch/" 2>/dev/null || true
-chmod +x "$stop_repo/addons/godot_mcp/launch/"*.sh
-
-# Stop hook payload: stop_hook_active=false so it proceeds.
-stop_input='{"stop_hook_active":false}'
-(
-    cd "$stop_repo"
-    PROJECT_ROOT="$stop_repo" \
-    MULTICA_AGENT_NAME="Revy" \
-    MULTICA_TASK_ID="" \
-    GITHUB_PERSONAL_ACCESS_TOKEN="" \
-    GH_TOKEN="" \
-        bash "$AUTO_PR_STOP" <<<"$stop_input" >/dev/null 2>"$stop_repo/stop.err" || true
-)
-# After hook, marker in working tree must be false/6550.
-assert_marker "$stop_repo/project.godot" false 6550 "S10 auto-pr-on-stop restored marker"
-
-# --- S11: toolchain-missing fallback in push-guard --------------------------
-
-note "S11: push-guard fallback when launch toolchain is missing"
-# Reuse the push-guard-repo, pin the marker again, but this time point
-# PROJECT_ROOT at a directory WITHOUT the addons/godot_mcp/launch/ toolchain
-# so the guard falls back to its legacy grep.
-(
-    cd "$guard_repo"
-    python3 - <<'PY'
-import re
-path = 'project.godot'
-src = open(path, encoding='utf-8').read()
-src = re.sub(r'^port_override_enabled=.*$', 'port_override_enabled=true', src, count=1, flags=re.M)
-src = re.sub(r'^port_override=.*$', 'port_override=6551', src, count=1, flags=re.M)
-open(path, 'w', encoding='utf-8').write(src)
-PY
-    git add project.godot
-    git commit -q --amend --no-edit
-)
-
-empty_root="$TMPROOT/empty-root"
-mkdir -p "$empty_root"
-(
-    cd "$guard_repo"
-    PROJECT_ROOT="$empty_root" \
-    MULTICA_AGENT_NAME="Atlas" \
-    MULTICA_AGENT_ID="fac3e3a1-dcda-498d-8613-e8c2811f3ef5" \
-        bash "$PUSH_GUARD" <<<"$payload_pinned" >/dev/null 2>"$guard_repo/guard-fallback.err"
-)
-rc=$?
-if (( rc == 2 )) && grep -q "port_override_enabled=true" "$guard_repo/guard-fallback.err"; then
-    pass "S11 fallback grep still rejects port_override_enabled=true"
-else
-    fail "S11 fallback rc=$rc, stderr: $(cat "$guard_repo/guard-fallback.err")"
-fi
-
-# --- S11b: behavior-divergence — verify path is authoritative, not grep -----
-# SEE-1117 缺陷 1 修复回归基线。构造 marker 段已恢复（false/6550），但 marker
-# 段外的 [godot_mcp] 区域仍留一个 stray `port_override_enabled=true` 的
-# project.godot。verify.sh 只读 marker 段，会 exit 0；legacy fallback grep 扫
-# 全文件，会 exit 2。push-guard 若走 verify 路径则 rc=0（allow），走 fallback
-# 则 rc=2（block）。rc=0 即证明 verify 是权威判定，fallback 未触发。
-
-note "S11b: push-guard with restored marker + stray port_override_enabled=true"
-div_repo="$TMPROOT/divergence-repo"
-mkdir -p "$div_repo"
-(
-    cd "$div_repo"
-    git init -q -b shared/SEE-1117
-    git config user.email qa@example.com
-    git config user.name qa
-    git config commit.gpgsign false
-    git -C "$KOL_ROOT" show HEAD:project.godot > project.godot
-    # Marker stays at original (false/6550), but inject a stray
-    # port_override_enabled=true OUTSIDE the marker block — insert it right
-    # after the [godot_mcp] section header.
-    python3 - <<'PY'
-path = 'project.godot'
-src = open(path, encoding='utf-8').read()
-marker_begin = '# [MCP-AGENT-CONFIG-BEGIN]'
-idx = src.index(marker_begin)
-head, tail = src[:idx], src[idx:]
-# Insert stray override before the marker block, still inside [godot_mcp].
-head = head.rstrip('\n') + '\nport_override_enabled=true\nport_override=9999\n\n'
-open(path, 'w', encoding='utf-8').write(head + tail)
-PY
-    git add project.godot
-    git commit -q -m "fixture: restored marker + stray override outside marker"
-    git update-ref refs/remotes/origin/master HEAD
-    git update-ref refs/remotes/origin/shared/SEE-1117 HEAD
-)
-
-payload_div="$(build_hook_input "$div_repo" "HEAD:refs/heads/master")"
-(
-    cd "$div_repo"
-    env "${hook_env[@]}" bash "$PUSH_GUARD" <<<"$payload_div" >/dev/null 2>"$div_repo/guard-div.err"
-)
-rc=$?
-if (( rc == 0 )); then
-    pass "S11b push-guard rc=0 on stray-override-outside-marker (verify path authoritative)"
-else
-    fail "S11b push-guard rc=$rc — verify path NOT authoritative (fallback grep fired?). stderr: $(cat "$div_repo/guard-div.err")"
-fi
-
-# Sanity inverse: the same fixture repo, but with PROJECT_ROOT pointed at the
-# empty toolchain root, MUST trip the fallback grep (rc=2). This proves the
-# divergence is real: rc=0 above is verify's doing, rc=2 here is grep's.
-(
-    cd "$div_repo"
-    PROJECT_ROOT="$empty_root" \
-    MULTICA_AGENT_NAME="Atlas" \
-    MULTICA_AGENT_ID="fac3e3a1-dcda-498d-8613-e8c2811f3ef5" \
-        bash "$PUSH_GUARD" <<<"$payload_div" >/dev/null 2>"$div_repo/guard-div-fallback.err"
-)
-rc=$?
-if (( rc == 2 )); then
-    pass "S11b-inverse fallback grep correctly fires on stray override (rc=2)"
-else
-    fail "S11b-inverse fallback rc=$rc (want 2) — divergence fixture broken"
-fi
-
-# --- S12: verify exit 0 when marker section absent --------------------------
-
-note "S12: verify exit 0 when marker section absent"
-no_marker="$TMPROOT/no-marker"
-mkdir -p "$no_marker"
-# Build a project.godot without the marker block (strip it).
-python3 - "$KOL_ROOT/project.godot" "$no_marker/project.godot" <<'PY'
-import re, sys
-src = open(sys.argv[1], encoding='utf-8').read()
-stripped = re.sub(
-    r'\n?# \[MCP-AGENT-CONFIG-BEGIN\].*?# \[MCP-AGENT-CONFIG-END\]\n?',
-    '\n', src, flags=re.S)
-open(sys.argv[2], 'w', encoding='utf-8').write(stripped)
-PY
-bash "$VERIFY" --project-godot "$no_marker/project.godot" >"$no_marker/verify.log" 2>&1
-rc=$?
-if (( rc == 0 )); then
-    pass "S12 verify exit 0 on missing marker"
-else
-    fail "S12 verify exit=$rc on missing marker (want 0): $(cat "$no_marker/verify.log")"
-fi
-
-# --- S13: configure appends marker when [godot_mcp] section missing ---------
-
-note "S13: configure appends marker + [godot_mcp] when section absent"
-no_section="$TMPROOT/no-section"
-mkdir -p "$no_section"
-(
-    cd "$no_section"
-    git init -q -b test-branch
-    git config user.email qa@example.com
-    git config user.name qa
-    git config commit.gpgsign false
-)
-python3 - "$KOL_ROOT/project.godot" "$no_section/project.godot" <<'PY'
-import re, sys
-src = open(sys.argv[1], encoding='utf-8').read()
-# Strip the marker block AND the [godot_mcp] section header + its keys.
-src = re.sub(
-    r'\n?# \[MCP-AGENT-CONFIG-BEGIN\].*?# \[MCP-AGENT-CONFIG-END\]\n?',
-    '\n', src, flags=re.S)
-# Drop the whole [godot_mcp] section (header + keys until next [section]).
-src = re.sub(
-    r'\[godot_mcp\]\n(?:[^\[]*\n)*?(?=\[|\Z)',
-    '', src)
-open(sys.argv[2], 'w', encoding='utf-8').write(src)
-PY
-(
-    cd "$no_section"
-    git add project.godot
-    git commit -q -m "no godot_mcp section"
-    KOL_PROJECT_GODOT="$PWD/project.godot" bash "$CONFIGURE" --port 6551 >/dev/null 2>&1
-)
-rc=$?
-if (( rc != 0 )); then
-    fail "S13 configure rc=$rc on missing [godot_mcp]"
-else
-    if grep -q '^\[godot_mcp\]$' "$no_section/project.godot" \
-        && grep -qF '# [MCP-AGENT-CONFIG-BEGIN]' "$no_section/project.godot"; then
-        assert_marker "$no_section/project.godot" true 6551 "S13 configure appended marker + section"
-    else
-        fail "S13 configure did not append [godot_mcp]/marker"
-    fi
-fi
-
-# --- S14: marker block at EOF -----------------------------------------------
-
-note "S14: configure handles marker block at EOF"
-eof_repo="$TMPROOT/marker-at-eof"
-mkdir -p "$eof_repo"
-(
-    cd "$eof_repo"
-    git init -q -b test-branch
-    git config user.email qa@example.com
-    git config user.name qa
-    git config commit.gpgsign false
-)
-python3 - "$KOL_ROOT/project.godot" "$eof_repo/project.godot" <<'PY'
-import re, sys
-src = open(sys.argv[1], encoding='utf-8').read()
-# Extract the marker block.
-m = re.search(
-    r'# \[MCP-AGENT-CONFIG-BEGIN\].*?# \[MCP-AGENT-CONFIG-END\]\n?',
-    src, re.S)
-marker = m.group(0)
-# Remove marker from its original spot, append it at the very end of the file
-# with no trailing newline section after it.
-src = src.replace(marker, '')
-if not src.endswith('\n'):
-    src += '\n'
-src += '\n' + marker
-open(sys.argv[2], 'w', encoding='utf-8').write(src)
-PY
-(
-    cd "$eof_repo"
-    git add project.godot
-    git commit -q -m "marker at EOF"
-    KOL_PROJECT_GODOT="$PWD/project.godot" bash "$CONFIGURE" --port 6551 >/dev/null 2>&1
-)
-rc=$?
-if (( rc != 0 )); then
-    fail "S14 configure rc=$rc on EOF marker"
-else
-    assert_marker "$eof_repo/project.godot" true 6551 "S14 configure pinned marker at EOF"
-    # Restore must also work on EOF marker.
+note "S8/S9: push-guard sidecar invariants"
+if (( HOOKS_AVAILABLE )); then
+    guard_repo="$TMPROOT/push-guard-repo"
+    mkdir -p "$guard_repo"
     (
-        cd "$eof_repo"
-        KOL_PROJECT_GODOT="$PWD/project.godot" bash "$RESTORE" --project-godot "$PWD/project.godot" >/dev/null 2>&1
+        cd "$guard_repo"
+        git init -q -b shared/SEE-1117
+        git config user.email qa@example.com
+        git config user.name qa
+        git config commit.gpgsign false
+        if [[ -f "$KOL_ROOT/project.godot" ]]; then
+            git -C "$KOL_ROOT" show HEAD:project.godot > project.godot
+        else
+            write_fixture_project_godot "$guard_repo"
+        fi
+        git add project.godot
+        git commit -q -m "fixture"
+        # Check A fixture: force-add the gitignored sidecar into HEAD — the
+        # one way runtime lease state can pollute a push payload.
+        mkdir -p .godot
+        printf '{"schema_version":2,"state":"active","port":6551,"agent":"Atlas"}\n' > .godot/mcp-lease.json
+        git add -f .godot/mcp-lease.json
+        git commit -q -m "wip: force-added sidecar lease (should be rejected)"
+        git update-ref refs/remotes/origin/master HEAD
+        git update-ref refs/remotes/origin/shared/SEE-1117 HEAD
     )
-    assert_marker "$eof_repo/project.godot" false 6550 "S14 restore on EOF marker"
+
+    payload_guard="$(build_hook_input "$guard_repo" "HEAD:refs/heads/master")"
+    (
+        cd "$guard_repo"
+        env "${hook_env_base[@]}" PROJECT_ROOT="$guard_repo" \
+            bash "$PUSH_GUARD" <<<"$payload_guard" >/dev/null 2>"$guard_repo/guard-checkA.err"
+    )
+    rc=$?
+    if (( rc == 2 )) && grep -q "sidecar" "$guard_repo/guard-checkA.err"; then
+        pass "S8 push-guard Check A rejects HEAD carrying sidecar lease (rc=2)"
+    else
+        fail "S8 push-guard Check A rc=$rc, stderr: $(cat "$guard_repo/guard-checkA.err")"
+    fi
+
+    # Remove the leaked sidecar; Check A must let the push through.
+    (
+        cd "$guard_repo"
+        git rm -q -f --cached .godot/mcp-lease.json
+        git commit -q --amend --no-edit --allow-empty
+        # Check B fixture: worktree sidecar state=active (untracked, so the
+        # push payload is clean) → rc=0 + soft-warn notice.
+        printf '{"schema_version":2,"state":"active","port":6551,"agent":"Atlas"}\n' > .godot/mcp-lease.json
+    )
+    (
+        cd "$guard_repo"
+        env "${hook_env_base[@]}" PROJECT_ROOT="$guard_repo" \
+            bash "$PUSH_GUARD" <<<"$payload_guard" >/dev/null 2>"$guard_repo/guard-checkB.err"
+    )
+    rc=$?
+    if (( rc == 0 )) && grep -q "sidecar" "$guard_repo/guard-checkB.err"; then
+        pass "S9 push-guard Check B soft-warns active lease, push allowed (rc=0)"
+    else
+        fail "S9 push-guard Check B rc=$rc, stderr: $(cat "$guard_repo/guard-checkB.err")"
+    fi
+else
+    limited "S8 push-guard Check A (sidecar leak hard block)"
+    limited "S9 push-guard Check B (active lease soft warn)"
+fi
+
+note "S10: auto-pr-on-stop releases sidecar on session end"
+if (( HOOKS_AVAILABLE )); then
+    stop_repo="$TMPROOT/auto-pr-stop"
+    mkdir -p "$stop_repo/addons/godot_mcp/launch"
+    (
+        cd "$stop_repo"
+        git init -q -b feat/see-1117-test
+        git config user.email qa@example.com
+        git config user.name qa
+        git config commit.gpgsign false
+        if [[ -f "$KOL_ROOT/project.godot" ]]; then
+            git -C "$KOL_ROOT" show HEAD:project.godot > project.godot
+        else
+            write_fixture_project_godot "$stop_repo"
+        fi
+        git add project.godot
+        git commit -q -m "fixture"
+    )
+    # Seed an ACTIVE lease sidecar, as a crashed agent would leave it.
+    mkdir -p "$stop_repo/.godot"
+    printf '{"schema_version":2,"state":"active","port":6555,"agent":"Revy","lease_id":"11111111-2222-3333-4444-555555555555"}\n' \
+        > "$stop_repo/.godot/mcp-lease.json"
+    # Mirror the launch toolchain into the fixture so the hook's single
+    # landing-point resolution ($PROJECT_ROOT/addons/godot_mcp/launch) finds
+    # restore-godot-original.sh.
+    cp "$LAUNCH_DIR"/*.sh "$LAUNCH_DIR"/*.lib.sh "$stop_repo/addons/godot_mcp/launch/" 2>/dev/null || true
+    cp "$LAUNCH_DIR"/agent-ports.json "$stop_repo/addons/godot_mcp/launch/" 2>/dev/null || true
+    chmod +x "$stop_repo/addons/godot_mcp/launch/"*.sh 2>/dev/null || true
+
+    stop_input='{"stop_hook_active":false}'
+    (
+        cd "$stop_repo"
+        PROJECT_ROOT="$stop_repo" \
+        MULTICA_AGENT_NAME="Revy" \
+        MULTICA_TASK_ID="" \
+        GITHUB_PERSONAL_ACCESS_TOKEN="" \
+        GH_TOKEN="" \
+        KOL_REAP_DISABLE_PWSH=1 \
+            bash "$AUTO_PR_STOP" <<<"$stop_input" >/dev/null 2>"$stop_repo/stop.err" || true
+    )
+    assert_sidecar "$stop_repo/project.godot" released 6555 "S10 auto-pr-on-stop released sidecar"
+else
+    limited "S10 auto-pr-on-stop sidecar release"
 fi
 
 # --- summary ----------------------------------------------------------------
 
 echo
-echo "=== SEE-1117 Phase 1 QA summary ==="
+echo "=== SEE-1117 Phase 1 QA summary (sidecar era, SEE-1291) ==="
 echo "  PASS: $PASS_COUNT"
 echo "  FAIL: $FAIL_COUNT"
+echo "  ENV-LIMITED: $ENV_LIMITED_COUNT (hook-driven arms; need KOL worktree via KOL_ROOT)"
+if (( ENV_LIMITED_COUNT > 0 )); then
+    echo "  env-limited cases (NOT covered by this run):"
+    for c in "${ENV_LIMITED_CASES[@]}"; do echo "    - $c"; done
+fi
 if (( FAIL_COUNT > 0 )); then
     echo "  failed cases:"
     for c in "${FAILED_CASES[@]}"; do echo "    - $c"; done
