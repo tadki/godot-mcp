@@ -117,7 +117,7 @@ $ node launch/tests/scripts/test_see1170_channel3.mjs    PASS=18 FAIL=0
 
 **vacuous sweep 裁决**：`test_see1117_regression_sweep.sh` **退役（删除）**。理由：其唯一职责是盘点 SEE-1273 迁移前的旧源树 `.dev/godot-mcp/tests/` + `.dev/tests/scripts/`（SEE-1117 时代的一次性回归盘点，Owner 补充验收 2）；SEE-1287 迁移 + SEE-1273 T5-F 退役后源树消失，glob 落空 → 0 文件、恒绿（vacuous）。选择删除而非修 glob：把 glob 指向新树会造出第二个「跑批器」，与 workflow 显式清单形成第二份需要保持同步的清单——正是 AC-CI-004 要消除的漂移面；且跑批器会无差别触发 live/RED 项。恒绿壳保留只会延续假绿。替代覆盖：测试树入口清单以 `launch-ci.yml`/`launch-special.yml` 显式列表为唯一事实源（missing=0 / 未登记项均 env-bound 留档）。
 
-**workflow ↔ 测试树一致性核验（最终态）**：两 workflow 引用的 `launch/tests/` 路径缺失 = 0；测试树 113 个 `test_*` 入口中 59 入快层、47 入 drift-watch、7 项 env-bound 在 `launch-special.yml` env echo 行显式留档（see1273×5、e2e 顶层 4001、`launch/test_see1273_t2_param.sh` 在 long bucket note）。快层 61→59 修正：`test_see1170_channel2.py` / `test_see1170_fix_round.py` 纯 fork clone 下 ModuleNotFoundError（KOL 资产依赖），从快层移入 drift-watch。
+**workflow ↔ 测试树一致性核验（最终态，b12fa78 @ shared/SEE-1291；Revy ④⑤ §1 对账口径）**：两 workflow 引用的 `launch/tests/` 路径缺失 = 0；测试树 `test_*` 入口 **120 个 = 快层 58 + drift-watch 53 + long 2 + env-bound 7**（env 7 项在 `launch-special.yml` env echo 行显式留档：see1273×5、e2e 顶层 4001、`launch/test_see1273_t2_param.sh` 在 long bucket note）。快层实际列表 59 行 = 58 个 `test_*` 入口 + 1 个 `selftest_integration_combined.mjs`（`selftest_` 前缀 helper，不计入 120 口径）。快层 61→59 修正：`test_see1170_channel2.py` / `test_see1170_fix_round.py` 纯 fork clone 下 ModuleNotFoundError（KOL 资产依赖），从快层移入 drift-watch。
 
 **快层本机终验**：59 项全量按 runner 同款分派（bash/node/python3 + `</dev/null`）串行实跑 PASS=59 FAIL=0。
 

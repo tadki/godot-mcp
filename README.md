@@ -56,7 +56,7 @@ Consumer-side hooks (stop-hook sanitize, push guard) live in the KingOfLikes rep
 
 ## Testing (`launch/tests/`)
 
-184 files across four trees (102 shell suites + 69 Node/Python runners + fixtures/docs):
+181 files across four trees (102 shell suites + 69 Node/Python runners + 10 fixtures/docs):
 
 | Tree | Contents |
 |------|----------|
