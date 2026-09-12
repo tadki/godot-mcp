@@ -32,11 +32,20 @@
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-# Run context: the KOL worktree under test (see header note). Default = the
-# enclosing KOL checkout; set KOL_ROOT explicitly when running from the fork
-# checkout (launch/tests/) to point at the KOL worktree being exercised.
-KOL_ROOT="${KOL_ROOT:-$REPO_ROOT}"
-LAUNCH_DIR="${KOL_ROOT}/addons/godot_mcp/launch"
+# Run context (SEE-1291): works from both layouts. The fork's own launch/ is
+# the toolchain under test; KOL_ROOT (explicit env, else the enclosing
+# superproject when this is a submodule checkout) only matters for suites
+# that drive KOL-side resources — this one is fully self-contained.
+KOL_ROOT="${KOL_ROOT:-}"
+if [[ -z "$KOL_ROOT" ]]; then
+    KOL_ROOT="$(git -C "$REPO_ROOT" rev-parse --show-superproject-working-tree 2>/dev/null || true)"
+fi
+[[ -z "$KOL_ROOT" ]] && KOL_ROOT="$REPO_ROOT"
+if [[ -d "$REPO_ROOT/launch" ]]; then
+    LAUNCH_DIR="$REPO_ROOT/launch"
+else
+    LAUNCH_DIR="$KOL_ROOT/addons/godot_mcp/launch"
+fi
 CONFIGURE="$LAUNCH_DIR/configure-mcp-port.sh"
 RESTORE="$LAUNCH_DIR/restore-godot-original.sh"
 VERIFY="$LAUNCH_DIR/verify-godot-written-back.sh"

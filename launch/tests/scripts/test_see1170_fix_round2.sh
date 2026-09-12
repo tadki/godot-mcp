@@ -3,7 +3,12 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
-HOOK="$REPO_ROOT/.claude/hooks/repo-checkout.sh"
+# SEE-1291 H2: repo-checkout.sh is a KOL-repo hook, not a fork asset. Resolve
+# via KOL_ROOT (explicit env, else the enclosing superproject when this is a
+# submodule checkout); hard-fail with guidance when unavailable.
+KOL_ROOT="${KOL_ROOT:-$(git -C "$REPO_ROOT" rev-parse --show-superproject-working-tree 2>/dev/null || true)}"
+KOL_ROOT="${KOL_ROOT:-$REPO_ROOT}"
+HOOK="$KOL_ROOT/.claude/hooks/repo-checkout.sh"
 
 TMP="$(mktemp -d /tmp/see1170-fix2.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT

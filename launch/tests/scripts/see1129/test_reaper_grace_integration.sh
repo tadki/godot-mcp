@@ -64,7 +64,9 @@ write_lease "$FRONTI_WT/.godot/mcp-lease.json"  Fronti 6551 600
 # Suppress the powershell probe by hiding it from PATH — pid_alive then falls
 # back to kill -0 on the synthetic PID, which correctly returns dead (the
 # intended "looks dead" signal that the grace guard must override).
-OUT="$(env -i PATH="/usr/bin:/bin" HOME="$TMP" KOL_REAP_GRACE_S=120 \
+# SEE-1291 H2: KOL_REAP_DISABLE_PWSH=1 must ride env -i (the /mnt/c
+# absolute fallback survives PATH stripping — SEE-1242 A-2 precedent).
+OUT="$(env -i PATH="/usr/bin:/bin" HOME="$TMP" KOL_REAP_GRACE_S=120 KOL_REAP_DISABLE_PWSH=1 \
     bash "$REAPER" --root "$FAKE_ROOT" --dry-run 2>&1 || true)"
 
 echo "----- reaper output -----"

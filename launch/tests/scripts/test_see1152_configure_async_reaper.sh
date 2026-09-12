@@ -40,7 +40,13 @@ trap 'rm -rf "$SBOX"' EXIT
 
 WT="$SBOX/worktree"
 mkdir -p "$WT/.godot"
-cp "$REPO_ROOT/project.godot" "$WT/project.godot"
+if [[ -f "$REPO_ROOT/project.godot" ]]; then
+    cp "$REPO_ROOT/project.godot" "$WT/project.godot"
+else
+    # SEE-1291 H2: fork checkout has no root project.godot — the fixture only
+    # anchors the sidecar path, so a minimal synthetic project.godot suffices.
+    printf 'config_version=5\n\n[godot_mcp]\n\nbind_mode=1\ncustom_bind_ip=""\n' > "$WT/project.godot"
+fi
 
 FAKE_LAUNCH="$SBOX/launch"
 mkdir -p "$FAKE_LAUNCH"
