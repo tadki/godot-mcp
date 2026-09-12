@@ -410,15 +410,20 @@ class SpawnError extends Error {
     }
 }
 
-// Resolve the launch helper scripts. KOL_CONFIGURE_SH / KOL_START_SH override
-// the resolved path (test seam; production resolves them next to this file).
+// Resolve the launch helper scripts. Canonical GODOT_MCP_*_SH overrides the
+// resolved path; the legacy KOL_*_SH alias is honored one round (SEE-1292
+// §DECPL-002 backcompat — pre-②c test harnesses inject only the legacy name,
+// and the proxy does not source env.sh, so the alias fallback lives here).
 // Resolved lazily so a missing helper at proxy start does not crash; the
 // spawn attempt itself reports worktree_unresolved / spawn_failed_exception.
 function scriptDir() {
     return path.dirname(fileURLToPath(import.meta.url));
 }
 function resolveHelper(name, envVar) {
-    if (process.env[envVar] && process.env[envVar].length) return process.env[envVar];
+    const legacy = envVar.startsWith('GODOT_MCP_') ? `KOL_${envVar.slice('GODOT_MCP_'.length)}` : '';
+    for (const v of [envVar, legacy]) {
+        if (v && process.env[v] && process.env[v].length) return process.env[v];
+    }
     return path.join(scriptDir(), name);
 }
 
