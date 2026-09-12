@@ -968,10 +968,16 @@ FORK_SERVER_DIR="${SCRIPT_DIR}/../server"
 # build (the operator said where the CLI lives — respect it, keep WARNING).
 if [[ ! -x "$FORK_CLI" && -z "${GODOT_MCP_FORK_CLI:-}" && -f "${FORK_SERVER_DIR}/package.json" && -d "${FORK_SERVER_DIR}/src" ]]; then
     log "fork CLI missing at ${FORK_CLI}; building from ${FORK_SERVER_DIR} (one-time, gitignored output)..."
-    if (cd "${FORK_SERVER_DIR}" && npm ci --no-audit --no-fund >/dev/null 2>&1 && npm run build >/dev/null 2>&1 && chmod +x "${FORK_SERVER_DIR}/dist/cli.js"); then
+    # SEE-1288 MEDIUM-1: keep the full npm output on disk so a failed build is
+    # diagnosable — the WARNING below must point at a file that actually holds
+    # the npm ci/build errors (runtime_id-tagged, same ~/.multica family as the
+    # other launcher logs).
+    FORK_BUILD_LOG="${HOME}/.multica/godot-mcp-fork-build-${KOL_RUNTIME_ID:-<unknown>}.log"
+    mkdir -p "$(dirname "$FORK_BUILD_LOG")"
+    if (cd "${FORK_SERVER_DIR}" && { npm ci --no-audit --no-fund && npm run build && chmod +x "${FORK_SERVER_DIR}/dist/cli.js"; } ) >"$FORK_BUILD_LOG" 2>&1; then
         log "fork CLI build OK: ${FORK_SERVER_DIR}/dist/cli.js"
     else
-        log "WARNING: fork CLI build failed in ${FORK_SERVER_DIR} (see server build logs); keeping upstream godot-mcp."
+        log "WARNING: fork CLI build failed in ${FORK_SERVER_DIR}; full npm output saved to ${FORK_BUILD_LOG}; keeping upstream godot-mcp."
     fi
 fi
 if [[ -x "$FORK_CLI" ]]; then
