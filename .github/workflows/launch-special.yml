@@ -90,7 +90,11 @@ jobs:
           echo "[special:env] SKIPPED on runner — require WSL2 dev box:"
           echo "  launch/tests/e2e/godot-mcp/run_all.mjs        (31 KOL game e2e, live Windows editor)"
           echo "  launch/tests/e2e/see1240/, see1240_qa/        (real-machine clients, KOL_ROOT)"
+          echo "  launch/tests/e2e/godot-mcp/test_see1070_ws_single_client_4001.mjs (live editor; outside run_all's tests/ scan)"
           echo "  launch/tests/hooks/see1273/test_see1273_t1_import.sh (godot headless import)"
+          echo "  launch/tests/hooks/see1273/test_see1273_t1_tree_consistency.sh (snapshot-branch archive harness; SKIPs gracefully)"
+          echo "  launch/tests/hooks/see1273/test_see1273_t2_chain.sh    (KOL shim replay)"
+          echo "  launch/tests/hooks/see1273/test_see1273_t3d1_antidrown.sh (KOL gitlink probe)"
           echo "  launch/tests/hooks/see1273/test_see1273_t3/t4_chain.sh (KOL shim replay)"
           echo "  launch/test_see1273_t2_param.sh               (runs green headless — see long bucket note)"
 
@@ -120,6 +124,8 @@ jobs:
             launch/tests/scripts/test_see1070_proxy_exec_hints.sh \
             launch/tests/scripts/test_see1070_proxy_screenshot_hint.sh \
             launch/tests/scripts/test_see1070_warmup_self_heal.sh \
+            launch/tests/scripts/test_see1077_edge_cases.sh \
+            launch/tests/scripts/test_see1134_restart_hold.sh \
             launch/tests/scripts/test_see1085_t6_editor_busy.sh \
             launch/tests/scripts/test_see1085_t7_resolver.mjs \
             launch/tests/scripts/test_see1085_t8_direct_node.sh \
@@ -138,10 +144,7 @@ jobs:
             launch/tests/scripts/test_see1111_warmup_hint.sh \
             launch/tests/scripts/test_see1111_worktree_isolation.sh \
             launch/tests/scripts/test_see1117_live_e2e_editor_port.sh \
-            launch/tests/scripts/test_see1117_phase1_marker_lifecycle.sh \
-            launch/tests/scripts/test_see1117_sidecar_lifecycle.sh \
             launch/tests/scripts/test_see1117_suite_f_prime_6agents.sh \
-            launch/tests/scripts/test_see1152_configure_async_reaper.sh \
             launch/tests/scripts/test_see1152_mcp_daily_call_stability.sh \
             launch/tests/scripts/test_see1152_reaper_held_sweep.sh \
             launch/tests/scripts/test_see1244_shim_handoff.mjs \
@@ -150,6 +153,8 @@ jobs:
             launch/tests/scripts/test_see986_autopilot_descriptions.sh \
             launch/tests/scripts/test_see1170_channel1.sh \
             launch/tests/scripts/test_see1170_fix_round2.sh \
+            launch/tests/scripts/test_see1170_channel2.py \
+            launch/tests/scripts/test_see1170_fix_round.py \
             launch/tests/scripts/test_see1240_exec_constraints_proxy.sh \
             launch/tests/scripts/test_see1240_proxy_integration.sh \
             launch/tests/scripts/test_see1244_cache_closure.mjs \
@@ -171,9 +176,9 @@ jobs:
             [ -f "$t" ] || { echo "[special:drift] MISSING $t"; continue; }
             echo "::group::$t"
             case "$t" in
-              *.mjs) timeout 180 node "$t" && echo "[special:drift] PASS (drift fixed → graduate)" \
+              *.mjs) timeout 180 node "$t" </dev/null && echo "[special:drift] PASS (drift fixed → graduate)" \
                      || echo "::warning::[special:drift] RED $t" ;;
-              *.sh)  timeout 180 bash "$t" && echo "[special:drift] PASS (drift fixed → graduate)" \
+              *.sh)  timeout 180 bash "$t" </dev/null && echo "[special:drift] PASS (drift fixed → graduate)" \
                      || echo "::warning::[special:drift] RED $t" ;;
             esac
             echo "::endgroup::"

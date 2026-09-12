@@ -56,7 +56,7 @@ Consumer-side hooks (stop-hook sanitize, push guard) live in the KingOfLikes rep
 
 ## Testing (`launch/tests/`)
 
-185 files across four trees (103 shell suites + 65 Node/Python runners + fixtures/docs):
+184 files across four trees (102 shell suites + 69 Node/Python runners + fixtures/docs):
 
 | Tree | Contents |
 |------|----------|
@@ -72,7 +72,7 @@ bash launch/tests/scripts/test_see1117_sidecar_lifecycle.sh
 bash launch/tests/scripts/test_see1117_phase1_marker_lifecycle.sh   # fork checkout: self-contained arms; hook arms need KOL_ROOT
 ```
 
-Environment tiers (mirrors the CI split in `.github/workflows/`):
+Environment tiers (enforced by the CI split in `.github/workflows/launch-ci.yml` [fast, push/PR] and `launch-special.yml` [long / env-bound / drift-watch, dispatch + weekly cron]):
 
 - **Headless / fast** — script-level suites; run on every push/PR.
 - **KOL-coupled** — suites that drive KOL-repo resources (`.claude/hooks`, `project.godot`, `.dev/autopilots`); resolve the consumer checkout via `KOL_ROOT` (explicit env, or auto-detected when this repo is checked out as its submodule).

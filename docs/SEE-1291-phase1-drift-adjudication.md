@@ -83,9 +83,13 @@
 
 **C. 衔接说明（与 Atlas/Bachi CI 分级方案）**
 
-- 快层（push/PR）：`test_see1117_phase1_marker_lifecycle.sh`、`test_see1117_sidecar_lifecycle.sh`、`test_see1152_configure_async_reaper.sh`、`see1129/*` hermetic 组、`test_see1170_channel*` headless 组——fork 独立检出即可跑；hooks 臂缺 KOL 时以 ENV-LIMITED 计数放行，**不阻断、不虚报覆盖**。
-- KOL-coupled 层：同一批套件在 `KOL_ROOT=<KOL 检出>` 下复跑，钩子臂（S8/S9/S10、stop-hook、see1273 链）在此层取得完整覆盖。
-- 专项层：§4.2-B 清单。
+> ③ tidy 已按 ②a 最终 workflow（`launch-ci.yml` / `launch-special.yml` @ `shared/SEE-1291`）对齐本节；对齐核验方式与结果见 §6。
+
+- 快层（`launch-ci.yml`，push/PR main，node 22）：59 个入口（shell 45 + node-units 14，runner 按扩展名分派 bash/node/python3 并带 `</dev/null` stdin 防御）。含 ②b 治理后毕业的 5 项：`test_see1117_phase1_marker_lifecycle.sh`（runner 上 hooks 臂 ENV-LIMITED 计数放行，不阻断、不虚报覆盖）、`test_see1117_sidecar_lifecycle.sh`、`test_see1152_configure_async_reaper.sh`、`see1129/test_lease_lifecycle_boundary_matrix.sh`、`see1129/test_reaper_grace_integration.sh`。
+- drift-watch（`launch-special.yml` drift bucket，证据性运行、非阻塞）：预存 RED / runner 环境耦合项。②a 迭代移入的 `t16_runtime_identity`、`ws4_status_doctor`、`see986_autopilot_descriptions`、`see1244_shim_handoff`，加上本子步骤甄别移入的 `test_see1134_restart_hold.sh`（依赖干净 HOME——真实 `~/.multica` arbiter/registry 状态互扰，隔离 HOME 下 16/0 绿）与 `test_see1077_edge_cases.sh`（预存 RED，本机亦红）。`test_see1170_channel1.sh` / `fix_round2.sh` / `channel2.py` / `fix_round.py` 留守 drift-watch：本机绿但纯 fork clone 红（repo-checkout.sh 与 `local_repo_check` 均为 KOL 资产，KOL_ROOT 解析链在 runner 上落空），毕业条件 = KOL-coupled 层落地。
+- env-bound（`launch-special.yml` env bucket，runner 上显式留档 SKIPPED）：e2e/godot-mcp 31 项 + 顶层 `test_see1070_ws_single_client_4001.mjs`（live editor，且在 `run_all.mjs` 的 `tests/` 目录扫描之外）、see1240*/see1240_qa（KOL_ROOT 真机）、see1273 链（t1_import / t1_tree_consistency 归档 SKIP / t2_chain / t3d1 / t3/t4_chain）、`launch/test_see1273_t2_param.sh`（headless 绿，归 long bucket note）。
+- long（`launch-special.yml` long bucket）：`test_see1148_t14_reaper_grace_guard.sh`、`test_see1240_ws5_giveup_rearm.sh`。
+- vacuous 退役：`test_see1117_regression_sweep.sh` 已删除（裁决见 §6）。
 
 ## 5. 验证记录（AC-DRIFT-002 证据）
 
@@ -108,3 +112,17 @@ $ python3 launch/tests/scripts/test_see1170_channel2.py  OK (3 tests)
 $ python3 launch/tests/scripts/test_see1170_fix_round.py OK (7 tests)
 $ node launch/tests/scripts/test_see1170_channel3.mjs    PASS=18 FAIL=0
 ```
+
+## 6. ③ tidy 记录（2026-09-12，AC-CI-004）
+
+**vacuous sweep 裁决**：`test_see1117_regression_sweep.sh` **退役（删除）**。理由：其唯一职责是盘点 SEE-1273 迁移前的旧源树 `.dev/godot-mcp/tests/` + `.dev/tests/scripts/`（SEE-1117 时代的一次性回归盘点，Owner 补充验收 2）；SEE-1287 迁移 + SEE-1273 T5-F 退役后源树消失，glob 落空 → 0 文件、恒绿（vacuous）。选择删除而非修 glob：把 glob 指向新树会造出第二个「跑批器」，与 workflow 显式清单形成第二份需要保持同步的清单——正是 AC-CI-004 要消除的漂移面；且跑批器会无差别触发 live/RED 项。恒绿壳保留只会延续假绿。替代覆盖：测试树入口清单以 `launch-ci.yml`/`launch-special.yml` 显式列表为唯一事实源（missing=0 / 未登记项均 env-bound 留档）。
+
+**workflow ↔ 测试树一致性核验（最终态）**：两 workflow 引用的 `launch/tests/` 路径缺失 = 0；测试树 113 个 `test_*` 入口中 59 入快层、47 入 drift-watch、7 项 env-bound 在 `launch-special.yml` env echo 行显式留档（see1273×5、e2e 顶层 4001、`launch/test_see1273_t2_param.sh` 在 long bucket note）。快层 61→59 修正：`test_see1170_channel2.py` / `test_see1170_fix_round.py` 纯 fork clone 下 ModuleNotFoundError（KOL 资产依赖），从快层移入 drift-watch。
+
+**快层本机终验**：59 项全量按 runner 同款分派（bash/node/python3 + `</dev/null`）串行实跑 PASS=59 FAIL=0。
+
+**runner 循环 stdin 防御**：tidy 本机复验发现 `test_see1148_p3_t16_live_editor.sh` 在部分环境下消费循环 stdin，heredoc 喂单的 runner 循环会提前 EOF 终止（本机复现：t16 后续项不执行；runner 上因环境差异未触发，历史 run 54 项 PASS 完整）。三处 runner 循环（ci shell / ci node-units / special drift）统一加 `</dev/null`。属 runner 加固，无测试断言改动。
+
+**node 版本**：②a 已升 node 22（proxy wsProbe 需 global WebSocket）——本节分层清单按 node 22 事实陈述。
+
+**残留未登记项（7）与处置**：全部 env-bound、已在 `launch-special.yml` env 行留档，无需 workflow 登记为可执行项；`test_see1077_edge_cases.sh`（预存 RED，本机亦红）已入 drift-watch 证据运行。
