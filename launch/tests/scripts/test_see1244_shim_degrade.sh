@@ -114,8 +114,8 @@ section "D5: corrupt cache → placeholder fallback"
 {
     # NOTE: drive_shim derives HOME from the label ($TMP/home-$label), so the
     # corrupt cache must be planted at $TMP/home-d5test/.multica/ BEFORE the run.
-    mkdir -p "$TMP/home-d5test/.multica"
-    echo '{corrupt json' > "$TMP/home-d5test/.multica/godot-mcp-tools-cache-d5test.json"
+    mkdir -p "$TMP/home-d5test/.config/godot-mcp"
+    echo '{corrupt json' > "$TMP/home-d5test/.config/godot-mcp/godot-mcp-tools-cache-d5test.json"
     in="$TMP/d5-in.ndjson"
     echo '{"jsonrpc":"2.0","id":5,"method":"tools/list"}' > "$in"
     drive_shim "$in" "$TMP/d5-out.ndjson" "$TMP/d5-err.log" "" "d5test"

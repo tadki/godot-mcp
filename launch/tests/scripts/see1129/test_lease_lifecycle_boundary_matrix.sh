@@ -46,7 +46,12 @@ BASE="/tmp/kol-see1129-${SUF}"
 rm -rf "$BASE"; mkdir -p "$BASE"
 
 # Fake MULTICA_DIR (~/.multica) so stop-godot-editor.sh reads synthetic pidfiles.
-export HOME="$BASE/home"; mkdir -p "$HOME/.multica"
+export HOME="$BASE/home"
+# SEE-1292 §DECPL-001: lifecycle readers resolve GODOT_MCP_HOME (default
+# $HOME/.config/godot-mcp). Point it at .multica so the synthetic pidfiles the
+# test plants are the ones the tooling actually reads.
+export GODOT_MCP_HOME="$HOME/.multica"
+mkdir -p "$HOME/.multica"
 export TMPDIR="$BASE/tmp"; mkdir -p "$TMPDIR"
 
 # SEE-1242 A-2 (Revy 终裁): hermetic 套件统一禁用 reaper 的 Windows pwsh 探测。

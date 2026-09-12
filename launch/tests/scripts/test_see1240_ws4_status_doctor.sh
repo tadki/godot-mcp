@@ -53,8 +53,13 @@ fs.writeFileSync(process.env.KOL_PORT_REGISTRY_PATH_OVERRIDE, JSON.stringify({
     entries:{"Bachi-aabbccdd":{port:6563, proxy_pid:process.pid, heartbeat_at:new Date().toISOString(), agent:"Bachi", worktree:wt}}
 },null,2)+"\n");
 ' "$WT"
-# Registration layer: seed ONE real-shaped config dir (multica-mcp-* under /tmp)
-REG_DIR="$FAKE_TMP/multica-mcp-ws4test"
+# Registration layer: seed ONE real-shaped config dir. The collector scans
+# /tmp (hardcoded, 2026-08-01 incident form), so the seed must live in the
+# scan root — CI runners have no pre-existing multica-mcp-* dirs. Cleaned up
+# with the other TF dirs below.
+REG_DIR="/tmp/multica-mcp-ws4test"
+cleanup_reg() { rm -rf "$REG_DIR"; }
+trap 'cleanup_reg; cleanup_tf; rm -rf "$SBOX"' EXIT
 mkdir -p "$REG_DIR"
 node -e '
 const fs=require("fs");
