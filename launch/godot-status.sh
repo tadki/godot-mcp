@@ -71,8 +71,8 @@ if [[ -n "$PORT" ]]; then
 fi
 # registry 条目端口（只读查询，不复用 upsert；entry 缺失返回空）
 reg_port=""
-if [[ -n "$RUNTIME_ID" && -f "${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${HOME}/.multica/godot-port-registry.json}" ]]; then
-    reg_port="$(REG_PATH="${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${HOME}/.multica/godot-port-registry.json}" REG_RID="$RUNTIME_ID" node -e '
+if [[ -n "$RUNTIME_ID" && -f "${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-port-registry.json}" ]]; then
+    reg_port="$(REG_PATH="${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-port-registry.json}" REG_RID="$RUNTIME_ID" node -e '
 let raw = "";
 process.stdin.on("data", c => raw += c);
 process.stdin.on("end", () => {
@@ -81,7 +81,7 @@ process.stdin.on("end", () => {
         const e = (o.entries || {})[process.env.REG_RID];
         if (e && e.port != null) process.stdout.write(String(e.port));
     } catch (err) {}
-});' < "${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${HOME}/.multica/godot-port-registry.json}" 2>/dev/null || true)"
+});' < "${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-port-registry.json}" 2>/dev/null || true)"
 fi
 if [[ -z "$PORT" && "$reg_port" =~ ^[0-9]+$ ]]; then
     PORT="$reg_port"; PORT_SOURCE="registry:${RUNTIME_ID}"
@@ -109,8 +109,8 @@ LEASE_JSON="$(status_lease_json "$LEASE_FILE")"
 REGISTRY_JSON="$(status_registry_json)"
 LIFECYCLE_JSON="$(status_lifecycle_json "$RUNTIME_ID" "$LABEL")"
 LAUNCHER_LOG=""
-[[ -n "$LABEL" ]] && LAUNCHER_LOG="${HOME}/.multica/godot-mcp-launcher-${LABEL}.log"
-[[ -z "$LAUNCHER_LOG" && -n "$PORT" ]] && LAUNCHER_LOG="${HOME}/.multica/godot-mcp-launcher-port-${PORT}.log"
+[[ -n "$LABEL" ]] && LAUNCHER_LOG="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-mcp-launcher-${LABEL}.log"
+[[ -z "$LAUNCHER_LOG" && -n "$PORT" ]] && LAUNCHER_LOG="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-mcp-launcher-port-${PORT}.log"
 WARMUP_JSON="$(status_warmup_json "$RUNTIME_ID" "$LABEL" "$LAUNCHER_LOG")"
 GIVEUP_JSON="$(status_giveup_json "$RUNTIME_ID" "$LABEL")"
 REGISTRATION_JSON="$(status_registration_json)"
@@ -156,7 +156,7 @@ WT="$WT_RESOLVED" PB="$PORT_BOUND" LEASE="$LEASE_JSON" REG="$REGISTRY_JSON" \
 LIFE="$LIFECYCLE_JSON" WARM="$WARMUP_JSON" GUP="$GIVEUP_JSON" REGS="$REGISTRATION_JSON" TIMEO="$TIMEOUTS_JSON" || true
 
 if [[ ! -s "$OUT" ]]; then
-    echo "[godot-status] ERROR: failed to compose status document (node assembly failed); sources: lease=${LEASE_FILE:-none} registry=${HOME}/.multica/godot-port-registry.json" >&2
+    echo "[godot-status] ERROR: failed to compose status document (node assembly failed); sources: lease=${LEASE_FILE:-none} registry=${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-port-registry.json" >&2
     exit 3
 fi
 

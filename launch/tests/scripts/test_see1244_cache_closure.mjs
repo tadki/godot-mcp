@@ -107,7 +107,7 @@ function runColdFlow(home, label) {
         // NOTE: deliberately NO second tools/list — claude does not re-pull.
         // Poll for cache closure; on the 20s boundary, dump the chain stderr
         // tail so a stall is attributable (which warm gate never opened).
-        const cacheFile = path.join(home, '.multica', `godot-mcp-tools-cache-${label.toLowerCase()}.json`);
+        const cacheFile = path.join(home, '.config', 'godot-mcp', `godot-mcp-tools-cache-${label.toLowerCase()}.json`);
         let diagnosed = false;
         const poll = setInterval(() => {
             if (fs.existsSync(cacheFile)) { clearInterval(poll); clearTimeout(timer); setTimeout(() => finish({ cacheReady: true }), 400); }
@@ -126,7 +126,7 @@ section('cold flow through shim interception → proactive proxy cache closure')
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'see1244-closure-'));
     const label = 'ClosureTest';
     const r = await runColdFlow(home, label);
-    const cacheFile = path.join(home, '.multica', 'godot-mcp-tools-cache-closuretest.json');
+    const cacheFile = path.join(home, '.config', 'godot-mcp', 'godot-mcp-tools-cache-closuretest.json');
 
     // The falsification core: with the OLD implementation the cache never lands.
     ok('cache file EXISTS after cold session (defect #1 fixed)', fs.existsSync(cacheFile),
@@ -174,7 +174,7 @@ section('cold flow through shim interception → proactive proxy cache closure')
     // the claude-side out stream of session 1 instead: the notification is a
     // top-level method frame, no id.
     // (Out-of-band check: proxy log line is the deterministic signal.)
-    const proxyLogTouched = fs.existsSync(path.join(home, '.multica', 'godot-mcp-launcher-port-6596.log'))
+    const proxyLogTouched = fs.existsSync(path.join(home, '.config', 'godot-mcp', 'godot-mcp-launcher-port-6596.log'))
         || (r.errLines || []).some((l) => l.includes('tools cache refresh'));
     ok('proactive refresh observable in proxy/shim diagnostics', proxyLogTouched || fs.existsSync(cacheFile));
 

@@ -33,13 +33,14 @@ source "$SCRIPT_DIR/agent-ports.lib.sh"
 # SEE-1148 P1: runtime_id + lifecycle paths.
 # shellcheck source=runtime.lib.sh
 source "$SCRIPT_DIR/runtime.lib.sh"
-MULTICA_DIR="${HOME}/.multica"
+MULTICA_DIR="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}"
 
 die() { echo "[stop-godot-editor] ERROR: $*" >&2; exit 2; }
 
 print_usage() {
     cat <<'EOF'
-Usage: stop-godot-editor.sh [agent-name] [--port <port>] [--label <label>] [-h|--help]
+Usage: stop-godot-editor.sh [agent-name] [--port <port>] [--label <label>]
+                           [--project-godot <path>] [-h|--help]
 
 Stop the Godot editor this agent started, release its lease sidecar, and clean
 up pid/log/worktree files. Idempotent: a no-op when nothing is running.
@@ -49,6 +50,16 @@ Arguments:
                         via agent-ports.json, then the label.
   --port <port>         Explicit port (overrides agent-name resolution).
   --label <label>       Explicit label (the godot-editor-<label>.* stem).
+  --project-godot <path>
+                        Release exactly THIS worktree's lease sidecar. SEE-1292
+                        respawn fix: lifecycle files are per-LABEL and shared by
+                        concurrent same-agent slots, so the label-derived
+                        worktree sidecar can point at ANOTHER slot's checkout —
+                        the evict path (proxy evictStaleHolder) MUST pass the
+                        stale holder's own worktree here to avoid releasing a
+                        live foreign slot's active lease (the respawn-round
+                        editor would then read state=released and fall back to
+                        the default port 6550).
   -h, --help            Show this help.
 
 Environment:
@@ -60,6 +71,7 @@ EOF
 AGENT_NAME=""
 PORT=""
 LABEL=""
+EXPLICIT_WORKTREE=""
 while (( $# > 0 )); do
     case "$1" in
         -h|--help) print_usage; exit 0 ;;
@@ -67,6 +79,8 @@ while (( $# > 0 )); do
         --port=*) PORT="${1#--port=}"; shift ;;
         --label) (( $# >= 2 )) || die "--label requires a value."; LABEL="$2"; shift 2 ;;
         --label=*) LABEL="${1#--label=}"; shift ;;
+        --project-godot) (( $# >= 2 )) || die "--project-godot requires a value."; EXPLICIT_WORKTREE="$2"; shift 2 ;;
+        --project-godot=*) EXPLICIT_WORKTREE="${1#--project-godot=}"; shift ;;
         -*) die "Unknown option: $1 (run with --help)" ;;
         *) [[ -z "$AGENT_NAME" ]] || die "unexpected second positional arg: $1"; AGENT_NAME="$1"; shift ;;
     esac
@@ -143,10 +157,17 @@ fi
 #    which worktree the editor opened; release THAT worktree's lease. Fall back
 #    to CWD's project.godot when the worktree file is absent (matches
 #    restore-godot-original.sh's own anchor resolution).
+#    SEE-1292 respawn fix: an explicit --project-godot (evict path) wins over
+#    the label-derived file — the label lifecycle files are shared by
+#    concurrent same-agent slots, so trusting them here can release a LIVE
+#    foreign slot's active lease and break that slot's next editor boot.
 RESTORE_SH="$SCRIPT_DIR/restore-godot-original.sh"
 [[ -x "$RESTORE_SH" ]] || die "restore-godot-original.sh not found/executable at $RESTORE_SH"
 WORKTREE_FOR_RELEASE=""
-if [[ -f "$WORKTREE_FILE" ]]; then
+if [[ -n "$EXPLICIT_WORKTREE" ]]; then
+    WORKTREE_FOR_RELEASE="$EXPLICIT_WORKTREE"
+    echo "[stop-godot-editor] release target pinned by --project-godot: $WORKTREE_FOR_RELEASE"
+elif [[ -f "$WORKTREE_FILE" ]]; then
     WORKTREE_FOR_RELEASE="$(tr -d '[:space:]' <"$WORKTREE_FILE" 2>/dev/null || echo "")"
 fi
 if [[ -n "$WORKTREE_FOR_RELEASE" ]] && [[ -f "$WORKTREE_FOR_RELEASE/project.godot" ]]; then

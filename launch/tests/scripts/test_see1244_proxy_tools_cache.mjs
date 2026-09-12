@@ -124,7 +124,7 @@ section('proxy writes post-patch cache through the real chain entry');
 {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'see1244-cache-'));
     const r = await runProxyForCache('CacheTest', home);
-    const cacheFile = path.join(home, '.multica', 'godot-mcp-tools-cache-cachetest.json');
+    const cacheFile = path.join(home, '.config', 'godot-mcp', 'godot-mcp-tools-cache-cachetest.json');
     if (r.timeout) {
         ok('proxy answered tools/list within timeout', false, JSON.stringify((r.errLines || []).slice(-5)));
     } else {
@@ -148,7 +148,7 @@ section('proxy writes post-patch cache through the real chain entry');
 section('fork mtime drift → shim stale flag (still answers)');
 {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'see1244-stale-'));
-    const cacheDir = path.join(home, '.multica');
+    const cacheDir = path.join(home, '.config', 'godot-mcp');
     fs.mkdirSync(cacheDir, { recursive: true });
     fs.writeFileSync(path.join(cacheDir, 'godot-mcp-tools-cache-staletest.json'), JSON.stringify({
         schema: 1,

@@ -112,7 +112,7 @@ process.stdout.write(JSON.stringify(out, null, 2));
 # kol-runtime/port-registry 语义一致，此处只读引用，阈值本体在 launcher 的
 # worktree-holder 扫描逻辑里，同为 60s）。
 status_registry_json() {
-    local reg="${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${HOME}/.multica/godot-port-registry.json}"
+    local reg="${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-port-registry.json}"
     REG_PATH="$reg" node -e '
 const fs = require("fs");
 const p = process.env.REG_PATH;
@@ -173,13 +173,13 @@ status_lifecycle_json() {
     local runtime_id="$1" label="$2"
     LID="$runtime_id" LBL="$label" node -e '
 const fs = require("fs");
-const home = process.env.HOME || "";
+const home = process.env.GODOT_MCP_HOME || (process.env.HOME ? (process.env.HOME + "/.config/godot-mcp") : "");
 const lid = process.env.LID || "";
 const lbl = process.env.LBL || "";
 const out = { source: "lifecycle_files", dir_form: null, legacy_flat: null, editor_pid: null, editor_pid_alive: null };
 const candidates = [];
-if (lid) candidates.push(["dir_form", `${home}/.multica/godot-editor/${lid}.pid`]);
-if (lbl) candidates.push(["legacy_flat", `${home}/.multica/godot-editor-${lbl}.pid`]);
+if (lid) candidates.push(["dir_form", `${home}/godot-editor/${lid}.pid`]);
+if (lbl) candidates.push(["legacy_flat", `${home}/godot-editor-${lbl}.pid`]);
 let pid = null, form = null;
 for (const [name, p] of candidates) {
     try {
@@ -210,13 +210,13 @@ status_giveup_json() {
     local runtime_id="$1" label="$2"
     LID="$runtime_id" LBL="$label" node -e '
 const fs = require("fs");
-const home = process.env.HOME || "";
+const home = process.env.GODOT_MCP_HOME || (process.env.HOME ? (process.env.HOME + "/.config/godot-mcp") : "");
 const lid = process.env.LID || "";
 const lbl = process.env.LBL || "";
 const out = { source: "giveup_status", present: false, giveup_count: 0 };
 const candidates = [];
-if (lid && /^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8}$/.test(lid)) candidates.push(`${home}/.multica/godot-editor/${lid}.giveup.json`);
-if (lbl) candidates.push(`${home}/.multica/godot-editor-${lbl}.giveup.json`);
+if (lid && /^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8}$/.test(lid)) candidates.push(`${home}/godot-editor/${lid}.giveup.json`);
+if (lbl) candidates.push(`${home}/godot-editor-${lbl}.giveup.json`);
 for (const p of candidates) {
     try {
         const o = JSON.parse(fs.readFileSync(p, "utf8"));
@@ -245,14 +245,14 @@ status_warmup_json() {
     local runtime_id="$1" label="$2" launcher_log="$3"
     RID="$runtime_id" LBL="$label" LL="$launcher_log" node -e '
 const fs = require("fs");
-const home = process.env.HOME || "";
+const home = process.env.GODOT_MCP_HOME || (process.env.HOME ? (process.env.HOME + "/.config/godot-mcp") : "");
 const rid = process.env.RID || "";
 const lbl = process.env.LBL || "";
 const STAGES = ["LAUNCHER_EXEC","EDITOR_SPAWNED","PLUGIN_INIT","SERVER_LISTENING","TCP_CONNECTED","WS_HANDSHAKE","MCP_INITIALIZED","WARM"];
 const out = { source: "log_tails", editor_log: null, highest_stage: null, highest_stage_ts: null, lease_exit_line_seen: false };
 const editorLogs = [];
-if (rid) editorLogs.push(`${home}/.multica/godot-editor/${rid}.log`);
-if (lbl) editorLogs.push(`${home}/.multica/godot-editor-${lbl}.log`);
+if (rid) editorLogs.push(`${home}/godot-editor/${rid}.log`);
+if (lbl) editorLogs.push(`${home}/godot-editor-${lbl}.log`);
 const launcherLogs = process.env.LL ? [process.env.LL] : [];
 let bestOrd = -1, bestTs = null, editorLogUsed = null;
 const scan = (file, isEditor) => {

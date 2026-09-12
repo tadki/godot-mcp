@@ -26,12 +26,17 @@ import { fileURLToPath } from 'node:url';
 const START_MS = Date.now();
 const SHIM_PREFIX = '[godot-mcp-shim]';
 
-// §2.1: HOME is required — the cache/log dir derives from it (F11 same-class
-// constraint as the proxy: a wrong HOME would silently misplace cache files).
+// §2.1: HOME is required — the state dir derives from it when GODOT_MCP_HOME
+// is unset (F11 same-class constraint as the proxy: a wrong HOME would
+// silently misplace cache files).
 if (!process.env.HOME) {
-    console.error(`${SHIM_PREFIX} FATAL: HOME is not set; cannot derive ~/.multica cache/log paths. dying.`);
+    console.error(`${SHIM_PREFIX} FATAL: HOME is not set; cannot derive state/cache/log paths. dying.`);
     process.exit(1);
 }
+// SEE-1292 §DECPL-001: all state/log/cache under GODOT_MCP_HOME (default a
+// NEUTRAL path, not ~/.multica). The Multica deployment injects
+// GODOT_MCP_HOME="$HOME/.multica" to keep live state byte-continuous.
+const GODOT_MCP_HOME = process.env.GODOT_MCP_HOME || path.join(os.homedir(), '.config', 'godot-mcp');
 
 // --- repo root + launcher path (§2.1) ----------------------------------------
 // Walk up from this file to the directory containing project.godot (the
@@ -65,7 +70,7 @@ const LAUNCHER_PATH = (() => {
 function resolveAgentName() {
     const argvName = process.argv[2];
     if (argvName && argvName.trim()) return argvName.trim();
-    for (const k of ['KOL_AGENT_NAME', 'CLAUDE_AGENT_NAME', 'MULTICA_AGENT_NAME']) {
+    for (const k of ['GODOT_MCP_AGENT_NAME', 'KOL_AGENT_NAME', 'CLAUDE_AGENT_NAME', 'MULTICA_AGENT_NAME']) {
         const v = (process.env[k] || '').trim();
         if (v) return v;
     }
@@ -75,7 +80,7 @@ const AGENT_NAME = resolveAgentName();
 const LABEL = (AGENT_NAME || 'unknown').toLowerCase();
 
 // --- logging (§2.3) ------------------------------------------------------------
-const LOG_FILE = path.join(os.homedir(), '.multica', `godot-mcp-shim-${LABEL}.log`);
+const LOG_FILE = path.join(GODOT_MCP_HOME, `godot-mcp-shim-${LABEL}.log`);
 try { fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true }); } catch { /* best-effort, mirror launcher || true */ }
 function log(event, fields = '') {
     const line = `${new Date().toISOString()} ${SHIM_PREFIX} ${event}${fields ? ' ' + fields : ''}`;
@@ -136,9 +141,9 @@ const PLACEHOLDER_TOOLS = PLACEHOLDER_TOOL_NAMES.map((name) => ({
 
 // --- tools/list cache read side (§6.1) -----------------------------------------
 // Written by the PROXY (post-patchToolsList real list), read here. Lives under
-// ~/.multica keyed by agent label (NOT the worktree — a rebuilt worktree must
+// state dir keyed by agent label (NOT the worktree — a rebuilt worktree must
 // not wipe the cross-session cache value, §6.1).
-const CACHE_FILE = path.join(os.homedir(), '.multica', `godot-mcp-tools-cache-${LABEL}.json`);
+const CACHE_FILE = path.join(GODOT_MCP_HOME, `godot-mcp-tools-cache-${LABEL}.json`);
 // §4.5.3 T2 / K5: fork CLI path env-overridable; default relative to this
 // library's own location (launch/ → ../server/dist/cli.js), no D-drive literal.
 const DEFAULT_FORK_CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'server', 'dist', 'cli.js');
@@ -198,8 +203,8 @@ let rechainTimer = null;
 let chainState = 'proxy_warming';
 let chainMissing = false;      // launcher_missing: chain_exhausted is TERMINAL (mutual exclusion with rechain)
 const RECHAIN_BACKOFF_MS = [10000, 20000];
-const RECHAIN_MAX = parseInt(process.env.KOL_SHIM_RECHAIN_MAX || '2', 10);
-const REFRESH_MS = parseInt(process.env.KOL_SHIM_REFRESH_MS || '30000', 10);
+const RECHAIN_MAX = parseInt(process.env.GODOT_MCP_SHIM_RECHAIN_MAX || process.env.KOL_SHIM_RECHAIN_MAX || '2', 10);
+const REFRESH_MS = parseInt(process.env.GODOT_MCP_SHIM_REFRESH_MS || process.env.KOL_SHIM_REFRESH_MS || '30000', 10);
 // 测试 seam 生产防御 (decision 01a08100 增量③): the launcher-substitution
 // override must never leak into a production shim. It is honored only when
 // KOL_SEE1244_ALLOW_TEST_OVERRIDE=1 is ALSO set (tests set both); a stray
@@ -253,10 +258,10 @@ function spawnChain() {
     // 测试 seam 生产防御 (decision 01a08100 增量③): the override is a test-only
     // seam — it is honored ONLY with the explicit allow flag (tests set both);
     // a stray override in production is ignored loudly, never silently used.
-    const rawOverride = (process.env.KOL_SEE1244_LAUNCHER_OVERRIDE || '').trim();
+    const rawOverride = (process.env.GODOT_MCP_SEE1244_LAUNCHER_OVERRIDE || process.env.KOL_SEE1244_LAUNCHER_OVERRIDE || '').trim();
     const testOverride = (TEST_OVERRIDE_ALLOWED && rawOverride) || '';
     if (rawOverride && !TEST_OVERRIDE_ALLOWED) {
-        log('SHIM_OVERRIDE_REJECTED', 'reason=allow_flag_missing — KOL_SEE1244_LAUNCHER_OVERRIDE ignored outside tests');
+        log('SHIM_OVERRIDE_REJECTED', 'reason=allow_flag_missing — launcher override ignored outside tests');
     }
     if (!testOverride && !fs.existsSync(LAUNCHER_PATH)) {
         // D3: launcher truly missing — chain_exhausted is TERMINAL here and
@@ -283,7 +288,7 @@ function spawnChain() {
     chainProc = spawn(cmd, argv, {
         detached: false, // chain dies with the shim (§4.1: no orphan proxy chain)
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, KOL_FROM_SHIM: '1' },
+        env: { ...process.env, GODOT_MCP_FROM_SHIM: process.env.GODOT_MCP_FROM_SHIM || '1', KOL_FROM_SHIM: process.env.GODOT_MCP_FROM_SHIM || '1' },
     });
     log('SHIM_SPAWN_CHAIN', `cmd="${testOverride || `bash ${LAUNCHER_PATH}${AGENT_NAME ? ' ' + AGENT_NAME : ''}`}" pid=${chainProc.pid}`);
     chainState = 'proxy_warming'; // launcher up, proxy not yet proven (no stdout frame)
@@ -395,7 +400,7 @@ function transientErrorResponse(id, state) {
     const retryable = state !== 'chain_exhausted';
     const hint = retryable
         ? `godot-mcp chain is not ready yet (state=${state}); please retry shortly.`
-        : `godot-mcp chain failed permanently (state=chain_exhausted after ${rechainAttempts} restart attempts). See ~/.multica/godot-mcp-launcher-${LABEL}.log — a session rerun is the recovery path.`;
+        : `godot-mcp chain failed permanently (state=chain_exhausted after ${rechainAttempts} restart attempts). See ${GODOT_MCP_HOME}/godot-mcp-launcher-${LABEL}.log — a session rerun is the recovery path.`;
     return {
         jsonrpc: '2.0', id,
         error: {

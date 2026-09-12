@@ -122,7 +122,10 @@ section('tools/list: cache miss → placeholder');
 
 section('tools/list: cache hit');
 {
-    const cacheDir = path.join(TEST_HOME, '.multica');
+    // SEE-1292 §DECPL-001: the shim resolves its state dir from GODOT_MCP_HOME
+    // (default ${HOME}/.config/godot-mcp, NOT the legacy ~/.multica) — seed the
+    // cache at the path the shim actually reads under the sandboxed HOME.
+    const cacheDir = path.join(TEST_HOME, '.config', 'godot-mcp');
     fs.mkdirSync(cacheDir, { recursive: true });
     const cacheTools = [
         { name: 'godot_exec', description: 'real exec schema', inputSchema: { type: 'object', properties: { action: { type: 'string' } } } },
@@ -145,7 +148,7 @@ section('tools/list: cache hit');
 
 section('tools/list: corrupt cache → placeholder fallback (D5)');
 {
-    const cacheDir = path.join(TEST_HOME, '.multica');
+    const cacheDir = path.join(TEST_HOME, '.config', 'godot-mcp');
     fs.writeFileSync(path.join(cacheDir, 'godot-mcp-tools-cache-handshaketest.json'), '{not-json');
     const proc = startShim();
     await waitShimStarted(proc);

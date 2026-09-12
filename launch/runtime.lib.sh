@@ -73,9 +73,12 @@ mcp_derive_runtime_id() {
     printf '%s\n' "${agent}-${h:-$KOL_SLOT_FALLBACK}"
 }
 
-# mcp_state_dir: the directory-form lifecycle home.
+# mcp_state_dir: the directory-form lifecycle home. SEE-1292 §DECPL-001: all
+# state resolves under GODOT_MCP_HOME (a configurable, neutral path with
+# ${HOME}/.config/godot-mcp default). The Multica deployment sets
+# GODOT_MCP_HOME="$HOME/.multica" to keep live state byte-continuous.
 mcp_state_dir() {
-    printf '%s\n' "${HOME}/.multica/godot-editor"
+    printf '%s\n' "${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-editor"
 }
 
 # kol_lifecycle_path <suffix> <label> <runtime_id>: resolve a lifecycle file
@@ -97,8 +100,9 @@ mcp_state_dir() {
 # resolution is advisory, not exclusive).
 kol_lifecycle_path() {
     local suffix="$1" label="$2" runtime_id="${3:-${KOL_RUNTIME_ID:-}}"
-    local new="${HOME}/.multica/godot-editor/${runtime_id}${suffix}"
-    local legacy="${HOME}/.multica/godot-editor-${label}${suffix}"
+    local home="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}"
+    local new="${home}/godot-editor/${runtime_id}${suffix}"
+    local legacy="${home}/godot-editor-${label}${suffix}"
     if [[ "$runtime_id" == *-solo ]]; then
         printf '%s\n' "$legacy"
     elif [[ -n "$runtime_id" && -e "$new" ]]; then

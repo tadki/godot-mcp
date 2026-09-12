@@ -17,6 +17,7 @@ export SCRIPT_DIR
 SBOX="$(mktemp -d)"
 trap 'rm -rf "$SBOX"' EXIT
 export HOME="$SBOX"
+export GODOT_MCP_HOME="$SBOX/.multica"
 mkdir -p "$HOME/.multica"
 export KOL_PORT_HELD_DIR="$SBOX/held-port"
 # No listener is actually bound in the sandbox — force the probe OFF so the

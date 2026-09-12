@@ -28,12 +28,14 @@ export const GODOT_MCP_PKG = '@satelliteoflove/godot-mcp';
 // an absolute D-drive path (it does NOT run godot-mcp-launcher.sh), so the
 // launcher's fork wiring never applies in production — the resolver must prefer
 // the fork itself. The fork is required (upstream has no GODOT_MCP_QUICK_TIMEOUT
-// support), so it is NOT opt-in; KOL_GODOT_MCP_CMD remains the explicit override
-// and the npx path stays the fallback when the fork is absent (offline / fresh
-// machine / CI test harness).
-// §4.5.3 T2 / K5: the fork CLI path is env-overridable (GODOT_MCP_FORK_CLI) and
-// by default resolves relative to this library's OWN location (this file lives
-// in launch/, so the fork CLI is ../server/dist/cli.js) — no D-drive literal.
+// support), so it is NOT opt-in; the explicit override
+// (canonical GODOT_MCP_GODOT_MCP_CMD — legacy alias KOL_GODOT_MCP_CMD — kept one
+// round) remains the escape hatch and the npx path stays the fallback when the
+// fork is absent (offline / fresh machine / CI test harness).
+// §4.5.3 T2 / K5 / SEE-1292 §DECPL-003: the fork CLI path is env-overridable
+// (GODOT_MCP_FORK_CLI) and by default resolves relative to this library's OWN
+// location (this file lives in launch/, so the fork CLI is ../server/dist/cli.js)
+// — no D-drive literal. GODOT_MCP_FORK_CLI is the single explicit override seam.
 const DEFAULT_FORK_CLI = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   '..', 'server', 'dist', 'cli.js',
@@ -78,42 +80,39 @@ function readBinEntry(pkgDir, pkgName, pkg) {
 // (fallback). args is the full argv tail to spawn. source is a human-readable
 // provenance string the proxy logs once at startup.
 //
-// Resolution order:
-//   1. KOL_GODOT_MCP_CMD override — 'npx' forces npx; any other non-empty value
-//      is treated as a path to the bin entry and spawned as `node <path>`.
-//      (Test seam + an operator escape hatch; always honored.)
-//   2. OPT-IN auto-detection (KOL_DIRECT_GODOT_MCP=1): local node_modules via
-//      require.resolve, then npx cache (~/.npm/_npx/<hash>/..., newest mtime
-//      wins). Opt-in so test harnesses that inject a mock npx onto PATH (and
-//      do not set KOL_GODOT_MCP_CMD) keep using their mock instead of an
-//      unrelated cached package that happens to live on the same machine.
-//      Production enables it (godot-mcp-launcher.sh sets it) to get the
-//      ~2.5s cold-start speedup.
+// Resolution order (SEE-1292 §DECPL-003: this is the SINGLE canonical server
+// locator that the launcher/shim/proxy all reuse):
+//   1. Explicit override — canonical GODOT_MCP_GODOT_MCP_CMD (legacy alias
+//      KOL_GODOT_MCP_CMD, one-round backcompat): 'npx' forces npx; any other
+//      non-empty value is a path to the bin entry spawned as `node <path>`.
+//      (Test seam + operator escape hatch; always honored.)
+//   2. OPT-IN auto-detection (GODOT_MCP_DIRECT_GODOT_MCP=1 / legacy
+//      KOL_DIRECT_GODOT_MCP=1): local node_modules via require.resolve, then
+//      npx cache (~/.npm/_npx/<hash>/..., newest mtime wins). Opt-in so test
+//      harnesses that inject a mock npx onto PATH (and do not set the override)
+//      keep using their mock instead of an unrelated cached package.
 //   3. `npx -y <pkg>` fallback (default, and also when opt-in finds nothing).
 export function resolveGodotMcpCommand() {
-    const override = (process.env.KOL_GODOT_MCP_CMD || '').trim();
+    const override = (process.env.GODOT_MCP_GODOT_MCP_CMD || process.env.KOL_GODOT_MCP_CMD || '').trim();
     if (override) {
         if (override === 'npx') {
-            return { cmd: 'npx', args: ['-y', GODOT_MCP_PKG], source: 'npx (KOL_GODOT_MCP_CMD=npx)' };
+            return { cmd: 'npx', args: ['-y', GODOT_MCP_PKG], source: 'npx (GODOT_MCP_GODOT_MCP_CMD=npx)' };
         }
-        return { cmd: process.execPath, args: [override], source: `node ${override} (KOL_GODOT_MCP_CMD)` };
+        return { cmd: process.execPath, args: [override], source: `node ${override} (GODOT_MCP_GODOT_MCP_CMD)` };
     }
 
-    // SEE-1111: prefer the owner fork (90s quick-timeout + background reconnect)
-    // so a tools/call forwarded at WARM connects instead of erroring 'Not
-    // connected'. Required — upstream has no equivalent. Fall through when absent.
-    // OPT-OUT (test seam): KOL_DIRECT_GODOT_MCP=0 means the caller explicitly
-    // wants the npx/PATH path — test harnesses that inject a mock npx onto PATH
-    // (and never set KOL_GODOT_MCP_CMD) rely on the proxy spawning their mock,
-    // not the real fork (which would try to drive a real editor the mock
-    // listener is not). Honoring the opt-out keeps those tests on their mock.
-    if (process.env.KOL_DIRECT_GODOT_MCP !== '0') {
+    // OPT-OUT (test seam): GODOT_MCP_DIRECT_GODOT_MCP=0 (or legacy
+    // KOL_DIRECT_GODOT_MCP=0) means the caller explicitly wants the npx/PATH
+    // path — test harnesses that inject a mock npx onto PATH (and never set the
+    // override) rely on the proxy spawning their mock, not the real fork.
+    const direct = process.env.GODOT_MCP_DIRECT_GODOT_MCP ?? process.env.KOL_DIRECT_GODOT_MCP;
+    if (direct !== '0') {
         const fork = resolveFork();
         if (fork) return fork;
     }
 
     // (2) opt-in auto-detection: cache walk only when explicitly enabled.
-    if (process.env.KOL_DIRECT_GODOT_MCP === '1') {
+    if (direct === '1') {
         // (2a) local install up the require chain.
         try {
             const require = createRequire(import.meta.url);

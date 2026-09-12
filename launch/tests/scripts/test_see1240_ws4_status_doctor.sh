@@ -30,6 +30,10 @@ FAKE_TMP="$SBOX/tmp"; mkdir -p "$FAKE_TMP" "$SBOX/home/.multica"
 trap 'rm -rf "$SBOX"' EXIT
 
 export HOME="$SBOX/home"
+# SEE-1292 §DECPL-001: point GODOT_MCP_HOME at the sandbox (the status tool now
+# resolves its state dir from GODOT_MCP_HOME). Keep HOME relocation for parity
+# with the legacy override + node/git discovery keeps working under sandbox HOME.
+export GODOT_MCP_HOME="$HOME/.multica"
 export KOL_PORT_REGISTRY_PATH_OVERRIDE="$HOME/.multica/godot-port-registry.json"
 
 # Seed a minimal v2 lease + registry so the normal-state checks have sources.
@@ -49,8 +53,13 @@ fs.writeFileSync(process.env.KOL_PORT_REGISTRY_PATH_OVERRIDE, JSON.stringify({
     entries:{"Bachi-aabbccdd":{port:6563, proxy_pid:process.pid, heartbeat_at:new Date().toISOString(), agent:"Bachi", worktree:wt}}
 },null,2)+"\n");
 ' "$WT"
-# Registration layer: seed ONE real-shaped config dir (multica-mcp-* under /tmp)
-REG_DIR="$FAKE_TMP/multica-mcp-ws4test"
+# Registration layer: seed ONE real-shaped config dir. The collector scans
+# /tmp (hardcoded, 2026-08-01 incident form), so the seed must live in the
+# scan root — CI runners have no pre-existing multica-mcp-* dirs. Cleaned up
+# with the other TF dirs below.
+REG_DIR="/tmp/multica-mcp-ws4test"
+cleanup_reg() { rm -rf "$REG_DIR"; }
+trap 'cleanup_reg; cleanup_tf; rm -rf "$SBOX"' EXIT
 mkdir -p "$REG_DIR"
 node -e '
 const fs=require("fs");

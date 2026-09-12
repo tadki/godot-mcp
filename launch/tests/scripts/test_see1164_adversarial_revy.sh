@@ -51,6 +51,7 @@ sep "SEE-1164 R1+R2: header fields present, empty runtime_id → unknown.stderr.
 
 start_proxy \
     "HOME=$TEST_HOME" \
+    "GODOT_MCP_HOME=$TEST_HOME/.multica" \
     "KOL_RUNTIME_ID=" \
     "GODOT_PORT=$PORT" \
     "KOL_AGENT_NAME=Revy" \
@@ -141,6 +142,7 @@ PORT2=$(find_free_port)
 
 start_proxy \
     "HOME=$TEST_HOME_RO" \
+    "GODOT_MCP_HOME=$TEST_HOME_RO/.multica" \
     "KOL_RUNTIME_ID=revy-ro-test" \
     "GODOT_PORT=$PORT2" \
     "KOL_AGENT_NAME=Revy" \

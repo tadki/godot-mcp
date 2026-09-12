@@ -81,7 +81,10 @@ chmod +x "$MOCK_BIN/npm"
 
 out="$SBOX/t1b.out"
 T1_HOME="$SBOX/t1home"; mkdir -p "$T1_HOME"
-PATH="$MOCK_BIN:$PATH" HOME="$T1_HOME" KOL_RUNTIME_ID=see1288-t1 bash "$MOCK_LAUNCH/godot-mcp-launcher-snippet.sh" > "$out" 2>&1
+# SEE-1292 §DECPL-001: the launcher snippet resolves GODOT_MCP_HOME from env
+# (default $HOME/.config/godot-mcp); pin it to the sandbox so the build log
+# lands in a known location instead of the neutral default.
+PATH="$MOCK_BIN:$PATH" HOME="$T1_HOME" GODOT_MCP_HOME="$T1_HOME/.multica" KOL_RUNTIME_ID=see1288-t1 bash "$MOCK_LAUNCH/godot-mcp-launcher-snippet.sh" > "$out" 2>&1
 rc=$?
 # The product computes FORK_SERVER_DIR as SCRIPT_DIR/../server (=<launch>/../server);
 # match the stable "fork CLI build failed" tail + server path, not the mock's
@@ -91,7 +94,7 @@ if grep -q "WARNING: fork CLI build failed in .*/server; full npm output saved t
     ok "build-fail → WARNING names the on-disk build log (MEDIUM-1)"
 else ko "WARNING does not name the build log (got: $(grep 'WARNING\|LOG\|PROBE' "$out" | head -3))"; fi
 BUILD_LOG="$T1_HOME/.multica/godot-mcp-fork-build-see1288-t1.log"
-[[ -f "$BUILD_LOG" ]] && ok "build log file exists at \$HOME/.multica/ (runtime_id-tagged)" || ko "build log missing: $BUILD_LOG"
+[[ -f "$BUILD_LOG" ]] && ok "build log file exists under GODOT_MCP_HOME (runtime_id-tagged)" || ko "build log missing: $BUILD_LOG"
 grep -q "mock npm ci FAILED" "$BUILD_LOG" && ok "build log contains the npm error output" || ko "build log missing npm error output"
 grep -q "PROBE-EXEC godot-mcp-proxy.mjs" "$out" && ok "launcher continued to exec proxy after build fail" || ko "launcher did not continue after build fail"
 [[ "$rc" == "0" ]] && ok "harness exit 0 (no abort on build fail)" || ko "harness rc=$rc (expected 0)"
@@ -110,7 +113,7 @@ exit 0
 EOF
 rm -rf "$MOCK_SERVER/dist"
 out2="$SBOX/t1c.out"
-PATH="$MOCK_BIN:$PATH" bash "$MOCK_LAUNCH/godot-mcp-launcher-snippet.sh" > "$out2" 2>&1
+PATH="$MOCK_BIN:$PATH" HOME="$T1_HOME" GODOT_MCP_HOME="$T1_HOME/.multica" bash "$MOCK_LAUNCH/godot-mcp-launcher-snippet.sh" > "$out2" 2>&1
 grep -q "STAGE stage=FORK_WIRED" "$out2" && ok "build success → FORK_WIRED stage emitted" || ko "build success did not emit FORK_WIRED"
 grep -q "quick_timeout_ms=90000" "$out2" && ok "FORK_WIRED carries 90s default" || ko "quick_timeout_ms=90000 missing"
 

@@ -25,7 +25,7 @@ set -uo pipefail
 
 LAUNCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REAPER="${LAUNCH_DIR}/reap-stale-leases.sh"
-MODE_FILE="${HOME}/.multica/godot-reaper.mode"
+MODE_FILE="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-reaper.mode"
 
 mode="dry-run"
 if [[ -f "$MODE_FILE" ]]; then

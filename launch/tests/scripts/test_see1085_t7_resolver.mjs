@@ -16,13 +16,13 @@ import { join, dirname } from 'node:path';
 
 const RESOLVER_PATH = join(
     dirname(new URL(import.meta.url).pathname),
-    '..', '..', 'launch', 'godot-mcp-resolve.mjs'
+    '..', '..', '..', 'launch', 'godot-mcp-resolve.mjs'
 );
 const { resolveGodotMcpCommand, GODOT_MCP_PKG } = await import(RESOLVER_PATH);
 
 // SEE-1117 (regression sweep): the owner fork at
 // /mnt/d/GodotProjects/forks/godot-mcp/server/dist/cli.js is preferred by
-// resolveGodotMcpCommand() whenever KOL_DIRECT_GODOT_MCP != '0' (SEE-1111
+// resolveGodotMcpCommand() whenever GODOT_MCP_DIRECT_GODOT_MCP != '0' (SEE-1111
 // production fix). On any machine where that fork file exists the resolver
 // will return the fork branch BEFORE exercising the opt-in cache walk
 // (T7.3/T7.4/T7.6/T7.7) or the no-opt-in npx fallback (T7.8). Those branches
@@ -118,23 +118,23 @@ function withEnv(patch, fn) {
 
 console.log(`\n--- T7: resolver unit (${RESOLVER_PATH}) ---\n`);
 
-// T7.1: KOL_GODOT_MCP_CMD=npx → forces npx fallback regardless of cache state.
-record('T7.1: override KOL_GODOT_MCP_CMD=npx forces npx', () => {
-    withEnv({ KOL_GODOT_MCP_CMD: 'npx', HOME: '/nonexistent' }, () => {
+// T7.1: GODOT_MCP_GODOT_MCP_CMD=npx → forces npx fallback regardless of cache state.
+record('T7.1: override GODOT_MCP_GODOT_MCP_CMD=npx forces npx', () => {
+    withEnv({ GODOT_MCP_GODOT_MCP_CMD: 'npx', HOME: '/nonexistent' }, () => {
         const r = resolveGodotMcpCommand();
         assert.equal(r.cmd, 'npx', 'cmd');
         assert.deepEqual(r.args, ['-y', GODOT_MCP_PKG], 'args');
-        assert.match(r.source, /KOL_GODOT_MCP_CMD=npx/);
+        assert.match(r.source, /GODOT_MCP_GODOT_MCP_CMD=npx/);
     });
 });
 
 // T7.2: KOL_GODOT_MCP_CMD=<path> → node <path>.
 record('T7.2: override KOL_GODOT_MCP_CMD=<path> spawns node <path>', () => {
-    withEnv({ KOL_GODOT_MCP_CMD: '/some/mock-bin.js', HOME: '/nonexistent' }, () => {
+    withEnv({ GODOT_MCP_GODOT_MCP_CMD: '/some/mock-bin.js', HOME: '/nonexistent' }, () => {
         const r = resolveGodotMcpCommand();
         assert.equal(r.cmd, process.execPath, 'cmd is node');
         assert.deepEqual(r.args, ['/some/mock-bin.js']);
-        assert.match(r.source, /KOL_GODOT_MCP_CMD/);
+        assert.match(r.source, /GODOT_MCP_GODOT_MCP_CMD/);
     });
 });
 
@@ -143,7 +143,7 @@ record('T7.2: override KOL_GODOT_MCP_CMD=<path> spawns node <path>', () => {
 recordUnlessFork('T7.3: opt-in + empty npx cache → npx -y fallback', () => {
     const home = mkdtempSync(join(tmpdir(), 'see1085-empty-'));
     try {
-        withEnv({ KOL_GODOT_MCP_CMD: '', KOL_DIRECT_GODOT_MCP: '1', HOME: home }, () => {
+        withEnv({ GODOT_MCP_GODOT_MCP_CMD: '', GODOT_MCP_DIRECT_GODOT_MCP: '1', HOME: home }, () => {
             const r = resolveGodotMcpCommand();
             assert.equal(r.cmd, 'npx');
             assert.equal(r.args[0], '-y');
@@ -155,7 +155,7 @@ recordUnlessFork('T7.3: opt-in + empty npx cache → npx -y fallback', () => {
 recordUnlessFork('T7.4: opt-in + npx cache walk picks newest mtime as node direct', () => {
     const { home } = makeFakeCache();
     try {
-        withEnv({ KOL_GODOT_MCP_CMD: '', KOL_DIRECT_GODOT_MCP: '1', HOME: home }, () => {
+        withEnv({ GODOT_MCP_GODOT_MCP_CMD: '', GODOT_MCP_DIRECT_GODOT_MCP: '1', HOME: home }, () => {
             const r = resolveGodotMcpCommand();
             assert.equal(r.cmd, process.execPath, 'cmd is node (direct, skipping npx)');
             assert.equal(r.args.length, 1);
@@ -169,7 +169,7 @@ recordUnlessFork('T7.4: opt-in + npx cache walk picks newest mtime as node direc
 record('T7.5: override beats cache', () => {
     const { home } = makeFakeCache();
     try {
-        withEnv({ KOL_GODOT_MCP_CMD: '/force/this.js', KOL_DIRECT_GODOT_MCP: '1', HOME: home }, () => {
+        withEnv({ GODOT_MCP_GODOT_MCP_CMD: '/force/this.js', GODOT_MCP_DIRECT_GODOT_MCP: '1', HOME: home }, () => {
             const r = resolveGodotMcpCommand();
             assert.equal(r.cmd, process.execPath);
             assert.deepEqual(r.args, ['/force/this.js']);
@@ -189,7 +189,7 @@ recordUnlessFork('T7.6: opt-in + cache entry with broken bin field is skipped, f
         name: GODOT_MCP_PKG, version: '1.0.0', bin: './missing.js',
     }));
     try {
-        withEnv({ KOL_GODOT_MCP_CMD: '', KOL_DIRECT_GODOT_MCP: '1', HOME: home }, () => {
+        withEnv({ GODOT_MCP_GODOT_MCP_CMD: '', GODOT_MCP_DIRECT_GODOT_MCP: '1', HOME: home }, () => {
             const r = resolveGodotMcpCommand();
             assert.equal(r.cmd, 'npx', 'falls back when cache bin is unusable');
         });
@@ -210,7 +210,7 @@ recordUnlessFork('T7.7: opt-in + single cache entry resolves node direct', () =>
     writeFileSync(join(dir, 'dist', 'cli.js'), '// mock\n');
     utimesSync(dir, new Date(1_500_000_000 * 1000), new Date(1_500_000_000 * 1000));
     try {
-        withEnv({ KOL_GODOT_MCP_CMD: '', KOL_DIRECT_GODOT_MCP: '1', HOME: home }, () => {
+        withEnv({ GODOT_MCP_GODOT_MCP_CMD: '', GODOT_MCP_DIRECT_GODOT_MCP: '1', HOME: home }, () => {
             const r = resolveGodotMcpCommand();
             assert.equal(r.cmd, process.execPath);
             assert.match(r.source, /npx-cache 2\.0\.0/);
@@ -218,14 +218,14 @@ recordUnlessFork('T7.7: opt-in + single cache entry resolves node direct', () =>
     } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
-// T7.8: opt-in GATE — populated cache but KOL_DIRECT_GODOT_MCP unset → npx.
+// T7.8: opt-in GATE — populated cache but GODOT_MCP_DIRECT_GODOT_MCP unset → npx.
 // This is the regression guard: test harnesses (and any environment with a
 // real cached package) must NOT have their mock-npx bypassed by an automatic
 // cache walk. Auto-detection is opt-in only.
 recordUnlessFork('T7.8: populated cache but opt-in UNSET → npx (no walk)', () => {
     const { home } = makeFakeCache();
     try {
-        withEnv({ KOL_GODOT_MCP_CMD: '', KOL_DIRECT_GODOT_MCP: '', HOME: home }, () => {
+        withEnv({ GODOT_MCP_GODOT_MCP_CMD: '', GODOT_MCP_DIRECT_GODOT_MCP: '', HOME: home }, () => {
             const r = resolveGodotMcpCommand();
             assert.equal(r.cmd, 'npx', 'cache walk NOT attempted without opt-in');
             assert.equal(r.args[0], '-y');

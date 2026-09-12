@@ -94,9 +94,9 @@ function detectWindowsHost() {
 const GODOT_HOST = process.env.GODOT_HOST || process.env.GODOT_HOSTNAME || detectWindowsHost();
 const GODOT_PORT = parseInt(process.env.GODOT_PORT || '0', 10);
 const EDITOR_LOG_FILE = process.env.GODOT_EDITOR_LOG_FILE || '';
-const PROBE_INTERVAL_MS = parseInt(process.env.KOL_PROBE_INTERVAL_MS || '1000', 10);
-const HEARTBEAT_INTERVAL_MS = parseInt(process.env.KOL_HEARTBEAT_INTERVAL_MS || '2000', 10);
-const PROGRESS_INTERVAL_MS = parseInt(process.env.KOL_PROGRESS_INTERVAL_MS || '5000', 10);
+const PROBE_INTERVAL_MS = parseInt(process.env.GODOT_MCP_PROBE_INTERVAL_MS || process.env.KOL_PROBE_INTERVAL_MS || '1000', 10);
+const HEARTBEAT_INTERVAL_MS = parseInt(process.env.GODOT_MCP_HEARTBEAT_INTERVAL_MS || process.env.KOL_HEARTBEAT_INTERVAL_MS || '2000', 10);
+const PROGRESS_INTERVAL_MS = parseInt(process.env.GODOT_MCP_PROGRESS_INTERVAL_MS || process.env.KOL_PROGRESS_INTERVAL_MS || '5000', 10);
 // SEE-1043: independent cold/hot budgets. Cold start (editor still booting) gets
 // a long warmup window (default 180s per SEE-1110 §5: measured cold ~40s, 180s is
 // 4x+ margin for D3D12 shader first-compile + WSL overhead, and stays well under
@@ -110,7 +110,7 @@ const PROGRESS_INTERVAL_MS = parseInt(process.env.KOL_PROGRESS_INTERVAL_MS || '5
 // covers the remaining pre-spawn path once the reaper is async (A) and the
 // idle gate is capped at 30s (B), with ~50s of headroom for slower machines.
 // Derived: FAILED_EXIT_MS defaults to 2 * COLD_WARMUP_TIMEOUT_MS -> 600s.
-const COLD_WARMUP_TIMEOUT_MS = parseInt(process.env.KOL_WARMUP_TIMEOUT_MS || '300000', 10);
+const COLD_WARMUP_TIMEOUT_MS = parseInt(process.env.GODOT_MCP_WARMUP_TIMEOUT_MS || process.env.KOL_WARMUP_TIMEOUT_MS || '300000', 10);
 // SEE-1111 (cold-start one-shot): default the godot-mcp server's QUICK_TIMEOUT
 // to 90s so a tools/call forwarded at WARM survives the fork's WS connect +
 // initialize chain instead of erroring 'Not connected' at the upstream 30s
@@ -119,38 +119,38 @@ const COLD_WARMUP_TIMEOUT_MS = parseInt(process.env.KOL_WARMUP_TIMEOUT_MS || '30
 // explicit external value wins. Inherited by the spawned godot-mcp child.
 process.env.GODOT_MCP_QUICK_TIMEOUT_MS = process.env.GODOT_MCP_QUICK_TIMEOUT_MS || '90000';
 const HOT_WARMUP_TIMEOUT_MS = parseInt(
-    process.env.KOL_HOT_WARMUP_TIMEOUT_MS || '30000',
+    process.env.GODOT_MCP_HOT_WARMUP_TIMEOUT_MS || process.env.KOL_HOT_WARMUP_TIMEOUT_MS || '30000',
     10
 );
 // SEE-1110 §9 R7: quick-disable switch for the whole progress protocol
 // (stage tracking + extended warmupDiagnostic + progress notifications + success
 // timeline). When 'off', the proxy behaves exactly as before this protocol: the
 // extra fields are not appended and no progress notification is emitted.
-const KOL_PROGRESS_PROTOCOL = process.env.KOL_PROGRESS_PROTOCOL || 'on';
+const KOL_PROGRESS_PROTOCOL = process.env.GODOT_MCP_PROGRESS_PROTOCOL || process.env.KOL_PROGRESS_PROTOCOL || 'on';
 // How long an already-warm proxy keeps respawning a dying npx before giving up
 // and exiting (so Claude can restart us against a genuinely dead editor).
-const HOT_NPX_RESTART_DEADLINE_MS = parseInt(process.env.KOL_NPX_HOT_RESTART_MS || '30000', 10);
+const HOT_NPX_RESTART_DEADLINE_MS = parseInt(process.env.GODOT_MCP_NPX_HOT_RESTART_MS || process.env.KOL_NPX_HOT_RESTART_MS || '30000', 10);
 // Backoff between npx respawns while the editor is still warming.
-const NPX_RESTART_BACKOFF_MS = parseInt(process.env.KOL_NPX_RESTART_BACKOFF_MS || '1500', 10);
+const NPX_RESTART_BACKOFF_MS = parseInt(process.env.GODOT_MCP_NPX_RESTART_BACKOFF_MS || process.env.KOL_NPX_RESTART_BACKOFF_MS || '1500', 10);
 const RENDER_STABLE_REQUIRED_MS = 4000; // same default as launcher
 const RENDER_SAMPLE_MS = 2000;
 const RENDER_STABLE_TIMEOUT_MS = 20000;
 // SEE-1070 #2: FAILED_EXIT caps how long the proxy keeps probing after the
 // warmup timeout (RECOVERING state) before giving up and exiting, so Claude can
 // restart against a genuinely dead editor. Defaults to 2x the cold warmup window.
-const FAILED_EXIT_MS = parseInt(process.env.KOL_FAILED_EXIT_MS || String(2 * COLD_WARMUP_TIMEOUT_MS), 10);
+const FAILED_EXIT_MS = parseInt(process.env.GODOT_MCP_FAILED_EXIT_MS || process.env.KOL_FAILED_EXIT_MS || String(2 * COLD_WARMUP_TIMEOUT_MS), 10);
 // SEE-1134 RECOVERING deadlock: in the warm+recovering branch the editor is
 // already bound but the CLI never landed. After this many seconds the proxy
 // kills the npx child so the existing npx.on('exit') respawn machinery brings
 // up a fresh CLI (bounded by HOT_NPX_RESTART_DEADLINE_MS, hot-attempt budget).
 // Without this, a CLI crashing during recovery spins forever: warmFlushed needs
 // npxCliConnected=true which only the (now-dead) CLI could set.
-const WARM_RECOVERING_CLI_TIMEOUT_MS = parseInt(process.env.KOL_WARM_RECOVERING_CLI_TIMEOUT_MS || '15000', 10);
+const WARM_RECOVERING_CLI_TIMEOUT_MS = parseInt(process.env.GODOT_MCP_WARM_RECOVERING_CLI_TIMEOUT_MS || process.env.KOL_WARM_RECOVERING_CLI_TIMEOUT_MS || '15000', 10);
 // SEE-1077: poll cadence for the independent lease monitor. Short enough that
 // fast-fail latency stays in seconds; long enough not to spam stat() on the
 // editor log on every iteration. Lease lines only appear on editor self-exit,
 // so a tight poll is cheap.
-const LEASE_POLL_INTERVAL_MS = parseInt(process.env.KOL_LEASE_POLL_MS || '500', 10);
+const LEASE_POLL_INTERVAL_MS = parseInt(process.env.GODOT_MCP_LEASE_POLL_MS || process.env.KOL_LEASE_POLL_MS || '500', 10);
 // The exact lease death line emitted by addons/godot_mcp/plugin.gd right
 // before get_tree().quit() (plugin.gd:413). ONLY this line triggers fast-fail:
 // "scheduled" (grace window start) and "cancelled" (client reconnected) must
@@ -161,7 +161,7 @@ const LEASE_EXITING_LINE = 'Lease: no MCP client for the grace window; exiting e
 // while the addon self-relaunches (port cold -> new editor warm -> CLI
 // reconnected). 120s aligns with the lease grace window; the client's own
 // timeout is a separate bound. KOL_RESTART_HOLD_TIMEOUT_MS overrides.
-const RESTART_HOLD_TIMEOUT_MS = parseInt(process.env.KOL_RESTART_HOLD_TIMEOUT_MS || '120000', 10);
+const RESTART_HOLD_TIMEOUT_MS = parseInt(process.env.GODOT_MCP_RESTART_HOLD_TIMEOUT_MS || process.env.KOL_RESTART_HOLD_TIMEOUT_MS || '120000', 10);
 
 function log(msg) {
     process.stderr.write(`[godot-mcp-proxy] ${msg}${EOL}`);
@@ -176,7 +176,7 @@ function log(msg) {
 // cannot see (arbiterDecide, helper scripts, render-stable gate, npx CLI).
 // Emitted to stderr only — never to stdout, so the JSON-RPC channel stays
 // clean. Tests can grep stderr for `stage=` lines without parsing stdout.
-const STAGE_LOG_ENABLED = (process.env.KOL_STAGE_LOG || 'on') !== 'off';
+const STAGE_LOG_ENABLED = (process.env.GODOT_MCP_STAGE_LOG || process.env.KOL_STAGE_LOG || 'on') !== 'off';
 function stageLog(stage, msg = '') {
     if (!STAGE_LOG_ENABLED) return;
     const now = Date.now();
@@ -320,17 +320,17 @@ let giveUpCount = 0;             // times the terminal streak fired this process
 let giveUpArmedAt = 0;           // ms epoch of the last give-up (0 = not cooling)
 let giveUpBackoffMs = 0;         // current exponential-backoff cooldown length
 let giveUpLastReason = '';       // bucket + message of the last give-up
-const GIVEUP_REARM_ENABLED = !['off', '0', 'false'].includes((process.env.KOL_GIVEUP_REARM || 'on').toLowerCase());
-const GIVEUP_BASE_COOLDOWN_MS = parseInt(process.env.KOL_GIVEUP_COOLDOWN_MS || '30000', 10);
-const GIVEUP_MAX_COOLDOWN_MS = parseInt(process.env.KOL_GIVEUP_MAX_COOLDOWN_MS || '480000', 10);
+const GIVEUP_REARM_ENABLED = !['off', '0', 'false'].includes((process.env.GODOT_MCP_GIVEUP_REARM || process.env.KOL_GIVEUP_REARM || 'on').toLowerCase());
+const GIVEUP_BASE_COOLDOWN_MS = parseInt(process.env.GODOT_MCP_GIVEUP_COOLDOWN_MS || process.env.KOL_GIVEUP_COOLDOWN_MS || '30000', 10);
+const GIVEUP_MAX_COOLDOWN_MS = parseInt(process.env.GODOT_MCP_GIVEUP_MAX_COOLDOWN_MS || process.env.KOL_GIVEUP_MAX_COOLDOWN_MS || '480000', 10);
 // SEE-1240 WS-7 (目标2): grace-race guard. The vendored addon arms its 300s
 // initial lease grace at plugin init, BEFORE the port is bound; a first boot
 // with a cold import cache can burn most of that grace before any client can
 // connect. When the measured bind delay exceeds KOL_GRACE_RACE_BIND_S the
 // proxy evicts the slow-bind editor and respawns against the now-warm import
 // cache (one-shot per spawn round). KOL_GRACE_RACE_GUARD=0 disables (seam).
-const GRACE_RACE_GUARD_ENABLED = !['off', '0', 'false'].includes((process.env.KOL_GRACE_RACE_GUARD || 'on').toLowerCase());
-const GRACE_RACE_BIND_MS = parseInt(process.env.KOL_GRACE_RACE_BIND_S || '150', 10) * 1000;
+const GRACE_RACE_GUARD_ENABLED = !['off', '0', 'false'].includes((process.env.GODOT_MCP_GRACE_RACE_GUARD || process.env.KOL_GRACE_RACE_GUARD || 'on').toLowerCase());
+const GRACE_RACE_BIND_MS = parseInt(process.env.GODOT_MCP_GRACE_RACE_BIND_S || process.env.KOL_GRACE_RACE_BIND_S || '150', 10) * 1000;
 let graceRaceGuardFired = false;   // one-shot per spawn round
 let graceRaceRespawn = false;      // set when the WARM gate bails for a grace-race respawn
 let firstProbeOkAt = 0;            // WS-7: first successful probe this round (bind-time fallback when the editor log is unreadable)
@@ -410,15 +410,20 @@ class SpawnError extends Error {
     }
 }
 
-// Resolve the launch helper scripts. KOL_CONFIGURE_SH / KOL_START_SH override
-// the resolved path (test seam; production resolves them next to this file).
+// Resolve the launch helper scripts. Canonical GODOT_MCP_*_SH overrides the
+// resolved path; the legacy KOL_*_SH alias is honored one round (SEE-1292
+// §DECPL-002 backcompat — pre-②c test harnesses inject only the legacy name,
+// and the proxy does not source env.sh, so the alias fallback lives here).
 // Resolved lazily so a missing helper at proxy start does not crash; the
 // spawn attempt itself reports worktree_unresolved / spawn_failed_exception.
 function scriptDir() {
     return path.dirname(fileURLToPath(import.meta.url));
 }
 function resolveHelper(name, envVar) {
-    if (process.env[envVar] && process.env[envVar].length) return process.env[envVar];
+    const legacy = envVar.startsWith('GODOT_MCP_') ? `KOL_${envVar.slice('GODOT_MCP_'.length)}` : '';
+    for (const v of [envVar, legacy]) {
+        if (v && process.env[v] && process.env[v].length) return process.env[v];
+    }
     return path.join(scriptDir(), name);
 }
 
@@ -836,8 +841,10 @@ function patchToolsList(result) {
 // §4.5.3 T2: env-overridable; default resolves relative to this library's own location.
 const FORK_CLI_PATH = process.env.GODOT_MCP_FORK_CLI
   || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'server', 'dist', 'cli.js');
-const TOOLS_CACHE_DIR = path.join(os.homedir(), '.multica');
-const TOOLS_CACHE_LABEL = (process.env.KOL_AGENT_NAME || 'unknown').toLowerCase();
+// SEE-1292 §DECPL-001: all state under GODOT_MCP_HOME (default neutral path).
+const GODOT_MCP_HOME = process.env.GODOT_MCP_HOME || path.join(os.homedir(), '.config', 'godot-mcp');
+const TOOLS_CACHE_DIR = GODOT_MCP_HOME;
+const TOOLS_CACHE_LABEL = (process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || 'unknown').toLowerCase();
 const TOOLS_CACHE_FILE = path.join(TOOLS_CACHE_DIR, `godot-mcp-tools-cache-${TOOLS_CACHE_LABEL}.json`);
 function writeToolsCache(tools) {
     try {
@@ -1163,8 +1170,8 @@ function forwardToNpx(line) {
 // Set KOL_TAKEOVER_TIMEOUT_MS=0 to disable takeover entirely (fall back to the
 // immediate editor_busy diagnostic — the §2-only behavior, used by test seams
 // that want the diagnostic without the wait).
-const TAKEOVER_TIMEOUT_MS = parseInt(process.env.KOL_TAKEOVER_TIMEOUT_MS || '30000', 10);
-const TAKEOVER_RETRY_MS = parseInt(process.env.KOL_TAKEOVER_RETRY_MS || '2000', 10);
+const TAKEOVER_TIMEOUT_MS = parseInt(process.env.GODOT_MCP_TAKEOVER_TIMEOUT_MS || process.env.KOL_TAKEOVER_TIMEOUT_MS || '30000', 10);
+const TAKEOVER_RETRY_MS = parseInt(process.env.GODOT_MCP_TAKEOVER_RETRY_MS || process.env.KOL_TAKEOVER_RETRY_MS || '2000', 10);
 // Active takeover coordinator, or null when idle. Shape:
 //   { deadline, waiters: Set<id>, probeId: id|null, timer: NodeJS.Timeout|null }
 let takeover = null;
@@ -1809,7 +1816,7 @@ function handleClaudeMessage(line) {
 // KOL_WS_PROBE_DISABLE=1 degrades to the old raw-TCP probe for test seams whose
 // mock listener only binds a TCP port (it cannot speak HTTP Upgrade).
 function wsProbe() {
-    if (process.env.KOL_WS_PROBE_DISABLE === '1') return tcpProbe();
+    if ((process.env.GODOT_MCP_WS_PROBE_DISABLE || process.env.KOL_WS_PROBE_DISABLE) === '1') return tcpProbe();
     // SEE-1114 Q1 (restart-hold): during a restart_hold the CLI is INTENTIONALLY
     // disconnected and the editor is intentionally being torn down — the slot is
     // NOT owned by the CLI. The warm+npxCliConnected short-circuit would falsely
@@ -2169,22 +2176,22 @@ async function resolveWorktreeForSpawn() {
     // Marker anchor (KOL_PROJECT_GODOT wins — it also anchors the lease sidecar
     // path, so the two can never diverge). stat() must succeed; on failure we do
     // NOT fall through to fs discovery — that is exactly the 路径 B drift.
-    if (process.env.KOL_PROJECT_GODOT) {
-        try { await stat(process.env.KOL_PROJECT_GODOT); return path.dirname(process.env.KOL_PROJECT_GODOT); }
+    if (process.env.GODOT_MCP_PROJECT_GODOT || process.env.KOL_PROJECT_GODOT) {
+        try { await stat(process.env.GODOT_MCP_PROJECT_GODOT || process.env.KOL_PROJECT_GODOT); return path.dirname(process.env.GODOT_MCP_PROJECT_GODOT || process.env.KOL_PROJECT_GODOT); }
         catch (e) {
-            log(`resolveWorktreeForSpawn: marker anchor KOL_PROJECT_GODOT=${process.env.KOL_PROJECT_GODOT} stat failed (${e.code || e.message}); attempting SEE-1170 bare-repo prune before giving up.`);
-            const r = await pruneThenRestat(process.env.KOL_PROJECT_GODOT);
-            if (r.recovered) return path.dirname(process.env.KOL_PROJECT_GODOT);
+            log(`resolveWorktreeForSpawn: marker anchor KOL_PROJECT_GODOT=${process.env.GODOT_MCP_PROJECT_GODOT || process.env.KOL_PROJECT_GODOT} stat failed (${e.code || e.message}); attempting SEE-1170 bare-repo prune before giving up.`);
+            const r = await pruneThenRestat(process.env.GODOT_MCP_PROJECT_GODOT || process.env.KOL_PROJECT_GODOT);
+            if (r.recovered) return path.dirname(process.env.GODOT_MCP_PROJECT_GODOT || process.env.KOL_PROJECT_GODOT);
             log(`resolveWorktreeForSpawn: KOL_PROJECT_GODOT stat still failing after prune; refusing to drift to another worktree.`);
             return null;
         }
     }
-    if (process.env.KOL_WORKTREE) {
-        try { await stat(process.env.KOL_WORKTREE); return process.env.KOL_WORKTREE; }
+    if (process.env.GODOT_MCP_WORKTREE || process.env.KOL_WORKTREE) {
+        try { await stat(process.env.GODOT_MCP_WORKTREE || process.env.KOL_WORKTREE); return process.env.GODOT_MCP_WORKTREE || process.env.KOL_WORKTREE; }
         catch (e) {
-            log(`resolveWorktreeForSpawn: marker anchor KOL_WORKTREE=${process.env.KOL_WORKTREE} stat failed (${e.code || e.message}); attempting SEE-1170 bare-repo prune before giving up.`);
-            const r = await pruneThenRestat(process.env.KOL_WORKTREE);
-            if (r.recovered) return process.env.KOL_WORKTREE;
+            log(`resolveWorktreeForSpawn: marker anchor KOL_WORKTREE=${process.env.GODOT_MCP_WORKTREE || process.env.KOL_WORKTREE} stat failed (${e.code || e.message}); attempting SEE-1170 bare-repo prune before giving up.`);
+            const r = await pruneThenRestat(process.env.GODOT_MCP_WORKTREE || process.env.KOL_WORKTREE);
+            if (r.recovered) return process.env.GODOT_MCP_WORKTREE || process.env.KOL_WORKTREE;
             log(`resolveWorktreeForSpawn: KOL_WORKTREE stat still failing after prune; refusing to drift to another worktree.`);
             return null;
         }
@@ -2314,11 +2321,25 @@ async function readHolderAgent() {
 // the launcher was driven by --port override rather than KOL_AGENT_NAME.
 function buildHelperArgs(extra) {
     const args = [];
-    const agentName = process.env.KOL_AGENT_NAME || '';
+    const agentName = process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || '';
     if (agentName) args.push(agentName);
     args.push('--port', String(GODOT_PORT));
     args.push(...extra);
     return args;
+}
+
+// SEE-1292 respawn fix: read {state, port} from a worktree's lease sidecar
+// (.godot/mcp-lease.json). Returns null when absent/unreadable — the caller
+// treats that as "not active" and reactivates via configure.
+async function readWorktreeLeaseState(worktree) {
+    try {
+        const raw = await readFile(path.join(worktree, '.godot', 'mcp-lease.json'), 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return null;
+        return { state: parsed.state, port: parsed.port };
+    } catch {
+        return null;
+    }
 }
 
 // Run a bash helper script fully detached from the MCP stdio pipes. The proxy's
@@ -2382,9 +2403,9 @@ function runScript(scriptPath, args) {
 async function persistSpawnStderr(source, rc, stderrFull) {
     if (!stderrFull) return;
     try {
-        const dir = path.join(process.env.HOME, '.multica', 'godot-editor');
+        const dir = path.join(GODOT_MCP_HOME, 'godot-editor');
         await mkdir(dir, { recursive: true });
-        const rid = process.env.KOL_RUNTIME_ID || 'unknown';
+        const rid = process.env.GODOT_MCP_RUNTIME_ID || process.env.KOL_RUNTIME_ID || 'unknown';
         const file = path.join(dir, `${rid}.stderr.log`);
         const iso = new Date().toISOString();
         const block = `\n===== [${iso}] source=${source} rc=${rc} runtime_id=${rid} port=${GODOT_PORT} =====\n${stderrFull}\n`;
@@ -2619,7 +2640,7 @@ async function driveRestartRespawn(hold) {
 //   configureRc is a numeric diagnostic (0 / non-zero / null when not run).
 //   configureError is a short reason string (null on 'pinned').
 async function ensureReusedWorktreeConfigured(t0) {
-    const configureSh = resolveHelper('configure-mcp-port.sh', 'KOL_CONFIGURE_SH');
+    const configureSh = resolveHelper('configure-mcp-port.sh', 'GODOT_MCP_CONFIGURE_SH');
     const worktree = await resolveWorktreeForSpawn();
     if (!configureSh || !worktree) {
         const reason = !configureSh ? 'configure helper not resolved' : 'worktree unresolved';
@@ -2669,27 +2690,41 @@ async function ensureReusedWorktreeConfigured(t0) {
 // fall-through. If the port stays busy after eviction (e.g. a non-godot
 // listener), the spawn path's configure/start fails fast with a clear
 // spawn_failed diagnostic — which is the correct, attributable outcome.
-async function evictStaleHolder() {
+async function evictStaleHolder(holderWorktree) {
     const t0 = Date.now();
     stageLog('EVICT_BEGIN', `port=${GODOT_PORT}`);
-    const agentName = process.env.KOL_AGENT_NAME || '';
-    const stopSh = resolveHelper('stop-godot-editor.sh', 'KOL_STOP_SH');
+    const agentName = process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || '';
+    const stopSh = resolveHelper('stop-godot-editor.sh', 'GODOT_MCP_STOP_SH');
     if (stopSh) {
         const args = agentName ? [agentName, '--port', String(GODOT_PORT)] : ['--port', String(GODOT_PORT)];
+        // SEE-1292 respawn fix: pin the lease-release target to the STALE
+        // HOLDER's own worktree. The stop helper resolves its release target
+        // from label-shared lifecycle files by default, and concurrent
+        // same-agent slots share the label — without the pin, evicting a dead
+        // holder released the LIVE foreign slot's active lease (its next
+        // editor boot then read state=released and fell back to port 6550,
+        // the respawn-round warmup-timeout root cause).
+        if (holderWorktree) args.push('--project-godot', `${holderWorktree}/project.godot`);
         const r = await runScript(stopSh, args);
         stageLog('EVICT_STOP_SH', `rc=${r.rc} dt_ms=${Date.now() - t0}`);
-        log(`evictStaleHolder: stop-godot-editor.sh rc=${r.rc}${r.stderrTail ? ` stderr=${r.stderrTail.slice(-200)}` : ''}`);
+        log(`evictStaleHolder: stop-godot-editor.sh rc=${r.rc}${holderWorktree ? ' release-pinned-to-holder' : ''}${r.stderrTail ? ` stderr=${r.stderrTail.slice(-200)}` : ''}`);
     } else {
-        log('evictStaleHolder: stop-godot-editor.sh not resolved (KOL_STOP_SH unset + helper not found); skipping stop.');
+        log('evictStaleHolder: stop-godot-editor.sh not resolved (stop helper unset + not found); skipping stop.');
     }
-    const reapSh = resolveHelper('reap-stale-leases.sh', 'KOL_REAP_SH');
+    const reapSh = resolveHelper('reap-stale-leases.sh', 'GODOT_MCP_REAP_SH');
     if (reapSh) {
         const reapT0 = Date.now();
-        const r = await runScript(reapSh, []);
+        // SEE-1292 respawn fix: scope the reaper sweep to the holder worktree
+        // when known. A global sweep here races a CONCURRENT slot's fresh
+        // spawn: the fresh active lease's configured_by_pid is the (already
+        // dead) configure shell, so only the 120s fresh-grace protects it —
+        // a sweep arriving past that grace released a live slot's lease.
+        const reapArgs = holderWorktree ? ['--root', holderWorktree] : [];
+        const r = await runScript(reapSh, reapArgs);
         stageLog('EVICT_REAP_SH', `rc=${r.rc} dt_ms=${Date.now() - reapT0}`);
-        log(`evictStaleHolder: reap-stale-leases.sh rc=${r.rc}${r.stderrTail ? ` stderr=${r.stderrTail.slice(-200)}` : ''}`);
+        log(`evictStaleHolder: reap-stale-leases.sh rc=${r.rc}${holderWorktree ? ' (holder-scoped)' : ' (global)'}${r.stderrTail ? ` stderr=${r.stderrTail.slice(-200)}` : ''}`);
     } else {
-        log('evictStaleHolder: reap-stale-leases.sh not resolved (KOL_REAP_SH unset + helper not found); skipping reap.');
+        log('evictStaleHolder: reap-stale-leases.sh not resolved (reap helper unset + not found); skipping reap.');
     }
     stageLog('EVICT_END', `dt_ms=${Date.now() - t0}`);
 }
@@ -2710,11 +2745,11 @@ async function evictStaleHolder() {
 //   busy_foreign → PID alive, different runtime → editor_busy retryable
 // KOL_PORT_ARBITER=off disables the tree and restores the legacy SEE-1129
 // sidecar-guard behavior (operator escape hatch / test seam).
-const PORT_ARBITER_ENABLED = (process.env.KOL_PORT_ARBITER || 'on') !== 'off';
+const PORT_ARBITER_ENABLED = (process.env.GODOT_MCP_PORT_ARBITER || process.env.KOL_PORT_ARBITER || 'on') !== 'off';
 const PORT_ARBITER_LIB = path.join(path.dirname(fileURLToPath(import.meta.url)), 'port-arbiter.lib.sh');
-const PORT_RESPAWN_WINDOW_MS = parseInt(process.env.KOL_RESPAWN_WINDOW_MS || '8000', 10);
-const PORT_TAKEOVER_TIMEOUT_MS = parseInt(process.env.KOL_TAKEOVER_TIMEOUT_MS || '300000', 10);
-const PORT_PROBE_INTERVAL_MS = parseInt(process.env.KOL_PORT_PROBE_INTERVAL_MS || '1000', 10);
+const PORT_RESPAWN_WINDOW_MS = parseInt(process.env.GODOT_MCP_RESPAWN_WINDOW_MS || process.env.KOL_RESPAWN_WINDOW_MS || '8000', 10);
+const PORT_TAKEOVER_TIMEOUT_MS = parseInt(process.env.GODOT_MCP_TAKEOVER_TIMEOUT_MS || process.env.KOL_TAKEOVER_TIMEOUT_MS || '300000', 10);
+const PORT_PROBE_INTERVAL_MS = parseInt(process.env.GODOT_MCP_PORT_PROBE_INTERVAL_MS || process.env.KOL_PORT_PROBE_INTERVAL_MS || '1000', 10);
 
 function arbiterDecide(port) {
     return new Promise((resolve) => {
@@ -2781,7 +2816,7 @@ async function ensureEditor(t0) {
             // PID dead + runtime id mismatch/missing: cross-runtime stale
             // holder. Immediate evict (kill editor, cold-start), NO wait.
             log(`port ${GODOT_PORT} held by a DEAD cross-runtime proxy (runtime id mismatch); immediate evict then cold-start (no 300s wait).`);
-            await evictStaleHolder();
+            await evictStaleHolder(await readHolderWorktree());
             // fall through to spawn below.
         } else if (verdict === 'respawn') {
             // PID dead + SAME runtime id: our own editor is mid-respawn. Wait
@@ -2794,7 +2829,7 @@ async function ensureEditor(t0) {
                 // fall through to spawn below.
             } else {
                 log(`respawn window expired (${PORT_RESPAWN_WINDOW_MS}ms) with port still held; evicting stale holder then spawning.`);
-                await evictStaleHolder();
+                await evictStaleHolder(await readHolderWorktree());
                 // fall through to spawn below.
             }
         } else if (verdict === 'reuse') {
@@ -2830,7 +2865,7 @@ async function ensureEditor(t0) {
         const holderWorktree = await readHolderWorktree();
         const ourWorktree = await resolveWorktreeForSpawn();
         const holderAgent = await readHolderAgent();
-        const ourAgent = process.env.KOL_AGENT_NAME || '';
+        const ourAgent = process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || '';
 
         // SEE-1129 Owner principle #5 (cross-agent contention): a holder on a
         // DIFFERENT agent means a duplicate/misconfigured port mapping — two
@@ -2859,7 +2894,7 @@ async function ensureEditor(t0) {
                 ? `holder sidecar absent (pre-#499 or manual holder — untrusted)`
                 : `holder worktree ${holderWorktree} != this slot ${ourWorktree}`;
             log(`port ${GODOT_PORT} busy but holder will not serve this slot (${why}); evicting stale holder then spawning our own editor.`);
-            await evictStaleHolder();
+            await evictStaleHolder(holderWorktree);
             // The eviction may have just freed the port; fall through to the
             // spawn path (which re-probes via configure/start). Do NOT return a
             // reuse result — this slot needs its own editor with its own sidecar.
@@ -2878,8 +2913,8 @@ async function ensureEditor(t0) {
         } // end verdict === 'legacy'
     }
 
-    const configureSh = resolveHelper('configure-mcp-port.sh', 'KOL_CONFIGURE_SH');
-    const startSh = resolveHelper('start-godot-editor.sh', 'KOL_START_SH');
+    const configureSh = resolveHelper('configure-mcp-port.sh', 'GODOT_MCP_CONFIGURE_SH');
+    const startSh = resolveHelper('start-godot-editor.sh', 'GODOT_MCP_START_SH');
     if (!configureSh || !startSh) {
         throw new SpawnError('spawn_failed_exception',
             `helper scripts not resolved (configure=${configureSh} start=${startSh})`);
@@ -2908,7 +2943,7 @@ async function ensureEditor(t0) {
     // copy the clean file (D-drive working tree, fallback historical blob
     // e776b314) + pin this agent's port; present → re-pin no-op. Its write-target
     // guard refuses the shared master checkout, which we already rejected above.
-    const prepareSh = resolveHelper('prepare-worktree.sh', 'KOL_PREPARE_SH');
+    const prepareSh = resolveHelper('prepare-worktree.sh', 'GODOT_MCP_PREPARE_SH');
     const prepT0 = Date.now();
     stageLog('PREPARE_SH_BEGIN', `worktree=${worktree}`);
     const prepareRes = await runScript(prepareSh,
@@ -2925,7 +2960,7 @@ async function ensureEditor(t0) {
     //     port from project.godot at boot). Failure => configure_failed bucket.
     const confT0 = Date.now();
     stageLog('CONFIGURE_SH_BEGIN', `path=spawn project_godot=${worktree}/project.godot`);
-    const configureRes = await runScript(configureSh,
+    let configureRes = await runScript(configureSh,
         buildHelperArgs(['--project-godot', `${worktree}/project.godot`]));
     stageLog('CONFIGURE_SH_END', `path=spawn rc=${configureRes.rc} dt_ms=${Date.now() - confT0}`);
     if (configureRes.rc !== 0) {
@@ -2933,6 +2968,39 @@ async function ensureEditor(t0) {
         throw new SpawnError('configure_failed',
             `configure-mcp-port.sh rc=${configureRes.rc}`,
             { configureRc: configureRes.rc, configureStderr: configureRes.stderrTail, worktree });
+    }
+
+    // SEE-1292 respawn fix (defense in depth): the editor binds its WS port
+    // from the lease sidecar read AT BOOT — a lease that is not state=active
+    // when START runs makes the addon fall back to the default port 6550 and
+    // the whole warmup window is then spent probing the wrong port. Concurrent
+    // same-agent slots (shim rechain racing an old proxy's respawn round, a
+    // foreign evict's stop/reap sweep) can release OUR fresh lease between
+    // configure's write and START. Assert-then-reactivate closes that race:
+    // re-run configure (it clears stale release traces, lease_id preserved)
+    // until the sidecar reads active@GODOT_PORT, bounded — a persistent
+    // mismatch fails the spawn with the standard configure_failed bucket.
+    const leaseVerifyT0 = Date.now();
+    for (let leaseAttempt = 0; leaseAttempt < 3; leaseAttempt += 1) {
+        const leaseState = await readWorktreeLeaseState(worktree);
+        if (leaseState && leaseState.state === 'active' && String(leaseState.port) === String(GODOT_PORT)) {
+            if (leaseAttempt > 0) {
+                stageLog('LEASE_REACTIVATED', `attempts=${leaseAttempt + 1} dt_ms=${Date.now() - leaseVerifyT0}`);
+                log(`lease sidecar re-activated after ${leaseAttempt} rewrite(s) (was released by a concurrent slot sweep).`);
+            }
+            break;
+        }
+        log(`WARNING: lease sidecar not active@${GODOT_PORT} before START (state=${leaseState ? leaseState.state : 'absent'}, port=${leaseState ? leaseState.port : 'n/a'}); re-running configure (attempt ${leaseAttempt + 1}/3).`);
+        stageLog('CONFIGURE_SH_BEGIN', `path=spawn_reactivate project_godot=${worktree}/project.godot`);
+        const reactivateRes = await runScript(configureSh,
+            buildHelperArgs(['--project-godot', `${worktree}/project.godot`]));
+        stageLog('CONFIGURE_SH_END', `path=spawn_reactivate rc=${reactivateRes.rc} dt_ms=${Date.now() - leaseVerifyT0}`);
+        if (reactivateRes.rc !== 0) {
+            await persistSpawnStderr('configure-mcp-port.sh', reactivateRes.rc, reactivateRes.stderrFull);
+            throw new SpawnError('configure_failed',
+                `configure-mcp-port.sh rc=${reactivateRes.rc} (lease reactivation)`,
+                { configureRc: reactivateRes.rc, configureStderr: reactivateRes.stderrTail, worktree });
+        }
     }
 
     // (3) spawn the editor; start-godot-editor.sh backgrounds the editor and
@@ -3066,9 +3134,9 @@ function giveUpAndRearm(bucket, message) {
 // thrown — the give-up path must not depend on observability.
 function persistGiveUpStatus(event, bucket, message) {
     try {
-        const dir = path.join(process.env.HOME || '', '.multica', 'godot-editor');
-        const rid = process.env.KOL_RUNTIME_ID || '';
-        const legacyLabel = (process.env.KOL_AGENT_NAME || '').toLowerCase();
+        const dir = path.join(GODOT_MCP_HOME, 'godot-editor');
+        const rid = process.env.GODOT_MCP_RUNTIME_ID || process.env.KOL_RUNTIME_ID || '';
+        const legacyLabel = (process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || '').toLowerCase();
         const file = (rid && rid !== '*' && !rid.endsWith('-solo') && rid.match(/^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8}$/))
             ? path.join(dir, `${rid}.giveup.json`)
             : path.join(dir, `godot-editor-${legacyLabel || 'unknown'}.giveup.json`);
@@ -3570,7 +3638,9 @@ async function warmupLoop() {
             stage = 'EDITOR_SPAWNED';    // spawn is about to re-run; milestones re-derive
             renderStable = false;
             startRenderStableMonitor();
-            await evictStaleHolder();
+            // grace-race evicts THIS slot's own slow editor — pin the release
+            // target to our own worktree (same reasoning as the foreign evict).
+            await evictStaleHolder(await resolveWorktreeForSpawn());
             // evict kills the editor via stop-godot-editor.sh (async PID
             // resolution) — wait for the port to actually free before
             // re-spawning, or the fresh start mock/real schtasks would hit
@@ -4159,7 +4229,7 @@ function shutdown() {
 // failure only means the reaper falls back to the normal grace path.
 function markIntentionalRelease() {
     if (!RUNTIME_ID) return;
-    const projectGodot = process.env.KOL_PROJECT_GODOT;
+    const projectGodot = process.env.GODOT_MCP_PROJECT_GODOT || process.env.KOL_PROJECT_GODOT;
     if (!projectGodot) return;
     try {
         execFileSync('bash', ['-c', `
@@ -4225,8 +4295,8 @@ process.on('SIGTERM', () => { shutdown(); });
 // in steady state matches the brief: "挂到现有 steady-state 监控循环（非
 // warmup 循环）". On any non-fatal upsert error we stay quiet — the registry
 // is observability, not a gate.
-const RUNTIME_ID = process.env.KOL_RUNTIME_ID || '';
-const REGISTRY_PATH = path.join(process.env.HOME, '.multica', 'godot-port-registry.json');
+const RUNTIME_ID = process.env.GODOT_MCP_RUNTIME_ID || process.env.KOL_RUNTIME_ID || '';
+const REGISTRY_PATH = path.join(GODOT_MCP_HOME, 'godot-port-registry.json');
 const REGISTRY_LOCK_PATH = `${REGISTRY_PATH}.lock`;
 let lastRegistryRefreshMs = 0;
 async function refreshRegistryHeartbeat() {
@@ -4332,9 +4402,9 @@ function startHeartbeat() {
 // escape hatch); default is on. KOL_WARM_LIVENESS_FAILURES overrides the
 // sustained-failure threshold (default 3 — ~3s of silence at the default 1s
 // probe interval, well under the 45s addon stale-connection window).
-const WARM_LIVENESS_ENABLED = (process.env.KOL_WARM_LIVENESS || 'on') !== 'off';
+const WARM_LIVENESS_ENABLED = (process.env.GODOT_MCP_WARM_LIVENESS || process.env.KOL_WARM_LIVENESS || 'on') !== 'off';
 const WARM_LIVENESS_FAILURES = parseInt(
-    process.env.KOL_WARM_LIVENESS_FAILURES || '3',
+    process.env.GODOT_MCP_WARM_LIVENESS_FAILURES || process.env.KOL_WARM_LIVENESS_FAILURES || '3',
     10
 );
 let warmProbeFailures = 0;
