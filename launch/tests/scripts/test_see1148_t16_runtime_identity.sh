@@ -17,11 +17,22 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAUNCH_DIR="$(cd "$SCRIPT_DIR/../../../launch" && pwd)"
 SBOX="$(mktemp -d)"
-trap 'rm -rf "$SBOX" ~/.multica/godot-port-registry.json' EXIT
+trap 'rm -rf "$SBOX" "$SBOXHOME/.multica/godot-port-registry.json"' EXIT
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "  ok: $1"; }
 bad() { FAIL=$((FAIL+1)); echo "  FAIL: $1"; }
+
+# SEE-1292 §DECPL-001: the slot-hash parser derives paths from
+# GODOT_MCP_WORKSPACES_BASE (default $HOME/multica_workspaces). Pin both to the
+# sandbox so the derivation does not depend on a jerry-shaped $HOME on CI.
+SBOXHOME="$SBOX/home"; mkdir -p "$SBOXHOME"
+export HOME="$SBOXHOME"
+export GODOT_MCP_WORKSPACES_BASE="$SBOXHOME/multica_workspaces"
+export GODOT_MCP_HOME="$SBOXHOME/.multica"
+# The fixture slot paths below are written against the default base
+# ($HOME/multica_workspaces); under the sandbox HOME they resolve to
+# $SBOXHOME/multica_workspaces/... — same relative shape, isolated root.
 
 # shellcheck source=../../../launch/runtime.lib.sh
 source "$LAUNCH_DIR/runtime.lib.sh"
@@ -32,15 +43,15 @@ source "$LAUNCH_DIR/port-registry.lib.sh"
 die() { echo "DIE: $*" >&2; exit 1; }
 
 echo "== T16.1: deterministic runtime_id on the same slot =="
-WT_A="/home/jerry/multica_workspaces/ws1/fe7bb0db/workdir/KingOfLikes-Godot"
-WT_B="/home/jerry/multica_workspaces/ws1/fe7bb0db/workdir/KingOfLikes-Godot"
+WT_A="$GODOT_MCP_WORKSPACES_BASE/ws1/fe7bb0db/workdir/KingOfLikes-Godot"
+WT_B="$GODOT_MCP_WORKSPACES_BASE/ws1/fe7bb0db/workdir/KingOfLikes-Godot"
 R1="$(kol_derive_runtime_id "Bachi" "$WT_A")"
 R2="$(kol_derive_runtime_id "Bachi" "$WT_B")"
 [[ "$R1" == "Bachi-fe7bb0db" && "$R1" == "$R2" ]] && ok "deterministic on slot (=$R1)" || bad "non-deterministic: $R1 vs $R2"
 
 echo "== T16.2: distinct runtime_ids for concurrent same-agent slots =="
-WT_X="/home/jerry/multica_workspaces/ws1/11aa22bb/workdir/KingOfLikes-Godot"
-WT_Y="/home/jerry/multica_workspaces/ws1/deadbeef/workdir/KingOfLikes-Godot"
+WT_X="$GODOT_MCP_WORKSPACES_BASE/ws1/11aa22bb/workdir/KingOfLikes-Godot"
+WT_Y="$GODOT_MCP_WORKSPACES_BASE/ws1/deadbeef/workdir/KingOfLikes-Godot"
 RX="$(kol_derive_runtime_id "Bachi" "$WT_X")"
 RY="$(kol_derive_runtime_id "Bachi" "$WT_Y")"
 [[ "$RX" == "Bachi-11aa22bb" && "$RY" == "Bachi-deadbeef" && "$RX" != "$RY" ]] && ok "two distinct slots give two distinct ids" || bad "collision: $RX vs $RY"
@@ -54,15 +65,15 @@ echo "== T16.7: SEE-1244 see-<issue>-<hex> slot layout derives distinct runtime_
 # per-runtime 隔离失效根因（并发验收套件 SEE-1258/59/60 全塌缩 Revy-solo）的
 # 回归门：当前 multica 槽位目录是 `see-<issue>-<12hex>`，必须各自提取末尾
 # hex 段 → 3 个并发 Revy 槽位得到 3 个不同 runtime_id（而非全部 Revy-solo）。
-WT_C1="/home/jerry/multica_workspaces/seed-478690824e46/see-1259-aa4de5376e75/workdir/KingOfLikes-Godot"
-WT_C2="/home/jerry/multica_workspaces/seed-478690824e46/see-1260-543fed12aa77/workdir/KingOfLikes-Godot"
+WT_C1="$GODOT_MCP_WORKSPACES_BASE/seed-478690824e46/see-1259-aa4de5376e75/workdir/KingOfLikes-Godot"
+WT_C2="$GODOT_MCP_WORKSPACES_BASE/seed-478690824e46/see-1260-543fed12aa77/workdir/KingOfLikes-Godot"
 RC1="$(kol_derive_runtime_id "Revy" "$WT_C1")"
 RC2="$(kol_derive_runtime_id "Revy" "$WT_C2")"
 [[ "$RC1" == "Revy-aa4de5376e75" && "$RC2" == "Revy-543fed12aa77" && "$RC1" != "$RC2" ]] \
     && ok "3-concurrent layout: see-bug-<hex> → distinct (=$RC1 / $RC2)" \
     || bad "see-<issue>-<hex> isolation broken: $RC1 vs $RC2"
 # 显式并发三重唯一性（1258/1259/1260 三个并发射手应得 3 个不同 id）。
-WT_C3="/home/jerry/multica_workspaces/seed-478690824e46/see-1258-4288fcce0120/workdir/KingOfLikes-Godot"
+WT_C3="$GODOT_MCP_WORKSPACES_BASE/seed-478690824e46/see-1258-4288fcce0120/workdir/KingOfLikes-Godot"
 RC3="$(kol_derive_runtime_id "Revy" "$WT_C3")"
 [[ "$RC1" != "$RC3" && "$RC2" != "$RC3" ]] \
     && ok "three concurrent Revy slots → three distinct runtime_ids" \
@@ -71,11 +82,11 @@ RC3="$(kol_derive_runtime_id "Revy" "$WT_C3")"
 echo "== T16.8: legacy bare-<8hex> slot still derives (no regression) =="
 # 旧 `<hash8>` 裸目录兼容（T16.1/T16.2 依赖）：`see-...` 前缀不存在时
 # 末尾段就是裸 hash，同样命中新判定。
-WT_LEGACY="/home/jerry/multica_workspaces/ws1/fe7bb0db/workdir/KingOfLikes-Godot"
+WT_LEGACY="$GODOT_MCP_WORKSPACES_BASE/ws1/fe7bb0db/workdir/KingOfLikes-Godot"
 RL="$(kol_derive_runtime_id "Bachi" "$WT_LEGACY")"
 [[ "$RL" == "Bachi-fe7bb0db" ]] && ok "legacy bare-<8hex> slot unchanged (=$RL)" || bad "legacy slot regressed: $RL"
 # 非 slot 路径（末尾段非 hex）仍回落 -solo。
-[[ "$(kol_derive_runtime_id "Bachi" "/home/jerry/multica_workspaces/ws1/notahex/workdir/KingOfLikes-Godot")" == "Bachi-solo" ]] \
+[[ "$(kol_derive_runtime_id "Bachi" "$GODOT_MCP_WORKSPACES_BASE/ws1/notahex/workdir/KingOfLikes-Godot")" == "Bachi-solo" ]] \
     && ok "non-hex slot dir → Bachi-solo" || bad "non-hex slot dir not solo"
 
 echo "== T16.4: sidecar v2 writer emits runtime_id when set =="
@@ -91,7 +102,7 @@ ST="$(sidecar_state "$SBOX/wt4/.godot/mcp-lease.json")"
 [[ "$ST" == "active" ]] && ok "v2 record readable as active" || bad "v2 record state unread: $ST"
 
 echo "== T16.6: port registry upsert keyed by runtime_id =="
-rm -f ~/.multica/godot-port-registry.json
+rm -f "$GODOT_MCP_HOME/godot-port-registry.json"
 port_registry_upsert "Bachi-fe7bb0db" "port=6553" "agent=Bachi" "label=bachi" "proxy_pid=1234" "heartbeat_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 PORT_GOT="$(port_registry_get "Bachi-fe7bb0db" port)"
 [[ "$PORT_GOT" == "6553" ]] && ok "registry upsert keyed" || bad "registry upsert failed: $PORT_GOT"

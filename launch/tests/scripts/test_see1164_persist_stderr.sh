@@ -60,12 +60,13 @@ chmod +x "$START_SH"
 
 # Redirect HOME so the proxy writes ~/.multica/... inside TMPDIR.
 TEST_HOME="$TMPDIR/home"
-mkdir -p "$TEST_HOME"
+mkdir -p "$TEST_HOME/.multica"
 TEST_RID="bachi-test1164"
 
 sep "SEE-1164 A1-A5: spawn_failed_start persists FULL stderr to ~/.multica/godot-editor/<rid>.stderr.log"
 start_proxy \
     "HOME=$TEST_HOME" \
+    "GODOT_MCP_HOME=$TEST_HOME/.multica" \
     "KOL_RUNTIME_ID=$TEST_RID" \
     "GODOT_PORT=$PORT" \
     "KOL_AGENT_NAME=Bachi" \
