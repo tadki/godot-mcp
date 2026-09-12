@@ -280,7 +280,7 @@ if [[ -x "$REAPER" ]]; then
     # own a live lease on this machine; worktrees absent from the registry
     # still get swept by the resident reaper / explicit wide-root runs.
     _reaper_args=()
-    if [[ -f "${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${HOME}/.multica/godot-port-registry.json}" ]]; then
+    if [[ -f "${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-port-registry.json}" ]]; then
         while IFS= read -r _rr; do
             [[ -n "$_rr" && -d "$_rr" ]] && _reaper_args+=("--root" "$_rr")
         done < <(node -e '
@@ -295,7 +295,7 @@ try {
         }
     }
 } catch (err) { /* registry unreadable → no scoped roots; fall back below */ }
-' "${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${HOME}/.multica/godot-port-registry.json}" 2>/dev/null || true)
+' "${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-port-registry.json}" 2>/dev/null || true)
     fi
     if [[ ${#_reaper_args[@]} -eq 0 ]]; then
         # Registry absent/unreadable → no scoped roots; run wide (availability

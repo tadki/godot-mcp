@@ -111,6 +111,31 @@ r="$(bash -c "export KOL_REPO_DIRNAME=AliasRepo; . '$LAUNCH/env.sh'; bash -c 'pr
 # (d) no injection: vars are set (empty) and exported — child must not die on set -u
 r="$(bash -c "set -u; . '$LAUNCH/env.sh'; bash -c 'printf %s \"<\${GODOT_MCP_SHARED_MASTER-}><\${GODOT_MCP_WORKSPACES_BASE-}>\"'")" && [[ "$r" == "<></home/jerry/multica_workspaces>" || "$r" == "<><"* ]] && ok "unset-injection: exported-empty, set -u safe" || bad "unset-injection cross-process = '$r'"
 
+echo "== 8. SEE-1292 §DECPL-001: GODOT_MCP_HOME default / override / legacy alias =="
+# (a) default neutral path
+r="$(probe '' 'printf "%s" "$GODOT_MCP_HOME"')"
+[[ "$r" == "$HOME/.config/godot-mcp" ]] && ok "GODOT_MCP_HOME default = \$HOME/.config/godot-mcp (neutral)" || bad "GODOT_MCP_HOME default = '$r'"
+# (b) explicit override
+r="$(probe 'GODOT_MCP_HOME=/custom/state' 'printf "%s" "$GODOT_MCP_HOME"')"
+[[ "$r" == "/custom/state" ]] && ok "GODOT_MCP_HOME override honored" || bad "GODOT_MCP_HOME override = '$r'"
+
+echo "== 9. SEE-1292 §DECPL-002: new canonical env vars alias from legacy (K5 three-level) =="
+# GODOT_MCP_WORKTREE from KOL_WORKTREE; explicit canonical wins
+r="$(probe 'KOL_WORKTREE=/kol/wt' 'printf "%s" "$GODOT_MCP_WORKTREE"')"
+[[ "$r" == "/kol/wt" ]] && ok "KOL_WORKTREE → GODOT_MCP_WORKTREE" || bad "GODOT_MCP_WORKTREE alias = '$r'"
+r="$(probe 'KOL_WORKTREE=/kol GODOT_MCP_WORKTREE=/canon' 'printf "%s" "$GODOT_MCP_WORKTREE"')"
+[[ "$r" == "/canon" ]] && ok "GODOT_MCP_WORKTREE canonical beats KOL alias" || bad "canonical-vs-alias = '$r'"
+# GODOT_MCP_AGENT_NAME maps MULTICA_AGENT_NAME and KOL_AGENT_NAME + CLAUDE
+r="$(probe 'MULTICA_AGENT_NAME=Ma' 'printf "%s" "$GODOT_MCP_AGENT_NAME"')"
+[[ "$r" == "Ma" ]] && ok "MULTICA_AGENT_NAME → GODOT_MCP_AGENT_NAME" || bad "GODOT_MCP_AGENT_NAME alias = '$r'"
+r="$(probe 'KOL_AGENT_NAME=Ka' 'printf "%s" "$GODOT_MCP_AGENT_NAME"')"
+[[ "$r" == "Ka" ]] && ok "KOL_AGENT_NAME → GODOT_MCP_AGENT_NAME" || bad "GODOT_MCP_AGENT_NAME KOL alias = '$r'"
+# GODOT_MCP_WORKSPACE_ID / AGENT_ID from MULTICA
+r="$(probe 'MULTICA_WORKSPACE_ID=ws1' 'printf "%s" "$GODOT_MCP_WORKSPACE_ID"')"
+[[ "$r" == "ws1" ]] && ok "MULTICA_WORKSPACE_ID → GODOT_MCP_WORKSPACE_ID" || bad "GODOT_MCP_WORKSPACE_ID alias = '$r'"
+r="$(probe 'MULTICA_AGENT_ID=ag1' 'printf "%s" "$GODOT_MCP_AGENT_ID"')"
+[[ "$r" == "ag1" ]] && ok "MULTICA_AGENT_ID → GODOT_MCP_AGENT_ID" || bad "GODOT_MCP_AGENT_ID alias = '$r'"
+
 echo ""
 echo "==== T2 regression: PASS=$PASS FAIL=$FAIL ===="
 [[ "$FAIL" -eq 0 ]]

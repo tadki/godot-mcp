@@ -68,10 +68,12 @@ fi
 # hot window). The proxy also invokes this lib via `bash -c 'source ...'`
 # where SCRIPT_DIR is undefined → ${SCRIPT_DIR}/held-port resolved to
 # /held-port and every busy port verdict degraded to `evict`. ${HOME} is
-# always set in a login/cron/systemd context, so ~/.multica is the one path
-# every caller (launcher, proxy, reaper backstop) shares on one machine.
+# always set in a login/cron/systemd context, so GODOT_MCP_HOME (default
+# ${HOME}/.config/godot-mcp) is the shared machine-global path every caller
+# (launcher, proxy, reaper backstop) agrees on. The Multica deployment injects
+# GODOT_MCP_HOME="$HOME/.multica" to keep that path (SEE-1292 §DECPL-001).
 port_arbiter_held_dir() {
-    printf '%s\n' "${KOL_PORT_HELD_DIR:-${HOME}/.multica/godot-mcp-held}"
+    printf '%s\n' "${KOL_PORT_HELD_DIR:-${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-mcp-held}"
 }
 
 # --- port_arbiter_port_bound <port> -------------------------------------------
@@ -341,7 +343,7 @@ port_arbiter_ensure() {
 port_arbiter_registry_record() {
     local rid="$1" port="$2" proxy_pid="$3"
     command -v node >/dev/null 2>&1 || return 0
-    local dir="${HOME}/.multica"
+    local dir="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}"
     local path="${dir}/godot-port-registry.json"
     local lock="${path}.lock"
     mkdir -p "$dir" 2>/dev/null || return 0

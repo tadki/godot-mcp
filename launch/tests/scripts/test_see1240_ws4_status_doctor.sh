@@ -30,6 +30,10 @@ FAKE_TMP="$SBOX/tmp"; mkdir -p "$FAKE_TMP" "$SBOX/home/.multica"
 trap 'rm -rf "$SBOX"' EXIT
 
 export HOME="$SBOX/home"
+# SEE-1292 §DECPL-001: point GODOT_MCP_HOME at the sandbox (the status tool now
+# resolves its state dir from GODOT_MCP_HOME). Keep HOME relocation for parity
+# with the legacy override + node/git discovery keeps working under sandbox HOME.
+export GODOT_MCP_HOME="$HOME/.multica"
 export KOL_PORT_REGISTRY_PATH_OVERRIDE="$HOME/.multica/godot-port-registry.json"
 
 # Seed a minimal v2 lease + registry so the normal-state checks have sources.

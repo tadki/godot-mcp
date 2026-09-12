@@ -65,7 +65,7 @@ source "$SCRIPT_DIR/port-arbiter.lib.sh"
 # concurrent proxy heartbeat upserts via the shared .lock — no new lock).
 # shellcheck source=port-registry.lib.sh
 source "$SCRIPT_DIR/port-registry.lib.sh"
-MULTICA_DIR="${HOME}/.multica"
+MULTICA_DIR="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}"
 
 print_usage() {
     cat <<'EOF'
@@ -79,14 +79,14 @@ Arguments:
   --dry-run       Report what would be reaped without writing/killing.
   -h, --help      Show this help.
 
-Also sweeps ~/.multica/godot-port-registry.json for entries whose proxy_pid is
+Also sweeps $GODOT_MCP_HOME/godot-port-registry.json for entries whose proxy_pid is
 dead (arbiter liveness standard: kill -0 + /proc/<pid>/exe must be node).
 Deletes go through port-registry.lib.sh's flock protocol. Disable with
 KOL_REAP_REGISTRY=0.
 
 Also sweeps dead held-lock dirs: per-runtime launcher locks under
 .dev/godot-mcp/launch/held/<runtime_id>/ and per-port arbiter grants under
-~/.multica/godot-mcp-held/<port>/ (same arbiter liveness standard; live dirs
+$GODOT_MCP_HOME/godot-mcp-held/<port>/ (same arbiter liveness standard; live dirs
 are never removed). Disable with KOL_REAP_HELD=0.
 EOF
 }
@@ -678,7 +678,7 @@ GUI_ORPHAN_KILLED=0
 # a parse failure means "not found" (we err toward reporting, not killing).
 pid_in_any_record() {
     local target="$1"
-    # registry: ~/.multica/godot-port-registry.json
+    # registry: $GODOT_MCP_HOME/godot-port-registry.json
     local reg="${MULTICA_DIR}/godot-port-registry.json"
     if [[ -f "$reg" ]]; then
         local hit

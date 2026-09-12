@@ -33,7 +33,7 @@ source "$SCRIPT_DIR/agent-ports.lib.sh"
 # SEE-1148 P1: runtime_id + lifecycle paths.
 # shellcheck source=runtime.lib.sh
 source "$SCRIPT_DIR/runtime.lib.sh"
-MULTICA_DIR="${HOME}/.multica"
+MULTICA_DIR="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}"
 
 die() { echo "[stop-godot-editor] ERROR: $*" >&2; exit 2; }
 

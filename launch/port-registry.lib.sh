@@ -23,26 +23,28 @@
 PORT_REGISTRY_SCHEMA_VERSION=1
 PORT_REGISTRY_FILENAME="godot-port-registry.json"
 
-# Storage: ${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${HOME}/.multica/godot-port-registry.json}.
-# The override exists so the reaper's registry-sweep tests can run the REAL
-# reaper binary against a sandbox registry without relocating HOME (relocating
-# HOME breaks node/git discovery in some runtimes). Production callers never
-# set it.
+# Storage: ${GODOT_MCP_PORT_REGISTRY_PATH_OVERRIDE:-${GODOT_MCP_HOME}/godot-port-registry.json}
+# (canonical form; the legacy KOL_PORT_REGISTRY_PATH_OVERRIDE alias is mapped in
+# env.sh when sourced — scripts that do not source env.sh fall back to the
+# legacy read here). The override exists so the reaper's registry-sweep tests
+# can run the REAL reaper binary against a sandbox registry without relocating
+# HOME (relocating HOME breaks node/git discovery in some runtimes). Production
+# callers never set it.
 #
 # F11 (Atlas P1 FAIL 修订决策): no /root fallback. HOME unset is an
 # environment anomaly — die loudly at source time rather than writing the
 # registry to an unexpected path (e.g. /.multica as root) that the rest of
 # the toolchain will never read back. Callers that need a controlled
 # sandbox set HOME explicitly (or use the override above).
-if [[ -n "${KOL_PORT_REGISTRY_PATH_OVERRIDE:-}" ]]; then
-    PORT_REGISTRY_PATH="${KOL_PORT_REGISTRY_PATH_OVERRIDE}"
+if [[ -n "${GODOT_MCP_PORT_REGISTRY_PATH_OVERRIDE:-}" || -n "${KOL_PORT_REGISTRY_PATH_OVERRIDE:-}" ]]; then
+    PORT_REGISTRY_PATH="${GODOT_MCP_PORT_REGISTRY_PATH_OVERRIDE:-${KOL_PORT_REGISTRY_PATH_OVERRIDE}}"
     PORT_REGISTRY_DIR="$(dirname "$PORT_REGISTRY_PATH")"
 else
     if [[ -z "${HOME:-}" ]]; then
         echo "[port-registry.lib.sh] FATAL: HOME is unset; refusing to pick a registry path." >&2
         exit 1
     fi
-    PORT_REGISTRY_DIR="${HOME}/.multica"
+    PORT_REGISTRY_DIR="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}"
     PORT_REGISTRY_PATH="${PORT_REGISTRY_DIR}/${PORT_REGISTRY_FILENAME}"
 fi
 

@@ -25,9 +25,9 @@
 #   godot-mcp-launcher.sh              # read KOL_AGENT_NAME / KOL_MCP_PORT
 #
 # All preparation progress is written to stderr AND mirrored to
-# ~/.multica/godot-mcp-launcher-<label>.log (same directory + naming family as
-# the editor log, SEE-1091). stdout is kept clean so that the MCP JSON-RPC
-# handshake is not corrupted before exec.
+# $GODOT_MCP_HOME/godot-mcp-launcher-<label>.log (same directory + naming
+# family as the editor log, SEE-1091). stdout is kept clean so that the MCP
+# JSON-RPC handshake is not corrupted before exec.
 
 set -euo pipefail
 
@@ -41,26 +41,22 @@ exec 0</dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# AC-M3REORG-013: KOL 专属值注入（唯一落点 <repo_root>/.dev/env/kol-mcp.env）。
-# T3 只在 repo-checkout hook 里 source，导致 daemon 直拉链（systemd → shim →
-# launcher → proxy）拿不到 KOL_SHARED_MASTER，防线 3 在该链退化为空串。
-# 在此向上找 5 层 source（存在才 source）——必须在 env.sh 之前，env.sh 的
-# KOL_* 别名链要靠它填充 GODOT_MCP_SHARED_MASTER。非 KOL 检出（standalone
-# fork）找不到文件，静默 no-op，不引入任何 KOL 概念到库内。
-_kol_env_root="$SCRIPT_DIR"
-for _ in 1 2 3 4 5; do
-    _kol_env_root="$(dirname "$_kol_env_root")"
-    [ "$_kol_env_root" = "/" ] && break
-    if [ -f "$_kol_env_root/.dev/env/kol-mcp.env" ]; then
-        # shellcheck source=/dev/null
-        . "$_kol_env_root/.dev/env/kol-mcp.env"
-        break
-    fi
-done
-unset _kol_env_root
+# SEE-1292 §DECPL-003: the launcher NO LONGER reverse-probes the caller's
+# private env file (previously walked up 5 dirs from SCRIPT_DIR to source
+# <repo_root>/.dev/env/kol-mcp.env). Calling convention is now explicit env:
+# the caller (KOL repo-checkout hook / daemon chain) exports GODOT_MCP_* and
+# the legacy aliases it wants the chain to see; the launcher simply consumes
+# whatever env the caller provided. A KOL/GODOT_MCP env file lives entirely on
+# the caller's side (its own injected values), source it there, not here.
 
 # shellcheck source=env.sh
 . "${SCRIPT_DIR}/env.sh"
+# SEE-1292 §DECPL-002: platform workspace/agent identity. The daemon injects
+# MULTICA_WORKSPACE_ID / MULTICA_AGENT_ID; the canonical GODOT_MCP_WORKSPACE_ID
+# / GODOT_MCP_AGENT_ID alias onto them (explicit canonical > platform legacy).
+: "${GODOT_MCP_WORKSPACE_ID:=${MULTICA_WORKSPACE_ID:-}}"
+: "${GODOT_MCP_AGENT_ID:=${GODOT_MCP_AGENT_ID:-}}"
+export GODOT_MCP_WORKSPACE_ID GODOT_MCP_AGENT_ID
 
 MCP_TIMEOUT_SEC=60
 
@@ -79,7 +75,7 @@ elif [[ -x /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe ]]; the
 fi
 
 # SEE-1091 observability: every launcher boot decision is mirrored to
-# ~/.multica/godot-mcp-launcher-<label>.log so a failed auto-spawn is traceable
+# $GODOT_MCP_HOME/godot-mcp-launcher-<label>.log so a failed auto-spawn is traceable
 # after the fact (stderr alone is swallowed by the multica daemon). ISO8601
 # timestamp matches the editor log, and the [godot-mcp-launcher] prefix stays on
 # stderr for grep compatibility with existing test harnesses. The label is
@@ -232,8 +228,8 @@ resolve_mcp_host() {
 # wrong-but-silent resolution is worse than a loud unresolved one. Resolution
 # now trusts exactly TWO tiers, in order:
 #   1. reliable runtime identifier — the Multica runtime registry, cwd-
-#      independent: scan ~/multica_workspaces/$MULTICA_WORKSPACE_ID/*/
-#      .managed_env.json for entries matching this $MULTICA_AGENT_ID, and pin
+#      independent: scan ~/multica_workspaces/$GODOT_MCP_WORKSPACE_ID/*/
+#      .managed_env.json for entries matching this $GODOT_MCP_AGENT_ID, and pin
 #      the exact THIS-task workdir by re-encoding each candidate against the
 #      per-task TMPDIR `.cc-aligned-*` marker; a freshest-runtime mtime
 #      heuristic is the fallback within this tier.
@@ -308,7 +304,7 @@ _search_root_for_worktree() {
 #       unambiguous. The candidate is accepted when the runtime hash dir
 #       itself exists, AND either its .managed_env.json is missing (daemon
 #       has not caught up yet — trust the per-task marker) or its agent_id
-#       matches $MULTICA_AGENT_ID (sanity check against a stale marker
+#       matches $GODOT_MCP_AGENT_ID (sanity check against a stale marker
 #       leaking across agents via TMPDIR reuse). The worktree directory
 #       itself is NOT required to exist — per B1 lazy-load (SEE-1085) the
 #       proxy spawns configure + start lazily on first tools/call.
@@ -354,11 +350,11 @@ _decode_marker_hash() {
 # Prints each candidate dir; nothing printed when no alias exists.
 _ws_base_candidates() {
     local d meta wsid
-    printf '%s\n' "${GODOT_MCP_WORKSPACES_BASE}/${MULTICA_WORKSPACE_ID}"
+    printf '%s\n' "${GODOT_MCP_WORKSPACES_BASE}/${GODOT_MCP_WORKSPACE_ID}"
     for d in "${GODOT_MCP_WORKSPACES_BASE}"/*/; do
         [[ -d "$d" ]] || continue
         # Alias dirs are sibling containers (seed-*), not the UUID one itself.
-        [[ "$(basename "$d")" == "$MULTICA_WORKSPACE_ID" ]] && continue
+        [[ "$(basename "$d")" == "$GODOT_MCP_WORKSPACE_ID" ]] && continue
         # Probe the alias's runtime-level managed_env (depth ≤2): the daemon
         # writes it at the container root when the alias form is in use.
         meta=""
@@ -369,13 +365,13 @@ _ws_base_candidates() {
         fi
         [[ -n "$meta" && -f "$meta" ]] || continue
         wsid="$(grep -o '"workspace_id":[[:space:]]*"[^"]*"' "$meta" 2>/dev/null | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')"
-        [[ "$wsid" == "$MULTICA_WORKSPACE_ID" ]] && printf '%s\n' "${d%/}"
+        [[ "$wsid" == "$GODOT_MCP_WORKSPACE_ID" ]] && printf '%s\n' "${d%/}"
     done
 }
 
 _resolve_via_runtime_registry() {
     local ws_base hash meta worktree marker best_hash best_mtime mtime
-    [[ -n "${MULTICA_WORKSPACE_ID:-}" && -n "${MULTICA_AGENT_ID:-}" ]] || return 1
+    [[ -n "${GODOT_MCP_WORKSPACE_ID:-}" && -n "${GODOT_MCP_AGENT_ID:-}" ]] || return 1
 
     local -a ws_bases=()
     local cand
@@ -392,7 +388,7 @@ _resolve_via_runtime_registry() {
             for ws_base in "${ws_bases[@]}"; do
                 for meta in "$ws_base"/*/.managed_env.json; do
                     [[ -f "$meta" ]] || continue
-                    grep -q "\"agent_id\":[[:space:]]*\"${MULTICA_AGENT_ID}\"" "$meta" || continue
+                    grep -q "\"agent_id\":[[:space:]]*\"${GODOT_MCP_AGENT_ID}\"" "$meta" || continue
                     hash="$(basename "$(dirname "$meta")")"
                     worktree="$ws_base/$hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
                     _has_launch_toolchain "$worktree" || continue
@@ -415,7 +411,7 @@ _resolve_via_runtime_registry() {
         #
         # Cross-agent safety: when .managed_env.json is already present
         # (the common case once the daemon has had a few ms to write it),
-        # we REQUIRE its agent_id to match $MULTICA_AGENT_ID — a stale
+        # we REQUIRE its agent_id to match $GODOT_MCP_AGENT_ID — a stale
         # marker from another agent's task (TMPDIR reuse) cannot misroute
         # us. When the managed_env is NOT yet on disk, we trust the
         # marker because it is per-task and written for THIS Claude
@@ -448,7 +444,7 @@ _resolve_via_runtime_registry() {
                     # another agent's runtime (TMPDIR reuse) is rejected here
                     # so we do not leak into (b) and get pinned to a stale
                     # freshest-mtime winner.
-                    grep -q "\"agent_id\":[[:space:]]*\"${MULTICA_AGENT_ID}\"" "$meta" || continue
+                    grep -q "\"agent_id\":[[:space:]]*\"${GODOT_MCP_AGENT_ID}\"" "$meta" || continue
                 fi
                 worktree="$ws_base/$hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
                 printf '%s\n' "$worktree"
@@ -489,7 +485,7 @@ _resolve_via_runtime_registry() {
                     cwd_meta="$ws_base/$cwd_hash/.managed_env.json"
                     if [[ -f "$cwd_meta" ]]; then
                         # Cross-agent gate: cwd slot must belong to this agent.
-                        if grep -q "\"agent_id\":[[:space:]]*\"${MULTICA_AGENT_ID}\"" "$cwd_meta"; then
+                        if grep -q "\"agent_id\":[[:space:]]*\"${GODOT_MCP_AGENT_ID}\"" "$cwd_meta"; then
                             printf '%s\n' "$ws_base/$cwd_hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
                             return 0
                         fi
@@ -512,7 +508,7 @@ _resolve_via_runtime_registry() {
         best_mtime=0
         for meta in "$ws_base"/*/.managed_env.json; do
             [[ -f "$meta" ]] || continue
-            grep -q "\"agent_id\":[[:space:]]*\"${MULTICA_AGENT_ID}\"" "$meta" || continue
+            grep -q "\"agent_id\":[[:space:]]*\"${GODOT_MCP_AGENT_ID}\"" "$meta" || continue
             hash="$(basename "$(dirname "$meta")")"
             worktree="$ws_base/$hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
             _has_launch_toolchain "$worktree" || continue
@@ -685,11 +681,11 @@ export KOL_RUNTIME_ID
 # SEE-1091: persist launcher boot decisions next to the editor log. Mirroring
 # starts after the label resolves, so the file is created (via mkdir -p) only
 # on the normal boot path — never on a parse/usage error.
-export LAUNCHER_LOG_FILE="${HOME}/.multica/godot-mcp-launcher-${LABEL}.log"
+export LAUNCHER_LOG_FILE="${GODOT_MCP_HOME}/godot-mcp-launcher-${LABEL}.log"
 mkdir -p "$(dirname "$LAUNCHER_LOG_FILE")"
 export GODOT_PORT="$PORT"
 export GODOT_HOST="$(resolve_mcp_host)"
-# SEE-1148 P1: editor log moves under ~/.multica/godot-editor/<runtime_id>.log
+# SEE-1148 P1: editor log moves under $GODOT_MCP_HOME/godot-editor/<runtime_id>.log
 # so same-agent concurrent slots do not clobber one shared per-agent log.
 GODOT_STATE_DIR="$(kol_state_dir)"
 mkdir -p "$GODOT_STATE_DIR"
@@ -706,7 +702,7 @@ if [[ -n "$CURRENT_WORKTREE" ]]; then
 fi
 
 # SEE-1148 P1 (registry landing): register this runtime in
-# ~/.multica/godot-port-registry.json (write-only this phase — no dynamic
+# $GODOT_MCP_HOME/godot-port-registry.json (write-only this phase — no dynamic
 # allocation). P2's allocator will read the same file. Failures are
 # non-fatal: the registry is an observability layer, not a gate.
 # shellcheck source=port-registry.lib.sh
@@ -845,7 +841,7 @@ if (( ARBITER_ON == 1 && EXPLICIT_PORT_GIVEN == 0 )); then
         PORT="$_arb_port"
         LABEL="$(agent_label_for_port "$PORT")"
         export GODOT_PORT="$PORT"
-        export LAUNCHER_LOG_FILE="${HOME}/.multica/godot-mcp-launcher-${LABEL}.log"
+        export LAUNCHER_LOG_FILE="${GODOT_MCP_HOME}/godot-mcp-launcher-${LABEL}.log"
     else
         # Atlas Final Review MEDIUM-1: pool exhaustion MUST die, not silently
         # fall back to the legacy table port. Two slots of the same agent
@@ -947,13 +943,13 @@ exec {ORIG_STDIN}<&-
 # cold MCP handshake from ~6s toward ~0.6s. First run on a fresh machine (empty
 # cache) transparently falls back to `npx -y` and populates the cache for next
 # time. Opt-in via env so test harnesses that mock npx on PATH are unaffected.
-export KOL_DIRECT_GODOT_MCP="${KOL_DIRECT_GODOT_MCP:-1}"
+export GODOT_MCP_DIRECT_GODOT_MCP="${GODOT_MCP_DIRECT_GODOT_MCP:-${KOL_DIRECT_GODOT_MCP:-1}}"
 # SEE-1111 (fork wiring): serve godot-mcp from the OWNER's fork
-# (tadki/godot-mcp, cloned at /mnt/d/GodotProjects/forks/godot-mcp) instead of
-# the upstream @satelliteoflove/godot-mcp package. The fork fixes the cold-start
-# 'Not connected' failure by making the server's QUICK_TIMEOUT_MS configurable
-# (GODOT_MCP_QUICK_TIMEOUT_MS, default stays 30s upstream). The resolver treats
-# any non-'npx' KOL_GODOT_MCP_CMD as a path to the bin entry and spawns
+# (tadki/godot-mcp) instead of the upstream @satelliteoflove/godot-mcp package.
+# The fork fixes the cold-start 'Not connected' failure by making the server's
+# QUICK_TIMEOUT_MS configurable (GODOT_MCP_QUICK_TIMEOUT_MS, default stays 30s
+# upstream). The resolver (godot-mcp-resolve.mjs, the SINGLE server locator)
+# treats any non-'npx' OVERRIDE_CMD as a path to the bin entry and spawns
 # `node <path>`, so this one export switches the toolchain to the fork. Both
 # exports are DEFAULT-ONLY (${VAR:-...}): an external override (a test harness
 # that mocks npx, or an operator pointing elsewhere) wins, keeping the seam.
@@ -970,9 +966,9 @@ if [[ ! -x "$FORK_CLI" && -z "${GODOT_MCP_FORK_CLI:-}" && -f "${FORK_SERVER_DIR}
     log "fork CLI missing at ${FORK_CLI}; building from ${FORK_SERVER_DIR} (one-time, gitignored output)..."
     # SEE-1288 MEDIUM-1: keep the full npm output on disk so a failed build is
     # diagnosable — the WARNING below must point at a file that actually holds
-    # the npm ci/build errors (runtime_id-tagged, same ~/.multica family as the
+    # the npm ci/build errors (runtime_id-tagged, same $GODOT_MCP_HOME family as the
     # other launcher logs).
-    FORK_BUILD_LOG="${HOME}/.multica/godot-mcp-fork-build-${KOL_RUNTIME_ID:-<unknown>}.log"
+    FORK_BUILD_LOG="${GODOT_MCP_HOME}/godot-mcp-fork-build-${KOL_RUNTIME_ID:-<unknown>}.log"
     mkdir -p "$(dirname "$FORK_BUILD_LOG")"
     if (cd "${FORK_SERVER_DIR}" && { npm ci --no-audit --no-fund && npm run build && chmod +x "${FORK_SERVER_DIR}/dist/cli.js"; } ) >"$FORK_BUILD_LOG" 2>&1; then
         log "fork CLI build OK: ${FORK_SERVER_DIR}/dist/cli.js"
@@ -981,9 +977,9 @@ if [[ ! -x "$FORK_CLI" && -z "${GODOT_MCP_FORK_CLI:-}" && -f "${FORK_SERVER_DIR}
     fi
 fi
 if [[ -x "$FORK_CLI" ]]; then
-    export KOL_GODOT_MCP_CMD="${KOL_GODOT_MCP_CMD:-$FORK_CLI}"
+    export GODOT_MCP_GODOT_MCP_CMD="${GODOT_MCP_GODOT_MCP_CMD:-${KOL_GODOT_MCP_CMD:-$FORK_CLI}}"
     export GODOT_MCP_QUICK_TIMEOUT_MS="${GODOT_MCP_QUICK_TIMEOUT_MS:-90000}"
-    log_stage "stage=FORK_WIRED msg=\"godot-mcp served from owner fork\" cli=${KOL_GODOT_MCP_CMD} quick_timeout_ms=${GODOT_MCP_QUICK_TIMEOUT_MS}"
+    log_stage "stage=FORK_WIRED msg=\"godot-mcp served from owner fork\" cli=${GODOT_MCP_GODOT_MCP_CMD} quick_timeout_ms=${GODOT_MCP_QUICK_TIMEOUT_MS}"
 else
     log "WARNING: fork CLI not found at ${FORK_CLI}; keeping upstream godot-mcp (${GODOT_MCP_QUICK_TIMEOUT_MS:-default 30s} timeout)."
 fi

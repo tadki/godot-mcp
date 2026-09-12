@@ -32,7 +32,7 @@ REPO_ROOT="$(cd "${LAUNCH_DIR}/.." && pwd)"
 UNIT_SRC_SERVICE="${LAUNCH_DIR}/godot-mcp-reaper.service"
 UNIT_SRC_TIMER="${LAUNCH_DIR}/godot-mcp-reaper.timer"
 UNIT_DIR="${HOME}/.config/systemd/user"
-MODE_FILE="${HOME}/.multica/godot-reaper.mode"
+MODE_FILE="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-reaper.mode"
 
 cmd="${1:-}"
 

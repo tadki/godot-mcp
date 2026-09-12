@@ -30,7 +30,7 @@
 set -euo pipefail
 
 DEFAULT_GODOT_EDITOR="/mnt/d/Godot/Godot_v4.6.2-stable_win64.exe"
-MULTICA_DIR="${HOME}/.multica"
+MULTICA_DIR="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}"
 
 # Resolve powershell.exe: prefer PATH, else the well-known System32 location.
 POWERSHELL=""
