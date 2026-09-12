@@ -57,6 +57,7 @@ wait_attempt() {
 sep "R1: give-up terminal → cooldown rejection with first-report evidence"
 start_proxy \
     "GODOT_PORT=$PORT" \
+    "GODOT_MCP_HOME=$TMPDIR/home/.multica" \
     "KOL_AGENT_NAME=BachiWs5" \
     "KOL_WORKTREE=$MOCK_WORKTREE" \
     "KOL_CONFIGURE_SH=$CFG_SH" \

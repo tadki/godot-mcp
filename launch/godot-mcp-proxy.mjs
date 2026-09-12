@@ -2328,6 +2328,20 @@ function buildHelperArgs(extra) {
     return args;
 }
 
+// SEE-1292 respawn fix: read {state, port} from a worktree's lease sidecar
+// (.godot/mcp-lease.json). Returns null when absent/unreadable — the caller
+// treats that as "not active" and reactivates via configure.
+async function readWorktreeLeaseState(worktree) {
+    try {
+        const raw = await readFile(path.join(worktree, '.godot', 'mcp-lease.json'), 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return null;
+        return { state: parsed.state, port: parsed.port };
+    } catch {
+        return null;
+    }
+}
+
 // Run a bash helper script fully detached from the MCP stdio pipes. The proxy's
 // stdin/stdout carry JSON-RPC; any stray byte from a child corrupts the
 // handshake (SEE-1045). stdin/stdout are ignored; stderr is captured (tail
@@ -2676,27 +2690,41 @@ async function ensureReusedWorktreeConfigured(t0) {
 // fall-through. If the port stays busy after eviction (e.g. a non-godot
 // listener), the spawn path's configure/start fails fast with a clear
 // spawn_failed diagnostic — which is the correct, attributable outcome.
-async function evictStaleHolder() {
+async function evictStaleHolder(holderWorktree) {
     const t0 = Date.now();
     stageLog('EVICT_BEGIN', `port=${GODOT_PORT}`);
     const agentName = process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || '';
     const stopSh = resolveHelper('stop-godot-editor.sh', 'GODOT_MCP_STOP_SH');
     if (stopSh) {
         const args = agentName ? [agentName, '--port', String(GODOT_PORT)] : ['--port', String(GODOT_PORT)];
+        // SEE-1292 respawn fix: pin the lease-release target to the STALE
+        // HOLDER's own worktree. The stop helper resolves its release target
+        // from label-shared lifecycle files by default, and concurrent
+        // same-agent slots share the label — without the pin, evicting a dead
+        // holder released the LIVE foreign slot's active lease (its next
+        // editor boot then read state=released and fell back to port 6550,
+        // the respawn-round warmup-timeout root cause).
+        if (holderWorktree) args.push('--project-godot', `${holderWorktree}/project.godot`);
         const r = await runScript(stopSh, args);
         stageLog('EVICT_STOP_SH', `rc=${r.rc} dt_ms=${Date.now() - t0}`);
-        log(`evictStaleHolder: stop-godot-editor.sh rc=${r.rc}${r.stderrTail ? ` stderr=${r.stderrTail.slice(-200)}` : ''}`);
+        log(`evictStaleHolder: stop-godot-editor.sh rc=${r.rc}${holderWorktree ? ' release-pinned-to-holder' : ''}${r.stderrTail ? ` stderr=${r.stderrTail.slice(-200)}` : ''}`);
     } else {
-        log('evictStaleHolder: stop-godot-editor.sh not resolved (KOL_STOP_SH unset + helper not found); skipping stop.');
+        log('evictStaleHolder: stop-godot-editor.sh not resolved (stop helper unset + not found); skipping stop.');
     }
     const reapSh = resolveHelper('reap-stale-leases.sh', 'GODOT_MCP_REAP_SH');
     if (reapSh) {
         const reapT0 = Date.now();
-        const r = await runScript(reapSh, []);
+        // SEE-1292 respawn fix: scope the reaper sweep to the holder worktree
+        // when known. A global sweep here races a CONCURRENT slot's fresh
+        // spawn: the fresh active lease's configured_by_pid is the (already
+        // dead) configure shell, so only the 120s fresh-grace protects it —
+        // a sweep arriving past that grace released a live slot's lease.
+        const reapArgs = holderWorktree ? ['--root', holderWorktree] : [];
+        const r = await runScript(reapSh, reapArgs);
         stageLog('EVICT_REAP_SH', `rc=${r.rc} dt_ms=${Date.now() - reapT0}`);
-        log(`evictStaleHolder: reap-stale-leases.sh rc=${r.rc}${r.stderrTail ? ` stderr=${r.stderrTail.slice(-200)}` : ''}`);
+        log(`evictStaleHolder: reap-stale-leases.sh rc=${r.rc}${holderWorktree ? ' (holder-scoped)' : ' (global)'}${r.stderrTail ? ` stderr=${r.stderrTail.slice(-200)}` : ''}`);
     } else {
-        log('evictStaleHolder: reap-stale-leases.sh not resolved (KOL_REAP_SH unset + helper not found); skipping reap.');
+        log('evictStaleHolder: reap-stale-leases.sh not resolved (reap helper unset + not found); skipping reap.');
     }
     stageLog('EVICT_END', `dt_ms=${Date.now() - t0}`);
 }
@@ -2788,7 +2816,7 @@ async function ensureEditor(t0) {
             // PID dead + runtime id mismatch/missing: cross-runtime stale
             // holder. Immediate evict (kill editor, cold-start), NO wait.
             log(`port ${GODOT_PORT} held by a DEAD cross-runtime proxy (runtime id mismatch); immediate evict then cold-start (no 300s wait).`);
-            await evictStaleHolder();
+            await evictStaleHolder(await readHolderWorktree());
             // fall through to spawn below.
         } else if (verdict === 'respawn') {
             // PID dead + SAME runtime id: our own editor is mid-respawn. Wait
@@ -2801,7 +2829,7 @@ async function ensureEditor(t0) {
                 // fall through to spawn below.
             } else {
                 log(`respawn window expired (${PORT_RESPAWN_WINDOW_MS}ms) with port still held; evicting stale holder then spawning.`);
-                await evictStaleHolder();
+                await evictStaleHolder(await readHolderWorktree());
                 // fall through to spawn below.
             }
         } else if (verdict === 'reuse') {
@@ -2866,7 +2894,7 @@ async function ensureEditor(t0) {
                 ? `holder sidecar absent (pre-#499 or manual holder — untrusted)`
                 : `holder worktree ${holderWorktree} != this slot ${ourWorktree}`;
             log(`port ${GODOT_PORT} busy but holder will not serve this slot (${why}); evicting stale holder then spawning our own editor.`);
-            await evictStaleHolder();
+            await evictStaleHolder(holderWorktree);
             // The eviction may have just freed the port; fall through to the
             // spawn path (which re-probes via configure/start). Do NOT return a
             // reuse result — this slot needs its own editor with its own sidecar.
@@ -2932,7 +2960,7 @@ async function ensureEditor(t0) {
     //     port from project.godot at boot). Failure => configure_failed bucket.
     const confT0 = Date.now();
     stageLog('CONFIGURE_SH_BEGIN', `path=spawn project_godot=${worktree}/project.godot`);
-    const configureRes = await runScript(configureSh,
+    let configureRes = await runScript(configureSh,
         buildHelperArgs(['--project-godot', `${worktree}/project.godot`]));
     stageLog('CONFIGURE_SH_END', `path=spawn rc=${configureRes.rc} dt_ms=${Date.now() - confT0}`);
     if (configureRes.rc !== 0) {
@@ -2940,6 +2968,39 @@ async function ensureEditor(t0) {
         throw new SpawnError('configure_failed',
             `configure-mcp-port.sh rc=${configureRes.rc}`,
             { configureRc: configureRes.rc, configureStderr: configureRes.stderrTail, worktree });
+    }
+
+    // SEE-1292 respawn fix (defense in depth): the editor binds its WS port
+    // from the lease sidecar read AT BOOT — a lease that is not state=active
+    // when START runs makes the addon fall back to the default port 6550 and
+    // the whole warmup window is then spent probing the wrong port. Concurrent
+    // same-agent slots (shim rechain racing an old proxy's respawn round, a
+    // foreign evict's stop/reap sweep) can release OUR fresh lease between
+    // configure's write and START. Assert-then-reactivate closes that race:
+    // re-run configure (it clears stale release traces, lease_id preserved)
+    // until the sidecar reads active@GODOT_PORT, bounded — a persistent
+    // mismatch fails the spawn with the standard configure_failed bucket.
+    const leaseVerifyT0 = Date.now();
+    for (let leaseAttempt = 0; leaseAttempt < 3; leaseAttempt += 1) {
+        const leaseState = await readWorktreeLeaseState(worktree);
+        if (leaseState && leaseState.state === 'active' && String(leaseState.port) === String(GODOT_PORT)) {
+            if (leaseAttempt > 0) {
+                stageLog('LEASE_REACTIVATED', `attempts=${leaseAttempt + 1} dt_ms=${Date.now() - leaseVerifyT0}`);
+                log(`lease sidecar re-activated after ${leaseAttempt} rewrite(s) (was released by a concurrent slot sweep).`);
+            }
+            break;
+        }
+        log(`WARNING: lease sidecar not active@${GODOT_PORT} before START (state=${leaseState ? leaseState.state : 'absent'}, port=${leaseState ? leaseState.port : 'n/a'}); re-running configure (attempt ${leaseAttempt + 1}/3).`);
+        stageLog('CONFIGURE_SH_BEGIN', `path=spawn_reactivate project_godot=${worktree}/project.godot`);
+        const reactivateRes = await runScript(configureSh,
+            buildHelperArgs(['--project-godot', `${worktree}/project.godot`]));
+        stageLog('CONFIGURE_SH_END', `path=spawn_reactivate rc=${reactivateRes.rc} dt_ms=${Date.now() - leaseVerifyT0}`);
+        if (reactivateRes.rc !== 0) {
+            await persistSpawnStderr('configure-mcp-port.sh', reactivateRes.rc, reactivateRes.stderrFull);
+            throw new SpawnError('configure_failed',
+                `configure-mcp-port.sh rc=${reactivateRes.rc} (lease reactivation)`,
+                { configureRc: reactivateRes.rc, configureStderr: reactivateRes.stderrTail, worktree });
+        }
     }
 
     // (3) spawn the editor; start-godot-editor.sh backgrounds the editor and
@@ -3577,7 +3638,9 @@ async function warmupLoop() {
             stage = 'EDITOR_SPAWNED';    // spawn is about to re-run; milestones re-derive
             renderStable = false;
             startRenderStableMonitor();
-            await evictStaleHolder();
+            // grace-race evicts THIS slot's own slow editor — pin the release
+            // target to our own worktree (same reasoning as the foreign evict).
+            await evictStaleHolder(await resolveWorktreeForSpawn());
             // evict kills the editor via stop-godot-editor.sh (async PID
             // resolution) — wait for the port to actually free before
             // re-spawning, or the fresh start mock/real schtasks would hit
