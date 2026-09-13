@@ -41,13 +41,38 @@ exec 0</dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# SEE-1292 §DECPL-003: the launcher NO LONGER reverse-probes the caller's
-# private env file (previously walked up 5 dirs from SCRIPT_DIR to source
-# <repo_root>/.dev/env/kol-mcp.env). Calling convention is now explicit env:
-# the caller (KOL repo-checkout hook / daemon chain) exports GODOT_MCP_* and
-# the legacy aliases it wants the chain to see; the launcher simply consumes
-# whatever env the caller provided. A KOL/GODOT_MCP env file lives entirely on
-# the caller's side (its own injected values), source it there, not here.
+# SEE-1292 Bug#2 (AC-DECPL-009 前置): deployment-config bootstrap for the
+# daemon direct-pull chain. When the platform daemon spawns this launcher from
+# its OWN mcp-config (no repo .mcp.json involvement — --strict-mcp-config),
+# the repo-checkout hook (②c ②注入通道) does NOT run, and the chain would
+# boot on env.sh's NEUTRAL defaults (GODOT_MCP_HOME=$HOME/.config/godot-mcp,
+# SHARED_MASTER empty) — drifting every state write away from the live
+# ~/.multica tree the whole toolchain reads back.
+#
+# Boundary vs §DECPL-003 (写明供 Owner 追认): the deleted §DECPL-003 probe was
+# a BLIND upward walk to whatever caller env file lay nearby. THIS block is a
+# SELF-LOCATION of the deployment config the library ships WITH its host
+# checkout: the fork lives at <kol_root>/addons/godot_mcp, so walking up from
+# SCRIPT_DIR and requiring the EXACT filename .dev/env/kol-mcp.env at a repo
+# root is "this checkout's own deployment defaults", not reading arbitrary
+# caller state. K5 semantics unchanged: env.sh's alias chain only fills
+# variables the caller left unset (explicit canonical still wins). On a
+# standalone fork checkout (no .dev/env/) this is a silent no-op.
+_gmc_depl_root="$SCRIPT_DIR"
+for _ in 1 2 3 4; do
+    _gmc_depl_root="$(dirname "$_gmc_depl_root")"
+    [ "$_gmc_depl_root" = "/" ] && break
+    if [ -f "$_gmc_depl_root/.dev/env/kol-mcp.env" ]; then
+        # shellcheck source=/dev/null
+        . "$_gmc_depl_root/.dev/env/kol-mcp.env"
+        break
+    fi
+done
+unset _gmc_depl_root
+
+# SEE-1292 §DECPL-003: beyond the deployment bootstrap above, the launcher
+# consumes whatever env the caller provided (explicit canonical wins; env.sh's
+# alias chain fills only what the caller left unset).
 
 # shellcheck source=env.sh
 . "${SCRIPT_DIR}/env.sh"
@@ -623,6 +648,66 @@ is_valid_port "$PORT" || die "Invalid port '$PORT': must be an integer in [${POR
 # never fall back to the shared master, $SCRIPT_DIR, or any implicit D-drive
 # path, and never continue with an empty KOL_WORKTREE.
 #
+# SEE-1292 Bug#3 (Owner 06:49Z FINAL): the cwd anchor is now FIRST priority.
+# Owner: "cwd 就是 multica workdir，那 launcher 启动时候就直接拿 cwd 往下搜索"
+# — when cwd resolves a KOL checkout, adopt it DIRECTLY (no env pre-check);
+# ONLY when cwd is not a KOL checkout do we fall back to explicit env and the
+# existing runtime-registry / cwd-inference / WORKTREE_WAIT tiers (untouched).
+# Search is STRICTLY DOWNWARD from cwd (workdir subtree, depth ≤2, e.g.
+# <cwd>/KingOfLikes-Godot/project.godot) — upward (`..`) search is REMOVED so
+# the anchor can never cross into a sibling worktree. Anchor file =
+# project.godot (`.godot/` is only generated on first Godot import and is
+# unreliable on a cold workdir); a `.godot/`-only hit defers to the existing
+# WORKTREE_WAIT machinery (materializing-checkout protection).
+# cwd anchor priority (Owner 07:2xZ FINAL, superseding the 06:49Z wording):
+# explicit env injection (KOL_WORKTREE / GODOT_MCP_WORKTREE /
+# KOL_PROJECT_GODOT) is ALWAYS first; the cwd anchor is the first fact source
+# ONLY when the caller left the worktree unset. Search is STRICTLY DOWNWARD
+# from cwd (workdir subtree, depth ≤2) — never `..` — so the anchor can never
+# cross into a sibling worktree.
+if [[ -z "${KOL_WORKTREE:-}" && -z "${GODOT_MCP_WORKTREE:-}" && -z "${KOL_PROJECT_GODOT:-}" ]]; then
+    _anchor_hit=""
+    _anchor_dir="$PWD"
+    # cwd itself may be the checkout root; depth-1: <cwd>/<sub>/project.godot
+    # (the multica checkout shape <workdir>/KingOfLikes-Godot); depth-2 covers
+    # <cwd>/<sub>/<sub2>/project.godot per Owner's "往下搜索 (depth≤2)".
+    for _depth in 0 1 2; do
+        if (( _depth == 0 )); then
+            _cand=("$_anchor_dir")
+        elif (( _depth == 1 )); then
+            _cand=("$_anchor_dir"/*/)
+        else
+            _cand=("$_anchor_dir"/*/*/)
+        fi
+        for _c in "${_cand[@]}"; do
+            [[ -d "$_c" ]] || continue
+            _c="${_c%/}"
+            if [[ -f "$_c/project.godot" ]] && ! _is_shared_master "$_c"; then
+                _anchor_hit="$_c"
+                break 2
+            fi
+        done
+    done
+    if [[ -n "$_anchor_hit" ]]; then
+        # NOTE: do NOT emit KOL_WORKTREE here — the F12 ordering constraint
+        # (T16) requires KOL_RUNTIME_ID export to precede the KOL_WORKTREE
+        # export. Pin only KOL_PROJECT_GODOT; the existing KOL_WORKTREE export
+        # picks the anchored worktree up via $CURRENT_WORKTREE (derived from
+        # project.godot below).
+        KOL_PROJECT_GODOT="$_anchor_hit/project.godot"
+        export KOL_PROJECT_GODOT
+        log "cwd anchor (FIRST priority): worktree=$_anchor_hit (project.godot in cwd subtree)."
+    elif [[ -d "$_anchor_dir/.godot" || -d "$_anchor_dir"/*/.godot ]]; then
+        # Checkout materializing: .godot/ present but project.godot not yet
+        # generated — defer to the standard WORKTREE_WAIT tiers (pinning here
+        # would make configure fail on the missing project.godot).
+        log "cwd anchor observed (checkout materializing, no project.godot yet): deferring to standard wait tiers."
+    else
+        log "cwd anchor: no project.godot found in cwd subtree (depth≤2) — falling back to explicit env / existing tiers."
+    fi
+    unset _anchor_hit _anchor_dir _depth _cand _c
+fi
+
 # SEE-1244 改动 B (plan-debate 决策报告): the die above kills the whole chain
 # 56ms in when the fresh workdir checkout has not landed yet (first-run race
 # from SEE-1250). Replace the immediate die with a bounded wait-retry: re-run
