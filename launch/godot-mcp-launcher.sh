@@ -648,41 +648,61 @@ is_valid_port "$PORT" || die "Invalid port '$PORT': must be an integer in [${POR
 # never fall back to the shared master, $SCRIPT_DIR, or any implicit D-drive
 # path, and never continue with an empty KOL_WORKTREE.
 #
-# SEE-1292 Bug#3 (Owner 2026-09-13 06:24Z 裁决): cwd fallback ANCHOR. The
-# daemon spawns this launcher with cwd = the agent's workdir root (实测存活
-# proxy PWD=<slot>/workdir 成立), so $PWD itself is the most reliable workdir
-# signal on the platform path. Anchoring rules:
-#   priority: explicit env (KOL_WORKTREE / GODOT_MCP_WORKTREE) > this cwd
-#   anchor > the existing runtime-registry / cwd-inference / WORKTREE_WAIT
-#   machinery (all untouched).
-#   hit condition: $PWD (or a bounded number of parent dirs) is a KOL
-#   checkout — project.godot present OR .godot/ dir present (the checkout
-#   can legitimately exist while project.godot has not been generated yet;
-#   .godot/ proves the same thing without touching gitignored state). A
-#   non-KOL cwd (no anchor hit) silently skips — existing tiers proceed.
-if [[ -z "${KOL_WORKTREE:-}" && -z "${GODOT_MCP_WORKTREE:-}" && -z "${KOL_PROJECT_GODOT:-}" ]]; then
-    _cwd_anchor_dir="$PWD"
-    _cwd_anchor_n=0
-    while [[ "$_cwd_anchor_dir" != "/" && "$_cwd_anchor_n" -le 2 ]]; do
-        if [[ -f "$_cwd_anchor_dir/project.godot" || -d "$_cwd_anchor_dir/.godot" ]]; then
-            # Only a REAL project.godot pins the anchor: pinning on .godot/ alone
-            # would short-circuit the WORKTREE_WAIT loop while the checkout is
-            # still materializing (configure needs an existing project.godot).
-            # A .godot/-only hit is logged and left to the existing wait tiers.
-            if [[ -f "$_cwd_anchor_dir/project.godot" ]] && ! _is_shared_master "$_cwd_anchor_dir"; then
-                log "cwd fallback anchor hit: worktree=$_cwd_anchor_dir (project.godot present)."
-                KOL_PROJECT_GODOT="$_cwd_anchor_dir/project.godot"
-                export KOL_PROJECT_GODOT
-            else
-                log "cwd fallback anchor observed (checkout materializing, no project.godot yet): $_cwd_anchor_dir — deferring to the standard wait tiers."
-            fi
-            break
+# SEE-1292 Bug#3 (Owner 06:49Z FINAL): the cwd anchor is now FIRST priority.
+# Owner: "cwd 就是 multica workdir，那 launcher 启动时候就直接拿 cwd 往下搜索"
+# — when cwd resolves a KOL checkout, adopt it DIRECTLY (no env pre-check);
+# ONLY when cwd is not a KOL checkout do we fall back to explicit env and the
+# existing runtime-registry / cwd-inference / WORKTREE_WAIT tiers (untouched).
+# Search is STRICTLY DOWNWARD from cwd (workdir subtree, depth ≤2, e.g.
+# <cwd>/KingOfLikes-Godot/project.godot) — upward (`..`) search is REMOVED so
+# the anchor can never cross into a sibling worktree. Anchor file =
+# project.godot (`.godot/` is only generated on first Godot import and is
+# unreliable on a cold workdir); a `.godot/`-only hit defers to the existing
+# WORKTREE_WAIT machinery (materializing-checkout protection).
+# cwd anchor runs UNCONDITIONALLY (Owner 06:49Z: "cwd 就是 multica workdir，
+# launcher 启动时候就直接拿 cwd 往下搜索"): a cwd-subtree KOL checkout is
+# adopted even when an explicit KOL_WORKTREE env is present — the platform
+# spawns us from the agent's own workdir, so that is the ground truth. Only a
+# MISS (no project.godot in the cwd subtree) falls through to explicit env.
+{
+    _anchor_hit=""
+    _anchor_dir="$PWD"
+    # cwd itself may be the checkout root; depth-1: <cwd>/<sub>/project.godot
+    # (the multica checkout shape <workdir>/KingOfLikes-Godot); depth-2 covers
+    # <cwd>/<sub>/<sub2>/project.godot per Owner's "往下搜索 (depth≤2)".
+    for _depth in 0 1 2; do
+        if (( _depth == 0 )); then
+            _cand=("$_anchor_dir")
+        elif (( _depth == 1 )); then
+            _cand=("$_anchor_dir"/*/)
+        else
+            _cand=("$_anchor_dir"/*/*/)
         fi
-        _cwd_anchor_dir="$(dirname "$_cwd_anchor_dir")"
-        _cwd_anchor_n=$(( _cwd_anchor_n + 1 ))
+        for _c in "${_cand[@]}"; do
+            [[ -d "$_c" ]] || continue
+            _c="${_c%/}"
+            if [[ -f "$_c/project.godot" ]] && ! _is_shared_master "$_c"; then
+                _anchor_hit="$_c"
+                break 2
+            fi
+        done
     done
-    unset _cwd_anchor_dir _cwd_anchor_n
-fi
+    if [[ -n "$_anchor_hit" ]]; then
+        KOL_WORKTREE="$_anchor_hit"
+        export KOL_WORKTREE
+        KOL_PROJECT_GODOT="$_anchor_hit/project.godot"
+        export KOL_PROJECT_GODOT
+        log "cwd anchor (FIRST priority): worktree=$_anchor_hit (project.godot in cwd subtree)."
+    elif [[ -d "$_anchor_dir/.godot" || -d "$_anchor_dir"/*/.godot ]]; then
+        # Checkout materializing: .godot/ present but project.godot not yet
+        # generated — defer to the standard WORKTREE_WAIT tiers (pinning here
+        # would make configure fail on the missing project.godot).
+        log "cwd anchor observed (checkout materializing, no project.godot yet): deferring to standard wait tiers."
+    else
+        log "cwd anchor: no project.godot found in cwd subtree (depth≤2) — falling back to explicit env / existing tiers."
+    fi
+    unset _anchor_hit _anchor_dir _depth _cand _c
+}
 
 # SEE-1244 改动 B (plan-debate 决策报告): the die above kills the whole chain
 # 56ms in when the fresh workdir checkout has not landed yet (first-run race
