@@ -648,6 +648,42 @@ is_valid_port "$PORT" || die "Invalid port '$PORT': must be an integer in [${POR
 # never fall back to the shared master, $SCRIPT_DIR, or any implicit D-drive
 # path, and never continue with an empty KOL_WORKTREE.
 #
+# SEE-1292 Bug#3 (Owner 2026-09-13 06:24Z 裁决): cwd fallback ANCHOR. The
+# daemon spawns this launcher with cwd = the agent's workdir root (实测存活
+# proxy PWD=<slot>/workdir 成立), so $PWD itself is the most reliable workdir
+# signal on the platform path. Anchoring rules:
+#   priority: explicit env (KOL_WORKTREE / GODOT_MCP_WORKTREE) > this cwd
+#   anchor > the existing runtime-registry / cwd-inference / WORKTREE_WAIT
+#   machinery (all untouched).
+#   hit condition: $PWD (or a bounded number of parent dirs) is a KOL
+#   checkout — project.godot present OR .godot/ dir present (the checkout
+#   can legitimately exist while project.godot has not been generated yet;
+#   .godot/ proves the same thing without touching gitignored state). A
+#   non-KOL cwd (no anchor hit) silently skips — existing tiers proceed.
+if [[ -z "${KOL_WORKTREE:-}" && -z "${GODOT_MCP_WORKTREE:-}" && -z "${KOL_PROJECT_GODOT:-}" ]]; then
+    _cwd_anchor_dir="$PWD"
+    _cwd_anchor_n=0
+    while [[ "$_cwd_anchor_dir" != "/" && "$_cwd_anchor_n" -le 2 ]]; do
+        if [[ -f "$_cwd_anchor_dir/project.godot" || -d "$_cwd_anchor_dir/.godot" ]]; then
+            # Only a REAL project.godot pins the anchor: pinning on .godot/ alone
+            # would short-circuit the WORKTREE_WAIT loop while the checkout is
+            # still materializing (configure needs an existing project.godot).
+            # A .godot/-only hit is logged and left to the existing wait tiers.
+            if [[ -f "$_cwd_anchor_dir/project.godot" ]] && ! _is_shared_master "$_cwd_anchor_dir"; then
+                log "cwd fallback anchor hit: worktree=$_cwd_anchor_dir (project.godot present)."
+                KOL_PROJECT_GODOT="$_cwd_anchor_dir/project.godot"
+                export KOL_PROJECT_GODOT
+            else
+                log "cwd fallback anchor observed (checkout materializing, no project.godot yet): $_cwd_anchor_dir — deferring to the standard wait tiers."
+            fi
+            break
+        fi
+        _cwd_anchor_dir="$(dirname "$_cwd_anchor_dir")"
+        _cwd_anchor_n=$(( _cwd_anchor_n + 1 ))
+    done
+    unset _cwd_anchor_dir _cwd_anchor_n
+fi
+
 # SEE-1244 改动 B (plan-debate 决策报告): the die above kills the whole chain
 # 56ms in when the fresh workdir checkout has not landed yet (first-run race
 # from SEE-1250). Replace the immediate die with a bounded wait-retry: re-run
