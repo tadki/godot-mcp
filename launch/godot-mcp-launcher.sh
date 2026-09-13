@@ -688,8 +688,11 @@ is_valid_port "$PORT" || die "Invalid port '$PORT': must be an integer in [${POR
         done
     done
     if [[ -n "$_anchor_hit" ]]; then
-        KOL_WORKTREE="$_anchor_hit"
-        export KOL_WORKTREE
+        # NOTE: do NOT emit KOL_WORKTREE here — the F12 ordering constraint
+        # (T16) requires KOL_RUNTIME_ID export to precede the KOL_WORKTREE
+        # export. Pin only KOL_PROJECT_GODOT; the existing KOL_WORKTREE export
+        # picks the anchored worktree up via $CURRENT_WORKTREE (derived from
+        # project.godot below).
         KOL_PROJECT_GODOT="$_anchor_hit/project.godot"
         export KOL_PROJECT_GODOT
         log "cwd anchor (FIRST priority): worktree=$_anchor_hit (project.godot in cwd subtree)."
