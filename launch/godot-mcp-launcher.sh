@@ -41,13 +41,38 @@ exec 0</dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# SEE-1292 §DECPL-003: the launcher NO LONGER reverse-probes the caller's
-# private env file (previously walked up 5 dirs from SCRIPT_DIR to source
-# <repo_root>/.dev/env/kol-mcp.env). Calling convention is now explicit env:
-# the caller (KOL repo-checkout hook / daemon chain) exports GODOT_MCP_* and
-# the legacy aliases it wants the chain to see; the launcher simply consumes
-# whatever env the caller provided. A KOL/GODOT_MCP env file lives entirely on
-# the caller's side (its own injected values), source it there, not here.
+# SEE-1292 Bug#2 (AC-DECPL-009 前置): deployment-config bootstrap for the
+# daemon direct-pull chain. When the platform daemon spawns this launcher from
+# its OWN mcp-config (no repo .mcp.json involvement — --strict-mcp-config),
+# the repo-checkout hook (②c ②注入通道) does NOT run, and the chain would
+# boot on env.sh's NEUTRAL defaults (GODOT_MCP_HOME=$HOME/.config/godot-mcp,
+# SHARED_MASTER empty) — drifting every state write away from the live
+# ~/.multica tree the whole toolchain reads back.
+#
+# Boundary vs §DECPL-003 (写明供 Owner 追认): the deleted §DECPL-003 probe was
+# a BLIND upward walk to whatever caller env file lay nearby. THIS block is a
+# SELF-LOCATION of the deployment config the library ships WITH its host
+# checkout: the fork lives at <kol_root>/addons/godot_mcp, so walking up from
+# SCRIPT_DIR and requiring the EXACT filename .dev/env/kol-mcp.env at a repo
+# root is "this checkout's own deployment defaults", not reading arbitrary
+# caller state. K5 semantics unchanged: env.sh's alias chain only fills
+# variables the caller left unset (explicit canonical still wins). On a
+# standalone fork checkout (no .dev/env/) this is a silent no-op.
+_gmc_depl_root="$SCRIPT_DIR"
+for _ in 1 2 3 4; do
+    _gmc_depl_root="$(dirname "$_gmc_depl_root")"
+    [ "$_gmc_depl_root" = "/" ] && break
+    if [ -f "$_gmc_depl_root/.dev/env/kol-mcp.env" ]; then
+        # shellcheck source=/dev/null
+        . "$_gmc_depl_root/.dev/env/kol-mcp.env"
+        break
+    fi
+done
+unset _gmc_depl_root
+
+# SEE-1292 §DECPL-003: beyond the deployment bootstrap above, the launcher
+# consumes whatever env the caller provided (explicit canonical wins; env.sh's
+# alias chain fills only what the caller left unset).
 
 # shellcheck source=env.sh
 . "${SCRIPT_DIR}/env.sh"
