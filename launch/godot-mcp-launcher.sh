@@ -659,12 +659,13 @@ is_valid_port "$PORT" || die "Invalid port '$PORT': must be an integer in [${POR
 # project.godot (`.godot/` is only generated on first Godot import and is
 # unreliable on a cold workdir); a `.godot/`-only hit defers to the existing
 # WORKTREE_WAIT machinery (materializing-checkout protection).
-# cwd anchor runs UNCONDITIONALLY (Owner 06:49Z: "cwd 就是 multica workdir，
-# launcher 启动时候就直接拿 cwd 往下搜索"): a cwd-subtree KOL checkout is
-# adopted even when an explicit KOL_WORKTREE env is present — the platform
-# spawns us from the agent's own workdir, so that is the ground truth. Only a
-# MISS (no project.godot in the cwd subtree) falls through to explicit env.
-{
+# cwd anchor priority (Owner 07:2xZ FINAL, superseding the 06:49Z wording):
+# explicit env injection (KOL_WORKTREE / GODOT_MCP_WORKTREE /
+# KOL_PROJECT_GODOT) is ALWAYS first; the cwd anchor is the first fact source
+# ONLY when the caller left the worktree unset. Search is STRICTLY DOWNWARD
+# from cwd (workdir subtree, depth ≤2) — never `..` — so the anchor can never
+# cross into a sibling worktree.
+if [[ -z "${KOL_WORKTREE:-}" && -z "${GODOT_MCP_WORKTREE:-}" && -z "${KOL_PROJECT_GODOT:-}" ]]; then
     _anchor_hit=""
     _anchor_dir="$PWD"
     # cwd itself may be the checkout root; depth-1: <cwd>/<sub>/project.godot
@@ -705,7 +706,7 @@ is_valid_port "$PORT" || die "Invalid port '$PORT': must be an integer in [${POR
         log "cwd anchor: no project.godot found in cwd subtree (depth≤2) — falling back to explicit env / existing tiers."
     fi
     unset _anchor_hit _anchor_dir _depth _cand _c
-}
+fi
 
 # SEE-1244 改动 B (plan-debate 决策报告): the die above kills the whole chain
 # 56ms in when the fresh workdir checkout has not landed yet (first-run race
