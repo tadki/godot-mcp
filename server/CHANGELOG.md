@@ -1,5 +1,40 @@
 # Changelog
 
+## [5.0.0](https://github.com/tadki/godot-mcp/compare/godot-mcp-v4.1.0...godot-mcp-v5.0.0) (2026-09-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* restructure main — addon at repo root, drop upstream test/ (SEE-1268 T1)
+* restructure main — addon at repo root, drop upstream test/ (SEE-1268 T1)
+
+### Features
+
+* **addon:** SEE-1268 ① 组装——KOL 生产 vendored addon 增量并入 fork ([469e162](https://github.com/tadki/godot-mcp/commit/469e16299a9103058989f80288c71593b227cdd1))
+* **connection:** make QUICK_TIMEOUT_MS env-configurable via GODOT_MCP_QUICK_TIMEOUT_MS ([f62c9c3](https://github.com/tadki/godot-mcp/commit/f62c9c34a5621b0b6f38b3f6025911b517f05710))
+* **input:** SEE-1141 Track D — absolute mouse_move/mouse_button viewport-space entries ([c812dce](https://github.com/tadki/godot-mcp/commit/c812dce59a0bf7d6517ae6cee34332bf56dcab54))
+* **launch:** SEE-1268 ① 组装——KOL .dev/godot-mcp/launch 控制面收入运行库 ([a429416](https://github.com/tadki/godot-mcp/commit/a4294163860f662a9bdd108ac6517048fd83a4f9))
+
+
+### Bug Fixes
+
+* **editor:** read run_project bridge_ready from top-level result ([6293883](https://github.com/tadki/godot-mcp/commit/62938831a76fffb331ebc3ac1714471878556f53))
+* **launch:** SEE-1273 AC-M3REORG-013 — shell 孪生守卫空值修复 + KOL 注入链接通 ([bd8f99a](https://github.com/tadki/godot-mcp/commit/bd8f99a51b0a5a9941da274d55192a1076297ddd))
+* **launch:** SEE-1273 T2 — decouple fork CLI path (resolve.mjs/shim) + doc literal ([bb4615d](https://github.com/tadki/godot-mcp/commit/bb4615dddbb55fe2e961d64391df581af1297536))
+* **launch:** SEE-1273 T2 follow-up — set -u env guard + proxy 3-location isGodotWorktree ([59c7baf](https://github.com/tadki/godot-mcp/commit/59c7baf1db4c7e631a7d1d75de5f3de952768899))
+* **launch:** SEE-1273 T2-M1 — export resolved GODOT_MCP_* vars for child processes ([8be66eb](https://github.com/tadki/godot-mcp/commit/8be66eb3eb820632c4d4184c65a525de8b2ba1ac))
+* **launch:** SEE-1273 T4 前置 — submodule shim launcher 路径指自身目录 ([00d9c77](https://github.com/tadki/godot-mcp/commit/00d9c776e98a4e3a9df259bd28b61fa763200d7e))
+* **launch:** SEE-1273 T5-F 前置 — 补 launch 脚本执行位（100644→100755） ([dcf33d1](https://github.com/tadki/godot-mcp/commit/dcf33d10c17de0eafa0d14c93dc86d1d080cefd1))
+* **launch:** SEE-1288 MEDIUM-1 — persist fork CLI build failure log to ~/.multica ([b7429ce](https://github.com/tadki/godot-mcp/commit/b7429ceef761f00c45c055c45d0723333406ec74))
+* **launch:** SEE-1288 submodule checkout restores fork CLI wiring via build fallback ([15e9703](https://github.com/tadki/godot-mcp/commit/15e970364eef41ec652c7a75f28a2a0040291e8e))
+* **proxy:** SEE-1273 AC-M3REORG-011 — isSharedMasterWorktree 空值守卫（JS 版补同步） ([8d51b13](https://github.com/tadki/godot-mcp/commit/8d51b131eec1450894977a9c1761d8882f4c8259))
+
+
+### Code Refactoring
+
+* restructure main — addon at repo root, drop upstream test/ (SEE-1268 T1) ([e649597](https://github.com/tadki/godot-mcp/commit/e6495971b49bf263758d4756c670ad023e511057))
+* restructure main — addon at repo root, drop upstream test/ (SEE-1268 T1) ([91295ce](https://github.com/tadki/godot-mcp/commit/91295ceb3fe0a0f70579e168654e327443d6b4d9))
+
 ## [4.1.0](https://github.com/satelliteoflove/godot-mcp/compare/godot-mcp-v4.0.1...godot-mcp-v4.1.0) (2026-06-20)
 
 
