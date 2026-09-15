@@ -61,8 +61,12 @@ section('placeholder list invariants');
 
 section('placeholder names == running fork tools/list + godot_ui_inspect');
 {
-    const FORK_TOOLS_INDEX = '/mnt/d/GodotProjects/forks/godot-mcp/server/dist/tools/index.js';
-    const FORK_REGISTRY = '/mnt/d/GodotProjects/forks/godot-mcp/server/dist/core/registry.js';
+    // SEE-1292 LOW-2: resolve the fork dist from the submodule's own location
+    // (this test lives in <submodule>/launch/tests/scripts/), not a hardcoded
+    // D-drive path from the pre-SEE-1273 layout.
+    const FORK_DIST = path.join(HERE, '..', '..', '..', 'server', 'dist');
+    const FORK_TOOLS_INDEX = path.join(FORK_DIST, 'tools', 'index.js');
+    const FORK_REGISTRY = path.join(FORK_DIST, 'core', 'registry.js');
     let forkAvailable = false;
     try { statSync(FORK_TOOLS_INDEX); statSync(FORK_REGISTRY); forkAvailable = true; } catch { /* absent */ }
 

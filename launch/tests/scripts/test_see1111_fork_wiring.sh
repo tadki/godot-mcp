@@ -8,11 +8,13 @@
 # Background: the upstream server's socket timeout (QUICK_TIMEOUT_MS, 30s) can
 # be shorter than a cold Godot editor boot (~27s to WS handshake), so the first
 # tools/call during cold start fails 'Not connected'. The owner forked
-# godot-mcp at /mnt/d/GodotProjects/forks/godot-mcp (commit f62c9c3) making
-# QUICK_TIMEOUT_MS configurable via GODOT_MCP_QUICK_TIMEOUT_MS (default 30s
-# unchanged). The launcher exports KOL_GODOT_MCP_CMD=<fork cli.js> so the
-# resolver spawns `node <fork cli.js>`, and exports GODOT_MCP_QUICK_TIMEOUT_MS
-# so the fork's server waits out the cold boot.
+# godot-mcp, making QUICK_TIMEOUT_MS configurable via GODOT_MCP_QUICK_TIMEOUT_MS
+# (default 30s unchanged). The launcher exports GODOT_MCP_GODOT_MCP_CMD=<fork
+# cli.js> so the resolver spawns `node <fork cli.js>`, and exports
+# GODOT_MCP_QUICK_TIMEOUT_MS so the fork's server waits out the cold boot.
+# SEE-1292 LOW-2: the fork CLI path is resolved relative to the submodule's
+# own location (launch/../server/dist/cli.js), not a hardcoded D-drive path
+# from the pre-SEE-1273 layout.
 #
 # Design: the wiring is DEFAULT-ONLY (${VAR:-...}). A test harness or operator
 # that sets KOL_GODOT_MCP_CMD / GODOT_MCP_QUICK_TIMEOUT_MS explicitly always
@@ -168,7 +170,7 @@ fi
 sep "Case B: fork present on this machine → launcher logs FORK_WIRED"
 STUB_DIR_B="$(make_stubbed_wrapper)"
 PORT_B=$(find_free_port)
-FORK_CLI="/mnt/d/GodotProjects/forks/godot-mcp/server/dist/cli.js"
+FORK_CLI="${GODOT_MCP_FORK_CLI:-${REPO_ROOT}/server/dist/cli.js}"
 if [[ -x "$FORK_CLI" ]]; then
     (
         printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"fork-test"}}}'

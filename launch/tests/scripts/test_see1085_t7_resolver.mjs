@@ -20,17 +20,23 @@ const RESOLVER_PATH = join(
 );
 const { resolveGodotMcpCommand, GODOT_MCP_PKG } = await import(RESOLVER_PATH);
 
-// SEE-1117 (regression sweep): the owner fork at
-// /mnt/d/GodotProjects/forks/godot-mcp/server/dist/cli.js is preferred by
+// SEE-1117 (regression sweep): the owner fork CLI is preferred by
 // resolveGodotMcpCommand() whenever GODOT_MCP_DIRECT_GODOT_MCP != '0' (SEE-1111
-// production fix). On any machine where that fork file exists the resolver
-// will return the fork branch BEFORE exercising the opt-in cache walk
-// (T7.3/T7.4/T7.6/T7.7) or the no-opt-in npx fallback (T7.8). Those branches
-// cannot be exercised in this environment without modifying the resolver
-// (forbidden by Atlas's QA substep constraint 3), so they are skipped here
-// and counted as SKIP in the summary. T7.1/T7.2/T7.5 cover the override
-// paths which DO work even with fork present.
-const FORK_CLI = '/mnt/d/GodotProjects/forks/godot-mcp/server/dist/cli.js';
+// production fix). The fork CLI path is env-overridable via GODOT_MCP_FORK_CLI
+// (default: <submodule>/server/dist/cli.js, resolved relative to the resolver's
+// own location — SEE-1273 T2 / SEE-1292 §DECPL-003). On any machine where that
+// fork file exists the resolver will return the fork branch BEFORE exercising
+// the opt-in cache walk (T7.3/T7.4/T7.6/T7.7) or the no-opt-in npx fallback
+// (T7.8). Those branches cannot be exercised in this environment without
+// modifying the resolver (forbidden by Atlas's QA substep constraint 3), so
+// they are skipped here and counted as SKIP in the summary. T7.1/T7.2/T7.5
+// cover the override paths which DO work even with fork present.
+// SEE-1292 LOW-2: the fork CLI path is resolved from the resolver's own
+// location (import.meta.url), not a hardcoded absolute path — the old
+// '/mnt/d/GodotProjects/forks/godot-mcp/...' literal was a stale D-drive
+// reference from the pre-SEE-1273 layout.
+const FORK_CLI = process.env.GODOT_MCP_FORK_CLI
+    || join(dirname(new URL(import.meta.url).pathname), '..', '..', '..', 'server', 'dist', 'cli.js');
 let forkPresent = false;
 try { statSync(FORK_CLI); forkPresent = true; } catch { forkPresent = false; }
 
