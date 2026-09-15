@@ -3680,10 +3680,19 @@ function getGodotMcpCommand() {
 // npx (PATH) or a stub via KOL_GODOT_MCP_CMD that never logs 'Connected to
 // Godot' — waiting for it would hang the flush forever. Detect the fork by the
 // resolved command path so mocks flush at WARM as before (pre-fix behavior).
+// SEE-1292 AC-DECPL-010 regression fix: the old args.includes('forks/godot-mcp')
+// probe went stale when SEE-1273 T2 moved the fork CLI to <submodule>/server/dist/cli.js
+// (relative to the submodule itself, no 'forks/' segment). Detection now matches
+// the resolved CLI path against the fork CLI identity (the env-overridable
+// GODOT_MCP_FORK_CLI / its default submodule-relative path), so the gate holds
+// regardless of whether the fork arrived via launcher env wiring or the resolver's
+// own default-fork path.
 function cliConnectSignalExpected() {
     try {
         const { args } = getGodotMcpCommand();
-        return Array.isArray(args) && args.some((a) => typeof a === 'string' && a.includes('forks/godot-mcp'));
+        if (!Array.isArray(args)) return false;
+        const forkCliNorm = path.resolve(FORK_CLI_PATH);
+        return args.some((a) => typeof a === 'string' && path.resolve(a) === forkCliNorm);
     } catch {
         return false;
     }

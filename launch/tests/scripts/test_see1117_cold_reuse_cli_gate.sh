@@ -96,6 +96,10 @@ note "pre-bound WS listener on $PORT (pid=$LIS_PID)"
 # resolver picks it and cliConnectSignalExpected() returns true. Override the
 # helper's KOL_DIRECT_GODOT_MCP=0 default by passing KOL_GODOT_MCP_CMD last
 # (later env tokens win in the env(1) list).
+# SEE-1292 AC-DECPL-010: cliConnectSignalExpected() now matches the resolved CLI
+# path against GODOT_MCP_FORK_CLI (the fork identity), not the stale
+# 'forks/godot-mcp' string. The test sets GODOT_MCP_FORK_CLI to the mock so the
+# gate activates (the mock DOES emit 'Connected to Godot', like the real fork).
 start_proxy \
     "GODOT_PORT=$PORT" \
     "KOL_AGENT_NAME=Bachi" \
@@ -108,16 +112,19 @@ start_proxy \
     "KOL_HOT_WARMUP_TIMEOUT_MS=20000" \
     "KOL_PROBE_INTERVAL_MS=200" \
     "MOCK_NPX_LOG=$TMPDIR/npx.log" \
+    "GODOT_MCP_FORK_CLI=$MOCK_CLI" \
     "KOL_GODOT_MCP_CMD=$MOCK_CLI"
 
 send_line "$INIT_LINE"
 wait_for "$PROXY_OUT" '"id":1' 1500 || ko "R.pre: initialize not answered"
 
 # Confirm the resolver picked the fork-path mock so cliConnectSignalExpected()=true.
-if grep -q 'KOL_GODOT_MCP_CMD' "$PROXY_ERR"; then
-    ok "R.0: proxy resolved CLI via KOL_GODOT_MCP_CMD (fork-path mock, cliConnectSignalExpected=true)"
+# The resolver logs the CANONICAL env name (GODOT_MCP_GODOT_MCP_CMD) even when the
+# value arrived via the legacy alias (KOL_GODOT_MCP_CMD) — grep either.
+if grep -qE 'GODOT_MCP_GODOT_MCP_CMD|KOL_GODOT_MCP_CMD' "$PROXY_ERR"; then
+    ok "R.0: proxy resolved CLI via env override (fork-path mock, cliConnectSignalExpected=true)"
 else
-    ko "R.0: proxy did NOT log the KOL_GODOT_MCP_CMD source (cliConnectSignalExpected may be false)"
+    ko "R.0: proxy did NOT log the env override source (cliConnectSignalExpected may be false)"
 fi
 
 # Fire the first tools/call. The port is pre-bound -> lastSpawnReused=true, but
