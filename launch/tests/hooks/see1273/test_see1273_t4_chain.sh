@@ -23,14 +23,15 @@ EXPECTED_GITLINK="${EXPECTED_GITLINK:-00d9c776e98a4e3a9df259bd28b61fa763200d7e}"
 OLD_GITLINK="${OLD_GITLINK:-5719847800eaab676e73cc614c809214f2f8cd28}"
 T4_COMMIT="${T4_COMMIT:-8f3d30c3}"
 # SEE-1292 毕业轮: SHIM_SRC defaults to the fork's OWN shim (submodule-internal
-# equivalent; the KOL compat shim landing was retired by T5-F). The compat-shim
-# fallback arms stay archive-only (SKIP) when the legacy source is absent.
+# equivalent; the KOL compat shim landing was retired by T5-F).
+# SEE-1292 Final Review MEDIUM-1: HAVE_SHIM=0 must FAIL, never SKIP — the fork
+# shim is a terminal asset, there is no archive-only premise for its absence.
 # This file lives at <forkroot>/launch/tests/hooks/see1273/ — the shim is at
 # <forkroot>/launch/godot-mcp-shim.mjs (3 levels up).
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SHIM_SRC="${SHIM_SRC:-$HERE/../../..//godot-mcp-shim.mjs}"
-HAVE_SHIM=0; [[ -f "$SHIM_SRC" ]] && HAVE_SHIM=1
-skip_arm() { echo "  SKIP: $* (archive-only: legacy compat shim retired by SEE-1273 T5-F)"; }
+SHIM_SRC="${SHIM_SRC:-$HERE/../../../godot-mcp-shim.mjs}"
+[[ -f "$SHIM_SRC" ]] || { echo "FAIL: fork shim missing at $SHIM_SRC (see1273 harness cannot run)"; exit 1; }
+skip_arm() { echo "  SKIP: $* (archive-only)"; }
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 PASS=0; FAIL=0
@@ -71,12 +72,7 @@ git submodule add -q "$FORK_URL" addons/godot_mcp >/dev/null 2>&1
 git add -A >/dev/null; git commit -qm consumer >/dev/null
 (cd addons/godot_mcp && git checkout -q "$EXPECTED_GITLINK") && git add -A >/dev/null && git commit -qm pin >/dev/null
 mkdir -p .dev/godot-mcp/launch
-if (( ! HAVE_SHIM )); then
-  skip_arm "compat-shim fallback arms (legacy shim copy source)"
-fi
-if (( HAVE_SHIM )); then
-  cp "$SHIM_SRC" .dev/godot-mcp/launch/godot-mcp-shim.mjs
-fi
+cp "$SHIM_SRC" .dev/godot-mcp/launch/godot-mcp-shim.mjs
 printf 'config_version=5\n\n[application]\nconfig/name="T4QAConsumer"\nconfig/features=PackedStringArray("4.5")\n' > project.godot
 export KOL_PROJECT_GODOT="$TMP/consumer/project.godot"
 unset GODOT_MCP_FORK_CLI GODOT_MCP_SHARED_MASTER KOL_SHARED_MASTER
@@ -97,13 +93,11 @@ CHAINOUT="$( ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"
   && ok "LAUNCHER_PATH sibling resolution: shim spawns ITS OWN directory launcher (00d9c77 pre-fix)" || bad "LAUNCHER_PATH resolution wrong: $CHAINOUT"
 
 # compat shim fallback under T4 shape (old platform path still serves)
-if (( HAVE_SHIM )); then
-  ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-    sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
-    | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/compat.log" 2>&1
-  grep -q '"serverInfo"' "$TMP/compat.log" && ok "compat shim under T4 shape: handshake OK (forward mode)" || bad "compat shim T4-shape handshake failed"
-  [[ "$(grep -c 'DEPRECATED' "$TMP/compat.log")" -eq 0 ]] && ok "compat shim T4 shape: 0 DEPRECATED (forward, not legacy)" || bad "compat shim unexpectedly in legacy mode"
-fi
+( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
+  sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
+  | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/compat.log" 2>&1
+grep -q '"serverInfo"' "$TMP/compat.log" && ok "compat shim under T4 shape: handshake OK (forward mode)" || bad "compat shim T4-shape handshake failed"
+[[ "$(grep -c 'DEPRECATED' "$TMP/compat.log")" -eq 0 ]] && ok "compat shim T4 shape: 0 DEPRECATED (forward, not legacy)" || bad "compat shim unexpectedly in legacy mode"
 
 # ---------- 4) isolation regression ----------
 # SEE-1292 毕业轮: the KOL_ROOT-shaped regression arms are now sourced from
@@ -152,14 +146,10 @@ fi
 else
   skip_arm "AC-009 revert drill (T4 pin $T4_COMMIT not reproducible in current KOL history)"
 fi
-if (( HAVE_SHIM )); then
-  ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-    sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
-    | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/rollback.log" 2>&1
-  grep -q '"serverInfo"' "$TMP/rollback.log" && ok "revert: rolled-back state functionally serves handshake (legacy chain)" || bad "revert: rolled-back chain broken"
-else
-  skip_arm "revert rollback-chain arm (legacy shim source)"
-fi
+( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
+  sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
+  | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/rollback.log" 2>&1
+grep -q '"serverInfo"' "$TMP/rollback.log" && ok "revert: rolled-back state functionally serves handshake (legacy chain)" || bad "revert: rolled-back chain broken"
 
 echo ""
 echo "==== T4 QA harness: PASS=$PASS FAIL=$FAIL ===="

@@ -21,10 +21,12 @@ GITLINK_SHA="${GITLINK_SHA:-5719847800eaab676e73cc614c809214f2f8cd28}"
 # a KOL checkout. Arms needing the retired legacy source emit SKIP (archive-only).
 # This file lives at <forkroot>/launch/tests/hooks/see1273/ — the shim is at
 # <forkroot>/launch/godot-mcp-shim.mjs (3 levels up).
+# SEE-1292 Final Review MEDIUM-1: HAVE_SHIM=0 must FAIL, never SKIP — the fork
+# shim is a terminal asset, there is no archive-only premise for its absence
+# (a silent SKIP would green-light an untested shim arm).
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SHIM_SRC="${SHIM_SRC:-$HERE/../../..//godot-mcp-shim.mjs}"
-HAVE_SHIM=0; [[ -f "$SHIM_SRC" ]] && HAVE_SHIM=1
-skip_arm() { echo "  SKIP: $* (archive-only: legacy compat shim retired by SEE-1273 T5-F)"; }
+SHIM_SRC="${SHIM_SRC:-$HERE/../../../godot-mcp-shim.mjs}"
+[[ -f "$SHIM_SRC" ]] || { echo "FAIL: fork shim missing at $SHIM_SRC (see1273 harness cannot run)"; exit 1; }
 TMP="$(mktemp -d)"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "  ok: $1"; }
@@ -38,10 +40,7 @@ trap cleanup EXIT
 # from the retired legacy compat shim) is stale against the fork shim, which by
 # design emits none — the arm is inverted to assert the terminal state (handshake
 # serves, 0 DEPRECATED).
-if (( ! HAVE_SHIM )); then
-  skip_arm "AC-005 transition-window arms (legacy shim handshake)"
-fi
-if (( HAVE_SHIM )); then ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
+( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
   sleep 12; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
   printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
   | timeout 30 node "$SHIM_SRC" > "$TMP/legacy.log" 2>&1
@@ -50,33 +49,27 @@ grep -q '"serverInfo":{"name":"godot-mcp","version":"kol-proxy-shim-1.0"}' "$TMP
   && ok "AC-005: handshake serverInfo via fork shim" || bad "AC-005: handshake failed"
 [[ "$(grep -o '"name":"godot_[a-z_]*"' "$TMP/legacy.log" | sort -u | wc -l)" -gt 10 ]] \
   && ok "AC-005: tools/list non-empty (21 tools)" || bad "AC-005: tools/list empty"
-fi
 
 # ---------- 2) T4-shape: forward takeover + fault injection proves the child ----------
 cd "$TMP" && git init -q consumer && cd consumer && git checkout -q -b master
 git submodule add -q "$FORK_URL" addons/godot_mcp >/dev/null 2>&1
 git add -A >/dev/null; git commit -qm consumer >/dev/null
 (cd addons/godot_mcp && git checkout -q "$EXPECTED_FORK") && git add -A >/dev/null && git commit -qm pin >/dev/null
-if (( ! HAVE_SHIM )); then
-  skip_arm "T4-shape forward-takeover arms (legacy shim copy source)"
-fi
 mkdir -p .dev/godot-mcp/launch
-if (( HAVE_SHIM )); then
-  cp "$SHIM_SRC" .dev/godot-mcp/launch/godot-mcp-shim.mjs
-  ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-    sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
-    | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/fwd.log" 2>&1
-  [[ "$(grep -c 'DEPRECATED' "$TMP/fwd.log")" -eq 0 ]] && ok "T4-shape: no DEPRECATED in forward mode" || bad "T4-shape: DEPRECATED emitted in forward mode"
-  grep -q '"serverInfo"' "$TMP/fwd.log" && ok "T4-shape: handshake via forwarded submodule shim" || bad "T4-shape: handshake failed"
-  # SEE-1292 毕业轮: the archived fault-injection arm ("prove the child IS the
-  # submodule shim") assumed a KOL compat shim forwarding into a consumer
-  # submodule. With SHIM_SRC now the fork's own shim, the .dev copy's
-  # LAUNCHER_PATH resolves to the fork's OWN sibling launcher — the marker
-  # never reaches a consumer submodule. The premise is KOL-consumer-specific
-  # and stale; the forward handshake above already proves the .dev copy serves
-  # through the real chain. Removed per Atlas SEE-1292 裁定总表 (fork-side
-  # arms only).
-fi
+cp "$SHIM_SRC" .dev/godot-mcp/launch/godot-mcp-shim.mjs
+( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
+  sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
+  | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/fwd.log" 2>&1
+[[ "$(grep -c 'DEPRECATED' "$TMP/fwd.log")" -eq 0 ]] && ok "T4-shape: no DEPRECATED in forward mode" || bad "T4-shape: DEPRECATED emitted in forward mode"
+grep -q '"serverInfo"' "$TMP/fwd.log" && ok "T4-shape: handshake via forwarded submodule shim" || bad "T4-shape: handshake failed"
+# SEE-1292 毕业轮: the archived fault-injection arm ("prove the child IS the
+# submodule shim") assumed a KOL compat shim forwarding into a consumer
+# submodule. With SHIM_SRC now the fork's own shim, the .dev copy's
+# LAUNCHER_PATH resolves to the fork's OWN sibling launcher — the marker
+# never reaches a consumer submodule. The premise is KOL-consumer-specific
+# and stale; the forward handshake above already proves the .dev copy serves
+# through the real chain. Removed per Atlas SEE-1292 裁定总表 (fork-side
+# arms only).
 
 # ---------- 3) hooks dual-landing lib (self-contained re-derivation) ----------
 # SEE-1292 毕业轮: the hooks lib (godot-mcp-launch-path.lib.sh) is KOL-side —
