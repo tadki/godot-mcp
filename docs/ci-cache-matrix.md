@@ -51,7 +51,7 @@
 
 本表对账基准（2026-09-12 实读；②c 落地后回改状态）：
 
-- godot-mcp（本库）：`gh workflow list` 6 条；fast tier 4m39s、special 43s 实测 run 全绿（SEE-1291）；②c drift 收敛 -2（ws4/t16 毕业，launch-ci.yml +2 项 / launch-special.yml -2 项，清单 diff=0 已对账）；**AC-DECPL-006 Godot 缓存已落地**——launch-ci.yml shell-harnesses 接入 actions/cache（key `godot-Linux-4.6.2-stable`），t1_import 类测试毕业进 fast tier；缓存证据 run <run-id-a>（cache not found，写入）→ <run-id-b>（cache hit，`Cache restored from key: godot-Linux-4.6.2-stable`）双 run success。
+- godot-mcp（本库）：`gh workflow list` 6 条；fast tier 4m39s、special 43s 实测 run 全绿（SEE-1291）；②c drift 收敛 -2（ws4/t16 毕业，launch-ci.yml +2 项 / launch-special.yml -2 项，清单 diff=0 已对账）；**AC-DECPL-006 Godot 缓存已落地**——launch-ci.yml shell-harnesses 接入 actions/cache（key `godot-Linux-4.6.2-stable`），t1_import 类测试毕业进 fast tier；缓存证据 run 35072315866（cache not found，写入）→ 35072836458（cache hit，`Cache restored from key: godot-Linux-4.6.2-stable`）双 run success。
 - KOL：`.github/workflows/` 3 条；ci-gut-tests ②c 前最近 run 39s success（push master，run 34665814505）；②c 缓存落地见 KOL `ci-gut-tests.yml` Godot 段，缓存证据 run 34688009654（cache not found，写入）→ 34688072659（cache hit，`Cache restored from key: godot-Linux-4.6.2-stable`）双 run success。
 - qa-toolkit：②b 新增 `ci-pytest.yml` 1 条（pip 缓存 run 34685325408 冷 22s / 34685485739 命中 19s）。
 
