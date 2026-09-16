@@ -14,8 +14,8 @@
 # CLI has NOT yet emitted 'Connected to Godot'. Pre-fix the call was flushed
 # into the still-connecting npx and failed "Not connected to Godot".
 #
-# This test drives the fork CLI path (`cliConnectSignalExpected()` true via a
-# KOL_GODOT_MCP_CMD path containing 'forks/godot-mcp') with a mock CLI that
+# This test drives the fork CLI path (`cliConnectSignalExpected()` true via
+# GODOT_MCP_FORK_CLI pointing at the mock) with a mock CLI that
 # delays its 'Connected to Godot' stderr line, and asserts:
 #
 #   R.1  pre-warm: the first tools/call (id=2) is HELD, not forwarded to the
@@ -40,14 +40,14 @@ lib_init
 PORT=$(find_free_port)
 
 # --- Mock fork CLI -----------------------------------------------------------
-# Lives under a 'forks/godot-mcp' path so cliConnectSignalExpected() resolves
-# true. Answers initialize + tools/call like the stable mock, but writes
+# Answers initialize + tools/call like the stable mock, but writes
 # 'Connected to Godot' to stderr ONLY after a delay (simulating the CLI's
 # WS-connect chain still racing the cold boot). Logs every inbound line to
 # MOCK_CLI_INBOX so the test can detect premature forwarding.
-FORK_DIR="$TMPDIR/forks/godot-mcp"
-mkdir -p "$FORK_DIR"
-MOCK_CLI="$FORK_DIR/mock-cli.js"
+# SEE-1292 LOW-2: the mock no longer lives under a 'forks/godot-mcp' path —
+# cliConnectSignalExpected() now matches via GODOT_MCP_FORK_CLI (set below),
+# not a path substring. The mock path is neutral.
+MOCK_CLI="$TMPDIR/fork-cli-mock.js"
 MOCK_CLI_INBOX="$TMPDIR/cli.inbox"
 : > "$MOCK_CLI_INBOX"
 # Delay (ms) before the mock emits 'Connected to Godot'. Long enough that the
@@ -92,10 +92,30 @@ sep "R: cold-reuse fork-CLI gate — held call must wait for CLI 'Connected to G
 LIS_PID=$(start_listener "$PORT")
 note "pre-bound WS listener on $PORT (pid=$LIS_PID)"
 
+# SEE-1292 LOW-1 (tidy): the pre-bound listener must survive the proxy's
+# port-arbiter eviction so the reuse path (not cold-spawn) runs. The arbiter
+# sees a bound port with no held-dir record and returns `evict` (dead proxy,
+# missing runtime id) — the listener is killed and the editor never warms.
+# Fix: disable the arbiter (KOL_PORT_ARBITER=off) so the proxy falls through
+# to the legacy SEE-1129 sidecar guard, and plant the sidecar + lease so the
+# guard sees "holder is THIS slot's editor" → lastSpawnReused=true.
+# The proxy resolves the sidecar from GODOT_EDITOR_LOG_FILE (replacing .log
+# with .worktree); we point both at our mock worktree.
+EDITOR_LOG="$TMPDIR/editor.log"; : > "$EDITOR_LOG"
+echo "$MOCK_WORKTREE" > "${EDITOR_LOG%.log}.worktree"
+mkdir -p "$MOCK_WORKTREE/.godot"
+cat > "$MOCK_WORKTREE/.godot/mcp-lease.json" <<'EOF'
+{"schema_version":2,"state":"active","agent":"Bachi","runtime_id":"see1117-test","port":0}
+EOF
+
 # start_proxy with KOL_GODOT_MCP_CMD pointing at the fork-path mock CLI so the
 # resolver picks it and cliConnectSignalExpected() returns true. Override the
 # helper's KOL_DIRECT_GODOT_MCP=0 default by passing KOL_GODOT_MCP_CMD last
 # (later env tokens win in the env(1) list).
+# SEE-1292 AC-DECPL-010: cliConnectSignalExpected() now matches the resolved CLI
+# path against GODOT_MCP_FORK_CLI (the fork identity), not the stale
+# 'forks/godot-mcp' string. The test sets GODOT_MCP_FORK_CLI to the mock so the
+# gate activates (the mock DOES emit 'Connected to Godot', like the real fork).
 start_proxy \
     "GODOT_PORT=$PORT" \
     "KOL_AGENT_NAME=Bachi" \
@@ -107,17 +127,22 @@ start_proxy \
     "KOL_WARMUP_TIMEOUT_MS=20000" \
     "KOL_HOT_WARMUP_TIMEOUT_MS=20000" \
     "KOL_PROBE_INTERVAL_MS=200" \
+    "KOL_PORT_ARBITER=off" \
+    "GODOT_EDITOR_LOG_FILE=$EDITOR_LOG" \
     "MOCK_NPX_LOG=$TMPDIR/npx.log" \
+    "GODOT_MCP_FORK_CLI=$MOCK_CLI" \
     "KOL_GODOT_MCP_CMD=$MOCK_CLI"
 
 send_line "$INIT_LINE"
 wait_for "$PROXY_OUT" '"id":1' 1500 || ko "R.pre: initialize not answered"
 
 # Confirm the resolver picked the fork-path mock so cliConnectSignalExpected()=true.
-if grep -q 'KOL_GODOT_MCP_CMD' "$PROXY_ERR"; then
-    ok "R.0: proxy resolved CLI via KOL_GODOT_MCP_CMD (fork-path mock, cliConnectSignalExpected=true)"
+# The resolver logs the CANONICAL env name (GODOT_MCP_GODOT_MCP_CMD) even when the
+# value arrived via the legacy alias (KOL_GODOT_MCP_CMD) — grep either.
+if grep -qE 'GODOT_MCP_GODOT_MCP_CMD|KOL_GODOT_MCP_CMD' "$PROXY_ERR"; then
+    ok "R.0: proxy resolved CLI via env override (fork-path mock, cliConnectSignalExpected=true)"
 else
-    ko "R.0: proxy did NOT log the KOL_GODOT_MCP_CMD source (cliConnectSignalExpected may be false)"
+    ko "R.0: proxy did NOT log the env override source (cliConnectSignalExpected may be false)"
 fi
 
 # Fire the first tools/call. The port is pre-bound -> lastSpawnReused=true, but

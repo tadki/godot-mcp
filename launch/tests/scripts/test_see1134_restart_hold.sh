@@ -112,11 +112,11 @@ EOF
 
 # The KOL_GODOT_MCP_CMD resolver runs `node <path>` on this script. The path
 # MUST be a JS file (the resolver would otherwise fail with "Unexpected
-# string"). cliConnectSignalExpected() checks args.some(a => a.includes(
-# 'forks/godot-mcp')) — by giving the file a name that contains the magic
-# token, args[0] contains it and the proxy treats this as the fork CLI.
-KOL_GODOT_MCP_CMD_OVERRIDE="$TMPDIR/forks/godot-mcp-mock.mjs"
-mkdir -p "$TMPDIR/forks"
+# string"). SEE-1292 AC-DECPL-010: cliConnectSignalExpected() now matches the
+# resolved CLI path against GODOT_MCP_FORK_CLI (the fork identity), not the
+# stale 'forks/godot-mcp' string — set GODOT_MCP_FORK_CLI to the mock so the
+# gate activates (the mock DOES emit 'Connected to Godot', like the real fork).
+KOL_GODOT_MCP_CMD_OVERRIDE="$TMPDIR/fork-cli-mock.mjs"
 cp "$TMPDIR/mock-npx-restart.mjs" "$KOL_GODOT_MCP_CMD_OVERRIDE"
 
 PORT=$(find_free_port)
@@ -227,6 +227,7 @@ start_proxy \
     "KOL_WS_PROBE_DISABLE=1" \
     "GODOT_EDITOR_LOG_FILE=$EDITOR_LOG" \
     "MOCK_NPX_LOG=$TMPDIR/npx.log" \
+    "GODOT_MCP_FORK_CLI=$KOL_GODOT_MCP_CMD_OVERRIDE" \
     "KOL_GODOT_MCP_CMD=$KOL_GODOT_MCP_CMD_OVERRIDE" \
     "KOL_RESTART_HOLD_TIMEOUT_MS=4000" \
     "MOCK_DROP_FLAG=$DROP_FLAG" \

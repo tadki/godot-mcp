@@ -33,7 +33,9 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ADDON_GUARD = join(__dirname, '../../../addons/godot_mcp/game_bridge/mcp_exec_guard.gd');
-const FORK_EXEC = '/mnt/d/GodotProjects/forks/godot-mcp/server/dist/tools/exec.js';
+// SEE-1292 LOW-2: resolve the fork dist from the submodule's own location,
+// not a hardcoded D-drive path from the pre-SEE-1273 layout.
+const FORK_EXEC = join(__dirname, '..', '..', '..', 'server', 'dist', 'tools', 'exec.js');
 
 let PASS = 0, FAIL = 0;
 const failures = [];
