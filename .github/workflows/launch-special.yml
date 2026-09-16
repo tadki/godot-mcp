@@ -91,11 +91,6 @@ jobs:
           echo "  launch/tests/e2e/godot-mcp/run_all.mjs        (31 KOL game e2e, live Windows editor)"
           echo "  launch/tests/e2e/see1240/, see1240_qa/        (real-machine clients, KOL_ROOT)"
           echo "  launch/tests/e2e/godot-mcp/test_see1070_ws_single_client_4001.mjs (live editor; outside run_all's tests/ scan)"
-          echo "  launch/tests/hooks/see1273/test_see1273_t1_tree_consistency.sh (snapshot-branch archive harness; SKIPs gracefully)"
-          echo "  launch/tests/hooks/see1273/test_see1273_t2_chain.sh    (KOL shim replay)"
-          echo "  launch/tests/hooks/see1273/test_see1273_t3d1_antidrown.sh (KOL gitlink probe)"
-          echo "  launch/tests/hooks/see1273/test_see1273_t3_chain.sh (KOL shim replay)"
-          echo "  launch/tests/hooks/see1273/test_see1273_t4_chain.sh (KOL shim replay)"
           echo "  launch/test_see1273_t2_param.sh               (runs green headless — see long bucket note)"
 
   drift-watch:

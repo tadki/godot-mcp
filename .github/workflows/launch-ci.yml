@@ -84,6 +84,10 @@ jobs:
             echo "::endgroup::"
           done <<'LIST'
           launch/tests/hooks/see1273/test_see1273_t1_import.sh
+          launch/tests/hooks/see1273/test_see1273_t1_tree_consistency.sh
+          launch/tests/hooks/see1273/test_see1273_t2_chain.sh
+          launch/tests/hooks/see1273/test_see1273_t3_chain.sh
+          launch/tests/hooks/see1273/test_see1273_t4_chain.sh
           launch/tests/scripts/test_ac_m3reorg_013_shell_guard_empty.sh
           launch/tests/scripts/test_see1070_proxy_default_port_guard.sh
           launch/tests/scripts/test_see1077_lease_fast_fail.sh

@@ -29,15 +29,19 @@
 3. **新测试落位流程**：先答「被测资产在哪个库」→ 该库测试树；跨界（如 qa-toolkit 真实 GUT 冒烟）默认归被测项目侧，工具侧只留 mock 单测，避免同资产双树漂移。
 4. **归属即维护权**：测试红时修测试的库就是资产所在库；drift 名单（本库 launch-special drift bucket）由本库收敛。
 
+**SEE-1292 毕业轮归属修正记录**（Atlas 裁定总表，issue thread 2026-09-16）：
+- **t3d1_antidrown**（被测 `gitlink-probe.sh` = KOL 仓库级工具链，规则 1 归 `.dev/tests/`）→ 从本库删除；核对 KOL `.dev/tests/` 已有等价覆盖（`hooks/test_push_guard_gitlink_see1268.sh` 覆盖 dangling/healthy/no-gitmodules 三态、`unit/devtools/test_repo_sync_gitlink_guard_see1268.py` 覆盖 `ensure_gitlinks_reachable` 语义），直接删不迁。
+- **t4_chain arm(6)**（T4 commit diff 审计 KOL 仓 git 历史）→ 删除：被测对象是 SEE-1273 T4 一次性历史切换，迁移已完成、gitlink 已自动前移，语义过时。
+
 ## 3. 「怎么保证测试在 CI 环境最大可用」——headless 可跑性分级
 
 四级分类（本库 launch-special 三桶先例，三库通用口径）：
 
 | 级别 | 定义 | CI 处置 | 例 |
 |---|---|---|---|
-| **fast** | 干净 ubuntu-latest checkout 上 headless 必绿，≤分钟级 | push/PR 硬闸口 | qa-toolkit 65 pytest 项；本库 fast tier（含 SEE-1292 ②c 自 drift 毕业的 ws4_status_doctor / t16_runtime_identity 两项）；KOL GUT unit |
+| **fast** | 干净 ubuntu-latest checkout 上 headless 必绿，≤分钟级 | push/PR 硬闸口 | qa-toolkit 65 pytest 项；本库 fast tier（含 SEE-1292 ②c 自 drift 毕业的 ws4_status_doctor / t16_runtime_identity 两项 + 毕业轮 see1273 链测试 t1_import / t1_tree_consistency / t2_chain / t3_chain / t4_chain 五项）；KOL GUT unit |
 | **long** | headless 必绿但 ≥2min | dispatch/周 cron，非闸口 | 本库 t14 reaper grace（~90s+ 真实时钟） |
-| **env-bound** | 需要 WSL2 dev box 资产（Windows Godot、live editor、/mnt/d、真实 lease 冲突） | **CI 显式留档 skip**（documented skip），永久 dev box；禁止伪装成 CONDITIONAL PASS | 本库 env bucket（测试树口径 6 项，见 launch-special.yml env echo 行——t1_import 已毕业进 fast tier）；KOL 实机测 |
+| **env-bound** | 需要 WSL2 dev box 资产（Windows Godot、live editor、/mnt/d、真实 lease 冲突） | **CI 显式留档 skip**（documented skip），永久 dev box；禁止伪装成 CONDITIONAL PASS | 本库 env bucket（测试树口径 2 项：e2e 两类——run_all/see1240/4001；SEE-1292 毕业轮已将 see1273 链测试全部毕业进 fast tier）；KOL 实机测 |
 | （drift） | 当前红、非环境问题 | 非 blocking evidence run，收敛后毕业进 fast | 本库 drift 名单（SEE-1292 ②c 毕业 ws4/t16 两项） |
 
 最大可用性的四条通用手段：

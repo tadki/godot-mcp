@@ -21,7 +21,7 @@ cd "$TMP/fork" && git fetch -q origin main && git checkout -q origin/main
 
 # 1) re-run upstream suite (20 cases pre-T2-M1, 24 after §7 cross-process cases)
 if bash launch/test_see1273_t2_param.sh > "$TMP/param.log" 2>&1; then
-  grep -qE 'PASS=(20|24) FAIL=0' "$TMP/param.log" && ok "upstream suite all-green reproduced ($(grep -oE 'PASS=[0-9]+ FAIL=0' "$TMP/param.log"))" || bad "upstream suite count mismatch"
+  grep -qE 'PASS=(20|24|32) FAIL=0' "$TMP/param.log" && ok "upstream suite all-green reproduced ($(grep -oE 'PASS=[0-9]+ FAIL=0' "$TMP/param.log"))" || bad "upstream suite count mismatch"
 else
   bad "upstream suite exited non-zero"
 fi
@@ -80,7 +80,9 @@ if [[ -n "$FORKCLI" ]]; then
   LPID=$!; sleep 25; kill $LPID 2>/dev/null; wait $LPID 2>/dev/null
   grep -q "stage=FORK_WIRED msg=\"godot-mcp served from owner fork\" cli=$FORKCLI" "$TMP/chainB.log" \
     && ok "form B: GODOT_MCP_FORK_CLI seam wired (FORK_WIRED with env value)" || bad "form B: seam not honored"
-  grep -q 'launching godot-mcp via node .* (KOL_GODOT_MCP_CMD)' "$TMP/chainB.log" && ok "form B: proxy spawned env-specified CLI" || bad "form B: proxy did not use env CLI"
+  # The resolver logs the CANONICAL env name (GODOT_MCP_GODOT_MCP_CMD) even
+  # when the value arrived via the legacy alias — grep either (SEE-1292 ②a).
+  grep -qE 'launching godot-mcp via node .* \((GODOT_MCP_GODOT_MCP_CMD|KOL_GODOT_MCP_CMD)\)' "$TMP/chainB.log" && ok "form B: proxy spawned env-specified CLI" || bad "form B: proxy did not use env CLI"
   grep -q 'intentional_release' "$TMP/chainB.log" && ok "form B: intentional_release guard fired" || bad "form B: guard missing"
 else
   bad "form B skipped: no npx cache CLI found"
