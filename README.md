@@ -5,16 +5,13 @@
 [![Node 20+](https://img.shields.io/badge/Node-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/tadki/godot-mcp/blob/main/LICENSE)
 
-Fork of [satelliteoflove/godot-mcp](https://github.com/satelliteoflove/godot-mcp) maintained as the **runtime library** for the [KingOfLikes](https://github.com/tadki/KingOfLikes-Godot) project: the Godot editor addon, the MCP server, a multi-agent **launch/ control plane** (per-agent port allocation, sidecar lease lifecycle, port arbiter, reaper), and the `launch/tests/` test tree.
+Fork of [satelliteoflove/godot-mcp](https://github.com/satelliteoflove/godot-mcp) maintained as a **runtime library**: the Godot editor addon, the MCP server, a multi-agent **launch/ control plane** (per-agent port allocation, sidecar lease lifecycle, port arbiter, reaper), and the `launch/tests/` test tree.
 
 Give your AI assistant eyes and hands in the Godot editor — and a running game it can actually playtest.
 
-## Repository layout (2-repo architecture)
+## Repository layout
 
 ```text
-tadki/KingOfLikes-Godot        ← consumer repo (the game)
-└── addons/godot_mcp           ← THIS repo, mounted as a submodule (pin via gitlink)
-
 tadki/godot-mcp (this fork)    ← runtime library
 ├── commands/ core/ ...        ← editor addon (GDScript) — loaded by Godot
 ├── server/                    ← MCP server (Node/TypeScript), stdio ⇄ WebSocket bridge
@@ -25,7 +22,7 @@ tadki/godot-mcp (this fork)    ← runtime library
 └── docs/                      ← architecture, tools reference, runtime-state guide
 ```
 
-The fork carries a patch layer on top of upstream: multi-agent port isolation (SEE-976…1152), sidecar-based lease lifecycle replacing project.godot marker pinning (SEE-1117 Direction 3, SEE-1240 WS-8), a port arbiter/reaper (SEE-1129/1148), and per-agent worktree guards. KingOfLikes consumes all of it through the submodule; nothing in the game repo duplicates this logic.
+The fork carries a patch layer on top of upstream: multi-agent port isolation (SEE-976…1152), sidecar-based lease lifecycle replacing project.godot marker pinning (SEE-1117 Direction 3, SEE-1240 WS-8), a port arbiter/reaper (SEE-1129/1148), and per-agent worktree guards. It is consumed as a vendored addon / git submodule by downstream game projects; nothing on the consumer side duplicates this logic.
 
 ## What the server does
 
@@ -52,7 +49,7 @@ This fork's main addition over upstream. Each agent (Claude-Code session) gets a
 - **Reaper** — `reap-stale-leases.sh` reclaims dead-proxy leases, orphaned editors, and headless orphans; optional systemd timer (`godot-mcp-reaper.{service,timer}`).
 - **Proxy** — `godot-mcp-proxy.mjs` masks 50–60s cold editor starts behind a <1s MCP initialize, holds the first tools/call until the CLI is connected, and handles hot reuse/eviction.
 
-Consumer-side hooks (stop-hook sanitize, push guard) live in the KingOfLikes repo under `.claude/hooks/`.
+Consumer-side hooks (stop-hook sanitize, push guard) live in the consumer repo under `.claude/hooks/`.
 
 ## Testing (`launch/tests/`)
 
@@ -87,7 +84,7 @@ npm test                # unit + schema-snapshot tests
 npm run test:protocol   # wire-level smoke of the built server
 ```
 
-The vendored addon (`commands/`, `core/`, addon root scripts) is consumed as-is by KingOfLikes; runtime-behavior changes belong in `launch/` or `server/` and must keep both consumers green.
+The vendored addon (`commands/`, `core/`, addon root scripts) is consumed as-is by downstream projects; runtime-behavior changes belong in `launch/` or `server/` and must keep consumers green.
 
 ## Documentation
 
