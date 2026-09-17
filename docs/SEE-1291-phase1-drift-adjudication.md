@@ -78,7 +78,7 @@
 | `test_see1152_mcp_daily_call_stability.sh` | 需 live runtime（port registry / editor 生命周期文件） | 专项层（workflow_dispatch / 定时） |
 | `test_see1117_live_e2e_editor_port.sh` / `test_see1117_live_sidecar_e2e.sh` / `test_see1117_suite_f_prime_6agents.sh` | 需真实编辑器 / 分钟级长跑 | 专项层（Windows runner 或实机 self-hosted） |
 | `launch/tests/e2e/`、`launch/tests/abtest/` | 需真实编辑器 + WS | 专项层 |
-| `launch/tests/hooks/see1273/` | KOL_ROOT 必填（`t3d1` 已硬校验）；`t1_tree_consistency` 为归档-only harness | 专项层（KOL_ROOT 就绪的环境） |
+| `launch/tests/hooks/see1273/` | ~~KOL_ROOT 必填（`t3d1` 已硬校验）~~；`t1_tree_consistency` 为归档-only harness。SEE-1292 毕业轮（2026-09-16）：t3d1 因 KOL 侧 `.dev/tests/` 已有等价覆盖（`test_push_guard_gitlink_see1268.sh` dangling/healthy + `unit/devtools/test_repo_sync_gitlink_guard_see1268.py`）而删除；t1_import/t1_tree_consistency/t2_chain/t3_chain/t4_chain 全部毕业进 fast tier（本文件为 SEE-1291 期存档，实际以 launch-ci.yml 为准） | 专项层（KOL_ROOT 就绪的环境） |
 | `test_see976_mcp_multi_port.sh` | 依赖退役路径 `.dev/godot-mcp/docs/...`（fatal 退出） | 归档评估：其锚定文档已随 SEE-1273 T5-F 退役，建议下一清理轮归档该套件 |
 
 **C. 衔接说明（与 Atlas/Bachi CI 分级方案）**

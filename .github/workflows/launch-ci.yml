@@ -37,8 +37,32 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
         working-directory: server
+      # SEE-1292 AC-DECPL-006: cache the UNPACKED binary (single ELF ~130MB),
+      # version inside the key so a Godot bump can never serve a stale cached
+      # binary (design: qa-toolkit docs/godot-binary-cache-design.md §2). Same
+      # template as KOL ci-gut-tests.yml — the headless-runnable launch tests
+      # (t1_import class) graduate into this gate once the binary is cached.
+      - name: Cache Godot binary
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/godot
+          key: godot-${{ runner.os }}-4.6.2-stable
+      - name: Install Godot 4.x (cache miss path)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          GODOT_VERSION=4.6.2
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          sudo mv "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+          godot --version
+      # Fail fast when the restored cache entry is corrupt — a broken ELF must
+      # die here, not at the test layer with a confusing parse error.
+      - name: Verify Godot binary health
+        run: godot --version
       - name: Run fast-tier shell harnesses
-        timeout-minutes: 8
+        timeout-minutes: 10
         run: |
           set -uo pipefail
           PASS=0; FAIL=0; FAILED=()
@@ -50,7 +74,7 @@ jobs:
               *)     runner="bash" ;;
             esac
             echo "::group::$runner $t"
-            if timeout 180 "$runner" "$t" </dev/null; then
+            if timeout 300 "$runner" "$t" </dev/null; then
               PASS=$((PASS+1)); echo "[fast-tier] PASS $t"
             else
               rc=$?
@@ -59,6 +83,11 @@ jobs:
             fi
             echo "::endgroup::"
           done <<'LIST'
+          launch/tests/hooks/see1273/test_see1273_t1_import.sh
+          launch/tests/hooks/see1273/test_see1273_t1_tree_consistency.sh
+          launch/tests/hooks/see1273/test_see1273_t2_chain.sh
+          launch/tests/hooks/see1273/test_see1273_t3_chain.sh
+          launch/tests/hooks/see1273/test_see1273_t4_chain.sh
           launch/tests/scripts/test_ac_m3reorg_013_shell_guard_empty.sh
           launch/tests/scripts/test_see1070_proxy_default_port_guard.sh
           launch/tests/scripts/test_see1077_lease_fast_fail.sh

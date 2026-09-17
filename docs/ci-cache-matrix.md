@@ -6,7 +6,7 @@
 
 | 库 | workflow（现有清单） | 触发 | 缓存需求 | 已落地 | Godot 依赖 |
 |---|---|---|---|---|---|
-| **godot-mcp**（本库） | `ci.yml`（server build+test+protocol）、`launch-ci.yml`（fast tier）、`launch-special.yml`（long/env/drift 三桶，dispatch+周 cron）、`release.yml`、`docs-live.yml`、`claude.yml` | push/PR main；special 手动+cron | **npm**（setup-node cache，server/package-lock）✅；Godot 二进制层未落地——本库 CI 现无 Godot 依赖（t1_import 类测试在 env bucket 留档，毕业进 CI 时按 qa-toolkit `docs/godot-binary-cache-design.md` §2 同模板落地） | npm ✅ / Godot ⏳ | headless 可用（t1_import 类）；GUI 实机层留 dev box |
+| **godot-mcp**（本库） | `ci.yml`（server build+test+protocol）、`launch-ci.yml`（fast tier）、`launch-special.yml`（long/env/drift 三桶，dispatch+周 cron）、`release.yml`、`docs-live.yml`、`claude.yml` | push/PR main；special 手动+cron | **npm**（setup-node cache，server/package-lock）✅；**Godot 二进制** ✅ SEE-1292 AC-DECPL-006 落地——launch-ci.yml shell-harnesses 段接入 actions/cache@v4（key `godot-<os>-4.6.2-stable`，cache-hit 跳过下载 + `godot --version` fail-fast，同 KOL ci-gut-tests 模板），t1_import 类 headless 测试毕业进 fast tier 实跑 | npm ✅ / Godot ✅ | headless 可用（t1_import 类）；GUI 实机层留 dev box |
 | **KOL**（tadki/KingOfLikes-Godot） | `ci-gut-tests.yml`（GUT unit 硬闸口）、`ci-lint.yml`（Phase A advisory）、`pr-cleanup.yml` | push/PR master；gut-tests 手动 dispatch（②c，shared 分支缓存证据 run 用） | **Godot 二进制** ✅ SEE-1292 ②c 落地（actions/cache@v4，key `godot-<os>-4.6.2-stable`，cache-hit 跳过下载 + `godot --version` fail-fast）；pip（gdtoolkit，ci-lint）未缓存（advisory 低频，暂缓） | Godot ✅（②c） | headless GUT 必须；实机测留 dev box |
 | **qa-toolkit**（tadki/godot-qa-toolkit） | `ci-pytest.yml`（65 项 pytest 单测） | push master / 任意 PR / 手动 dispatch | **pip**（gdtoolkit wheel）✅ ②b 落地 | ✅ | 零（单测全 mock GUT 路径） |
 
@@ -29,15 +29,19 @@
 3. **新测试落位流程**：先答「被测资产在哪个库」→ 该库测试树；跨界（如 qa-toolkit 真实 GUT 冒烟）默认归被测项目侧，工具侧只留 mock 单测，避免同资产双树漂移。
 4. **归属即维护权**：测试红时修测试的库就是资产所在库；drift 名单（本库 launch-special drift bucket）由本库收敛。
 
+**SEE-1292 毕业轮归属修正记录**（Atlas 裁定总表，issue thread 2026-09-16）：
+- **t3d1_antidrown**（被测 `gitlink-probe.sh` = KOL 仓库级工具链，规则 1 归 `.dev/tests/`）→ 从本库删除；核对 KOL `.dev/tests/` 已有等价覆盖（`hooks/test_push_guard_gitlink_see1268.sh` 覆盖 dangling/healthy/no-gitmodules 三态、`unit/devtools/test_repo_sync_gitlink_guard_see1268.py` 覆盖 `ensure_gitlinks_reachable` 语义），直接删不迁。
+- **t4_chain arm(6)**（T4 commit diff 审计 KOL 仓 git 历史）→ 删除：被测对象是 SEE-1273 T4 一次性历史切换，迁移已完成、gitlink 已自动前移，语义过时。
+
 ## 3. 「怎么保证测试在 CI 环境最大可用」——headless 可跑性分级
 
 四级分类（本库 launch-special 三桶先例，三库通用口径）：
 
 | 级别 | 定义 | CI 处置 | 例 |
 |---|---|---|---|
-| **fast** | 干净 ubuntu-latest checkout 上 headless 必绿，≤分钟级 | push/PR 硬闸口 | qa-toolkit 65 pytest 项；本库 fast tier（含 SEE-1292 ②c 自 drift 毕业的 ws4_status_doctor / t16_runtime_identity 两项）；KOL GUT unit |
+| **fast** | 干净 ubuntu-latest checkout 上 headless 必绿，≤分钟级 | push/PR 硬闸口 | qa-toolkit 65 pytest 项；本库 fast tier（含 SEE-1292 ②c 自 drift 毕业的 ws4_status_doctor / t16_runtime_identity 两项 + 毕业轮 see1273 链测试 t1_import / t1_tree_consistency / t2_chain / t3_chain / t4_chain 五项）；KOL GUT unit |
 | **long** | headless 必绿但 ≥2min | dispatch/周 cron，非闸口 | 本库 t14 reaper grace（~90s+ 真实时钟） |
-| **env-bound** | 需要 WSL2 dev box 资产（Windows Godot、live editor、/mnt/d、真实 lease 冲突） | **CI 显式留档 skip**（documented skip），永久 dev box；禁止伪装成 CONDITIONAL PASS | 本库 env bucket（测试树口径 7 项，见 launch-special.yml env echo 行）；KOL 实机测 |
+| **env-bound** | 需要 WSL2 dev box 资产（Windows Godot、live editor、/mnt/d、真实 lease 冲突） | **CI 显式留档 skip**（documented skip），永久 dev box；禁止伪装成 CONDITIONAL PASS | 本库 env bucket（测试树口径 2 项：e2e 两类——run_all/see1240/4001；SEE-1292 毕业轮已将 see1273 链测试全部毕业进 fast tier）；KOL 实机测 |
 | （drift） | 当前红、非环境问题 | 非 blocking evidence run，收敛后毕业进 fast | 本库 drift 名单（SEE-1292 ②c 毕业 ws4/t16 两项） |
 
 最大可用性的四条通用手段：
@@ -51,7 +55,7 @@
 
 本表对账基准（2026-09-12 实读；②c 落地后回改状态）：
 
-- godot-mcp（本库）：`gh workflow list` 6 条；fast tier 4m39s、special 43s 实测 run 全绿（SEE-1291）；②c drift 收敛 -2（ws4/t16 毕业，launch-ci.yml +2 项 / launch-special.yml -2 项，清单 diff=0 已对账）。
+- godot-mcp（本库）：`gh workflow list` 6 条；fast tier 4m39s、special 43s 实测 run 全绿（SEE-1291）；②c drift 收敛 -2（ws4/t16 毕业，launch-ci.yml +2 项 / launch-special.yml -2 项，清单 diff=0 已对账）；**AC-DECPL-006 Godot 缓存已落地**——launch-ci.yml shell-harnesses 接入 actions/cache（key `godot-Linux-4.6.2-stable`），t1_import 类测试毕业进 fast tier；缓存证据 run 35072315866（cache not found，写入）→ 35072836458（cache hit，`Cache restored from key: godot-Linux-4.6.2-stable`）双 run success。
 - KOL：`.github/workflows/` 3 条；ci-gut-tests ②c 前最近 run 39s success（push master，run 34665814505）；②c 缓存落地见 KOL `ci-gut-tests.yml` Godot 段，缓存证据 run 34688009654（cache not found，写入）→ 34688072659（cache hit，`Cache restored from key: godot-Linux-4.6.2-stable`）双 run success。
 - qa-toolkit：②b 新增 `ci-pytest.yml` 1 条（pip 缓存 run 34685325408 冷 22s / 34685485739 命中 19s）。
 

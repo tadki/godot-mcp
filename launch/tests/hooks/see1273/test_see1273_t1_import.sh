@@ -16,6 +16,8 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 git init -q "$TMP/consumer" && cd "$TMP/consumer" && git checkout -q -b master
+# CI runners may lack a git identity — the commit at the next line needs one.
+git config user.name "CI" && git config user.email "ci@example.invalid"
 git submodule add -q "$FORK_URL" addons/godot_mcp >/dev/null 2>&1
 git add -A && git commit -qm "consumer: submodule to godot-mcp main"
 
