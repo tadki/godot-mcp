@@ -40,7 +40,6 @@ import { resolveGodotMcpCommand } from './godot-mcp-resolve.mjs';
 import {
     enrichScreenshotResponse,
     spliceEnrichment,
-    resolveStaleCaptureMs,
 } from './see1240-screenshot-contract.mjs';
 import {
     expandDragInToolsCall,
