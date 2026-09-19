@@ -315,7 +315,7 @@ export const DESCRIPTION_PATCHES = [
     {
         tool: 'godot_editor_read',
         anchor: 'screenshot_game needs a running game, while every other action works in the bare editor.',
-        replace: 'screenshot_game needs a running game, while every other action works in the bare editor. SEE-1240 capture contract: every successful game screenshot carries _screenshot freshness metadata (capture_latency_ms, stale flag, auto_step provenance) and exports {png_path,width,height} written under .dev/godot-mcp/exports/ (full resolution when you omit max_width); pass arguments.auto_step=true to have one game-time frame stepped before capture (opt-in, frozen-friendly).',
+        replace: 'screenshot_game needs a running game, while every other action works in the bare editor. SEE-1240 capture contract: every successful game screenshot carries _screenshot freshness metadata (capture_latency_ms, stale flag, auto_step provenance) and exports {png_path,width,height} written under .dev/godot-mcp/exports/ (full resolution when you omit max_width; max_width is an UPPER BOUND, not a target — omit it or pass ≥ native width for a byte-identical native frame, pass < native width for a proportional downsize). Freshness threshold is GODOT_MCP_STALE_CAPTURE_MS (default 1500ms). Pass arguments.auto_step=true to have one game-time frame stepped before capture (opt-in, frozen-friendly).',
     },
     // SEE-1240 WS-6: the godot_exec constraint sentence comes from the exec
     // SSOT (see1240-exec-constraints.mjs) — same render as the proxy pre-check

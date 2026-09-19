@@ -34,8 +34,12 @@ const src = fs.readFileSync(PROXY, 'utf8');
 function extractFunction(name) {
     const fnStart = src.indexOf(`function ${name}`);
     if (fnStart === -1) throw new Error(`function ${name} not found in proxy`);
+    // Body opens at the first '{' AFTER the parameter list — a destructured
+    // '({ ... })' parameter would otherwise be mistaken for the body opener.
+    const closeParen = src.indexOf(')', fnStart);
+    if (closeParen === -1) throw new Error(`function ${name} has no parameter close paren`);
     let depth = 0, fnEnd = -1;
-    for (let i = src.indexOf('{', fnStart); i < src.length; i++) {
+    for (let i = src.indexOf('{', closeParen); i < src.length; i++) {
         if (src[i] === '{') depth++;
         else if (src[i] === '}') { depth--; if (depth === 0) { fnEnd = i + 1; break; } }
     }
@@ -179,4 +183,23 @@ test('§SPEC-015 DESCRIPTION_PATCHES godot_editor_read 通道注明 env 名与�
     assert.ok(patch, 'godot_editor_read patch exists');
     assert.match(patch.replace, /GODOT_MCP_STALE_CAPTURE_MS/);
     assert.match(patch.replace, /1500/);
+});
+
+// --- §SPEC-016: retention 定稿 — report-only，零自动清理 --------------------------
+
+test('§SPEC-016 capture contract 无任何自动清理/删除行为（零 unlink/rmdir on exports；retention 仅注释）', async () => {
+    const contractSrc = fs.readFileSync(path.resolve(HERE, '..', '..', 'see1240-screenshot-contract.mjs'), 'utf8');
+    // 剥掉注释后再查删除调用——retention 定稿说明本身在注释里出现 unlink/rm 是合法的
+    const codeOnly = contractSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    assert.doesNotMatch(codeOnly, /\bunlink\b|\brmdir\b|rmSync|fs\.rm\b/);
+    assert.doesNotMatch(codeOnly, /retention/i);
+    // proxy 侧同样不得在 exports 目录上做清理调用
+    assert.doesNotMatch(src, /unlink\([^)]*exports/i);
+});
+
+test('§SPEC-016 capture contract 头注释定稿 retention 语义：默认零自动清理 + 手册化清理建议', async () => {
+    const contractSrc = fs.readFileSync(path.resolve(HERE, '..', '..', 'see1240-screenshot-contract.mjs'), 'utf8');
+    assert.match(contractSrc, /retention/i);
+    assert.match(contractSrc, /no automatic cleanup|零自动清理/i);
+    assert.match(contractSrc, /manual|手册/i);
 });
