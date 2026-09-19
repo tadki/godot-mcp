@@ -221,6 +221,30 @@ kill_editor_pid() {
     fi
 }
 
+# SEE-1316 (hardener): proxy-pid liveness. The recorded proxy_pid is a WSL-side
+# node process, so the native kill -0 path is always correct here — the
+# Windows/Get-Process branch of pid_alive does NOT apply (that one gates on a
+# godot* process name, which a node proxy must not satisfy). PID reuse by a
+# non-node process would defeat this check, same residual risk as the editor
+# pidfile path; the WSL /proc exe check below closes it where /proc exists.
+proxy_pid_alive() {
+    local pid="$1"
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    if [[ -r "/proc/$pid/exe" ]]; then
+        # D5-style anti-PID-reuse: the exe target must be a node-ish binary
+        # (node / nodejs). Readlink may fail transiently — fall back to kill -0.
+        local exe
+        exe="$(readlink "/proc/$pid/exe" 2>/dev/null || true)"
+        if [[ -n "$exe" ]]; then
+            case "${exe,,}" in
+                *node*) return 0 ;;
+                *) return 1 ;;   # PID reused by a non-node process
+            esac
+        fi
+    fi
+    kill -0 "$pid" 2>/dev/null
+}
+
 # Walk every mcp-lease.json under ROOT.
 while IFS= read -r lease; do
     [[ -n "$lease" ]] || continue
@@ -261,6 +285,7 @@ while IFS= read -r lease; do
             task_id: String(o.task_id||""),
             state: String(o.state||""), port: String(o.port||""), agent: String(o.agent||""),
             pid: o.configured_by_pid==null?"":String(o.configured_by_pid),
+            proxy_pid: o.proxy_pid==null?"":String(o.proxy_pid),
             worktree: String(o.worktree||""),
             configured_at: o.configured_at==null?"":String(o.configured_at),
             intentional_release: o.intentional_release===true
@@ -315,6 +340,9 @@ while IFS= read -r lease; do
     # cleanup below can remove directory-form lifecycle files.
     runtime_id="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).runtime_id||"")' "$fields" 2>/dev/null || echo "")"
     intentional_release="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).intentional_release?"true":"")' "$fields" 2>/dev/null || echo "")"
+    # SEE-1316 (hardener): the owning proxy's PID (proxy self-registers on warm;
+    # null on pre-fix sidecars → the proxy-dead branch is skipped for those).
+    proxy_pid="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).proxy_pid||"")' "$fields" 2>/dev/null || echo "")"
     if [[ -z "$runtime_id" ]]; then
         # v1 sidecar — derive runtime_id from worktree so the directory-form
         # files (possibly already written by a P1 re-run on the same slot) are
@@ -398,6 +426,19 @@ while IFS= read -r lease; do
     # editor + release the lease. This is the "正常退出秒级回收" path (T2).
     if [[ "$intentional_release" == "true" ]]; then
         is_stale=1; reason="intentional_release(proxy_exited,runtime=${runtime_id:-?})"
+    elif [[ -n "$proxy_pid" ]] && ! proxy_pid_alive "$proxy_pid"; then
+        # SEE-1316 (hardener) — reaper contract closure: the lease records its
+        # OWNING proxy's PID (proxy self-registers on warm via
+        # sidecar_set_proxy_pid). When that PID is dead, the lease has no
+        # client-side owner even though the editor itself may still be alive
+        # and the port listening — none of the crash branches above can match
+        # that shape (cfg_pid is the long-dead configure shell, editor alive,
+        # port hot), so a SIGKILLed/abandoned proxy used to strand the editor
+        # until the addon's own 45s-stale-client / 120s lease paths ran out.
+        # Guarded by the fresh-lease grace above (a just-configured slot whose
+        # proxy has not self-registered yet is NOT reaped here: the grace runs
+        # before this branch and its SKIP continues out of the loop).
+        is_stale=1; reason="proxy_pid_dead(proxy=${proxy_pid},editor=${editor_pid:-none},runtime=${runtime_id:-?})"
     elif (( cfg_dead == 1 )) && { [[ -z "$editor_pid" ]] || (( ed_dead == 1 )); }; then
         is_stale=1; reason="owner_pid_dead(cfg=${cfg_pid:-none},editor=${editor_pid:-none})"
     elif [[ -n "$editor_pid" ]] && (( ed_dead == 1 && cfg_dead == 1 )); then

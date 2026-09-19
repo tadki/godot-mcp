@@ -1172,6 +1172,13 @@ function forwardToNpx(line) {
 // that want the diagnostic without the wait).
 const TAKEOVER_TIMEOUT_MS = parseInt(process.env.GODOT_MCP_TAKEOVER_TIMEOUT_MS || process.env.KOL_TAKEOVER_TIMEOUT_MS || '30000', 10);
 const TAKEOVER_RETRY_MS = parseInt(process.env.GODOT_MCP_TAKEOVER_RETRY_MS || process.env.KOL_TAKEOVER_RETRY_MS || '2000', 10);
+// SEE-1316 (hardener): bounded self-heal after repeated takeover timeouts.
+// Threshold 3 ≈ 90s of proven-stuck holder (3 × 30s wait); disable with
+// GODOT_MCP_TAKEOVER_SELF_HEAL=off (test seam / operator escape hatch).
+const TAKEOVER_SELF_HEAL_THRESHOLD = parseInt(process.env.GODOT_MCP_TAKEOVER_SELF_HEAL_THRESHOLD || '3', 10);
+const TAKEOVER_SELF_HEAL_ENABLED = (process.env.GODOT_MCP_TAKEOVER_SELF_HEAL || 'on') !== 'off';
+let takeoverFailStreak = 0;
+let takeoverSelfHealInFlight = false;
 // Active takeover coordinator, or null when idle. Shape:
 //   { deadline, waiters: Set<id>, probeId: id|null, timer: NodeJS.Timeout|null }
 let takeover = null;
@@ -1274,6 +1281,42 @@ function failTakeover() {
             { warmupDiagnostic: editorBusyTakeoverDiagnostic() },
         ));
     }
+    // SEE-1316 (hardener) — bounded self-heal for a stuck-holder 4001 loop:
+    // TAKEOVER_TIMEOUT_MS waits are designed for a HEALTHY holder that will
+    // release shortly (its proxy disconnects / lease self-exits). When they
+    // fail repeatedly, the likely holder is a dead session's orphaned editor
+    // (the incumbent WS client is a ghost npx) — the addon's 45s
+    // stale-connection replacement should free it, but a half-open TCP peer
+    // can hold the slot past that window with no packets to age it out.
+    // After N consecutive timed-out takeovers, run ONE eviction pass scoped
+    // to THIS slot's recorded holder (stop-godot-editor + holder-scoped reap),
+    // then re-arm the warmup state machine so the next tools/call re-spawns.
+    // Bounded and conservative: a live foreign-runtime holder is untouched —
+    // evictStaleHolder's stop helper pins to the holder's own worktree, and
+    // the arbiter's busy_foreign verdict at spawn time remains the authority
+    // for cross-runtime contention.
+    takeoverFailStreak += 1;
+    if (TAKEOVER_SELF_HEAL_ENABLED && takeoverFailStreak >= TAKEOVER_SELF_HEAL_THRESHOLD && !takeoverSelfHealInFlight) {
+        takeoverFailStreak = 0;
+        takeoverSelfHealInFlight = true;
+        log(`WARNING: ${TAKEOVER_SELF_HEAL_THRESHOLD} consecutive takeover timeouts on port ${GODOT_PORT}; holder is likely an orphaned editor — evicting (bounded self-heal, SEE-1316) then re-arming warmup.`);
+        (async () => {
+            try {
+                await evictStaleHolder(await readHolderWorktree());
+            } catch (err) {
+                log(`takeover self-heal: non-fatal eviction failure: ${err && err.message ? err.message : err}`);
+            } finally {
+                // Re-arm: next tools/call walks the spawn/arbiter path against
+                // the (hopefully) freed port instead of hammering a stuck slot.
+                warm = false;
+                warmEditorDead = false;
+                warmFlushed = false;
+                spawnTriggered = false;
+                takeoverSelfHealInFlight = false;
+                log('takeover self-heal: warmup re-armed — next tools/call re-runs the spawn/arbiter path.');
+            }
+        })();
+    }
 }
 
 // The probe won the slot (or hit a non-busy outcome). Forward this response to
@@ -1305,6 +1348,9 @@ function endTakeover() {
     if (!takeover) return;
     if (takeover.timer) { clearTimeout(takeover.timer); takeover.timer = null; }
     takeover = null;
+    // SEE-1316: a successful takeover proves the holder released the slot —
+    // the self-heal streak measures STUCK holders only.
+    takeoverFailStreak = 0;
     log('takeover: ended (slot acquired or no waiters)');
 }
 
@@ -4367,7 +4413,43 @@ function startHeartbeat() {
         if (shutdownRequested) return;
         maybeProgressLog();
         refreshRegistryHeartbeat().catch(() => {});
+        selfRegisterProxyPid().catch(() => {});
     }, HEARTBEAT_INTERVAL_MS);
+}
+
+// SEE-1316 (hardener) — reaper contract closure, proxy self-registration: stamp
+// this proxy's PID onto its own runtime's ACTIVE lease sidecar. The reaper's
+// proxy_pid_dead branch (reap-stale-leases.sh) needs an attributable,
+// killable owner PID: configured_by_pid is the short-lived configure shell
+// (always dead post-exit) and nothing else in the sidecar names the proxy, so
+// a SIGKILLed proxy used to strand the editor until the addon's internal
+// 45s/120s windows ran out with no reaper backstop. Best-effort and idempotent
+// (sidecar_set_proxy_pid skips foreign-runtime / non-active sidecars and never
+// clobbers a live different proxy_pid); retried on the heartbeat cadence until
+// it lands, so a race with configure's sidecar write resolves itself.
+let proxyPidRegistered = false;
+async function selfRegisterProxyPid() {
+    if (proxyPidRegistered || !RUNTIME_ID || stage !== 'WARM') return;
+    if (!GODOT_PORT) return;
+    const worktree = process.env.GODOT_MCP_WORKTREE || process.env.KOL_WORKTREE;
+    if (!worktree) return;
+    const projectGodot = process.env.GODOT_MCP_PROJECT_GODOT || process.env.KOL_PROJECT_GODOT
+        || `${worktree}/project.godot`;
+    const lib = path.join(path.dirname(fileURLToPath(import.meta.url)), 'mcp-sidecar.lib.sh');
+    try {
+        await new Promise((resolve, reject) => {
+            execFile('bash', ['-c',
+                'source "$1" && sidecar_set_proxy_pid "$2" "$3"',
+                'regpid', lib, projectGodot, String(process.pid)],
+            { env: { ...process.env }, timeout: 5000 }, (err) => err ? reject(err) : resolve());
+        });
+        proxyPidRegistered = true;
+        log(`self-registered proxy_pid=${process.pid} on lease sidecar (runtime ${RUNTIME_ID}).`);
+    } catch (e) {
+        // Non-fatal: the next heartbeat retries; a sidecar without proxy_pid
+        // simply falls back to the pre-fix reaper behavior.
+        log(`selfRegisterProxyPid: non-fatal failure (will retry on heartbeat): ${e && e.message ? e.message : e}`);
+    }
 }
 
 // SEE-1111 缺陷 #7: run the warmup loop to completion, then STAY RESIDENT so a
