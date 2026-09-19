@@ -25,7 +25,7 @@
 import { spawn, execFile, execFileSync } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { readFile, readdir, stat, writeFile, rename, unlink, appendFile, mkdir } from 'node:fs/promises';
-import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync, existsSync } from 'node:fs';
 import * as readline from 'node:readline';
 import { EOL } from 'node:os';
 import os from 'node:os';
@@ -208,7 +208,7 @@ async function runRecoveryRound(trigger) {
                 log('ERROR: recovery stop-first could not free the port after evict; refusing to double-spawn.');
                 return false;
             }
-            stageLog('EMBEDDED_HEAL_END', `mode=stop_first ok=true`);
+            stageLog('EMBEDDED_HEAL_END', 'mode=stop_first ok=true');
         }
         // respawn（冷分支或 stop-first 清场后）：同端口重钉（GODOT_PORT 不变），
         // 走既有 ensureEditor 全链（prepare→configure→spawn 由其内部编排）。
@@ -228,7 +228,7 @@ async function runRecoveryRound(trigger) {
 // PS PID→cmdline 兜底（§SPEC-007，≤2s 超时由 runScript 竞速保证）：
 // 只读探测，命中 = 该 PID 的命令行包含本 worktree 目录名。
 const POWERSHELL_BIN = ['/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe']
-    .find((p) => { try { return fs.existsSync(p); } catch { return false; } }) || null;
+    .find((p) => { try { return existsSync(p); } catch { return false; } }) || null;
 
 async function probeHolderCmdline(pid, ourWorktree) {
     if (!POWERSHELL_BIN) return null;
@@ -249,7 +249,7 @@ async function probeHolderCmdline(pid, ourWorktree) {
 // Linux 侧 PID 存活判定（/proc 存在性即活进程；zombie 属罕见残余，恢复轮
 // 保守视为活——错判活比误杀安全，§SPEC-006 健康度先行原则的 pid 侧体现）。
 function pidAlive(pid) {
-    try { return fs.existsSync(`/proc/${pid}`); } catch { return false; }
+    try { return existsSync(`/proc/${pid}`); } catch { return false; }
 }
 
 // Lease sidecar 读取（恢复轮归因输入）。
@@ -258,7 +258,7 @@ async function readLeaseSidecar() {
         const pg = process.env.GODOT_MCP_PROJECT_GODOT || process.env.KOL_PROJECT_GODOT
             || path.join(await resolveWorktreeForSpawn(), 'project.godot');
         const sidecar = pg.replace(/project\.godot$/, '.godot/mcp-lease.json');
-        return JSON.parse(await fs.promises.readFile(sidecar, 'utf8'));
+        return JSON.parse(await readFile(sidecar, 'utf8'));
     } catch { return null; }
 }
 
@@ -3803,15 +3803,15 @@ async function warmupLoop() {
                     // 恢复轮拿不到端口/身份不可读才走 FAILED_EXIT 终态。
                     const healed = await runRecoveryRound('cold_failed_exit');
                     if (!healed) {
-                    log(`ERROR: editor did not recover within ${Math.floor(FAILED_EXIT_MS / 1000)}s (FAILED_EXIT); rejecting ${pendingCalls.length} buffered call(s).`);
-                    rejectQueue(`editor did not recover within ${Math.floor(FAILED_EXIT_MS / 1000)}s (FAILED_EXIT)`, warmupDiagnostic('failed_exit'));
-                    if (GIVEUP_REARM_ENABLED) {
-                        warmupTimedOut = false;
-                        giveUpAndRearm('recovering_failed_exit', 'sustained probe failure (FAILED_EXIT)');
-                        break;   // exit the warmFlushed loop; outer loop re-arms
-                    }
-                    warmupTimedOut = true;
-                    process.exit(1);
+                        log(`ERROR: editor did not recover within ${Math.floor(FAILED_EXIT_MS / 1000)}s (FAILED_EXIT); rejecting ${pendingCalls.length} buffered call(s).`);
+                        rejectQueue(`editor did not recover within ${Math.floor(FAILED_EXIT_MS / 1000)}s (FAILED_EXIT)`, warmupDiagnostic('failed_exit'));
+                        if (GIVEUP_REARM_ENABLED) {
+                            warmupTimedOut = false;
+                            giveUpAndRearm('recovering_failed_exit', 'sustained probe failure (FAILED_EXIT)');
+                            break;   // exit the warmFlushed loop; outer loop re-arms
+                        }
+                        warmupTimedOut = true;
+                        process.exit(1);
                     }
                     // healed=true：恢复轮已重开 spawn（同端口重钉），继续探 warm。
                 }
