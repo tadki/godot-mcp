@@ -34,12 +34,14 @@ const CAP_NATIVE = 'screenshot-1789843607271-3.png'; // 态② max_width=2560（
 const CAP_NATIVE2 = 'screenshot-1789843664692-5.png'; // 态② 重复采集
 const CAP_HALF = 'screenshot-1789843615195-4.png';   // 态③ max_width=960（<原生）
 
-test('§SPEC-013 ① 省略 max_width → 期望原生逐像素（实测 FAIL：900×506 = 默认 900 降采样）', () => {
+test('§SPEC-013 ①（修正语义）省略 max_width → 900 上限降采样（默认 900×506，token 成本设计意图）', () => {
+    // D2 裁决（Atlas，B-qa FAIL 后）：规格原句为"max_width 是上限非目标，原生请传
+    // 大值/0"——省略 900 是 token 成本控制的设计意图，从未承诺"省略 = 原生"。
+    // 本用例按修正后的 §SPEC-013 ① 语义改写（原"期望原生逐像素"断言为 B-code 文档面
+    // 超写导致的 RED 记录，随 D2 裁决 obsolete）。
     const b = png(CAP_OMIT);
-    const d = pngDim(b);
-    assert.deepEqual(d, { w: NATIVE_W, h: NATIVE_H },
-        'D2 缺陷在案：省略 max_width 实际返回 900×506（schema 默认 900 降采样），非原生。' +
-        '本断言为 RED 记录——修复（schema 去默认/透传省略）后转绿');
+    assert.deepEqual(pngDim(b), { w: 900, h: 506 },
+        '省略 max_width → 默认 900 上限降采样（2560×1440 原生 → 900×506 等比）；原生请传 ≥原生宽或 0');
 });
 
 test('§SPEC-013 ② max_width=原生 → 原样返回，重复采集逐字节一致（sha256 相等）', () => {

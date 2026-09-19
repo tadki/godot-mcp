@@ -177,12 +177,18 @@ test('§SPEC-015 staleAdvisoryText 携带生效阈值而非硬编码默认', asy
     assert.match(custom, /5000ms/);
 });
 
-test('§SPEC-015 DESCRIPTION_PATCHES godot_editor_read 通道注明 env 名与默认值', async () => {
+test('§SPEC-015 DESCRIPTION_PATCHES godot_editor_read 通道注明 env 名与默认值（+ max_width 修正语义）', async () => {
     const { DESCRIPTION_PATCHES } = await import('../../../launch/see1240-ui-tools.mjs');
     const patch = DESCRIPTION_PATCHES.find((p) => p.tool === 'godot_editor_read');
     assert.ok(patch, 'godot_editor_read patch exists');
     assert.match(patch.replace, /GODOT_MCP_STALE_CAPTURE_MS/);
     assert.match(patch.replace, /1500/);
+    // D2 修正语义（§SPEC-013 ① 规格原句）：省略 → 900 上限降采样；原生请传 ≥原生宽或 0；
+    // 禁止再承诺"省略 = 原生 byte-identical"（B-code 文档面超写已裁决回退）。
+    assert.match(patch.replace, /UPPER BOUND, not a target/);
+    assert.match(patch.replace, /omitting it downsizes to 900/);
+    assert.match(patch.replace, /pass a large value or 0/);
+    assert.doesNotMatch(patch.replace, /byte-identical native frame|full resolution when you omit/i);
 });
 
 // --- §SPEC-016: retention 定稿 — report-only，零自动清理 --------------------------
