@@ -24,7 +24,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -272,22 +272,16 @@ test('D1 非 escape 场景 CLI stderr 零 DRDFS_ESCAPE 行（NON_KOL + KOL_HEALT
     if (!mod) return assert.fail('RED: config-validate.mjs 不存在');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'see1325d1-'));
     const { root, shim, launcher } = makeRepo(tmp);
-    const run = (extra, expectFail) => {
-        try {
-            return execFileSync(process.execPath, [VALIDATE_MJS, '--repo-root', root, '--shim', shim, '--launcher', launcher, '--fork-cli', path.join(root, 'server', 'dist', 'cli.js'), '--home', HOME, '--godot-mcp-home', HOME + '/.multica', '--shared-master', '/mnt/d/GodotProjects/king-of-likes', ...extra], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-        } catch (e) {
-            if (!expectFail) throw e;
-            return { stderr: e.stderr || '' };
-        }
-    };
-    // NON_KOL passthrough（无 env 文件时签名不命中）
+    const run = (extra) => spawnSync(process.execPath, [VALIDATE_MJS, '--repo-root', root, '--shim', shim, '--launcher', launcher, '--fork-cli', path.join(root, 'server', 'dist', 'cli.js'), '--home', HOME, '--godot-mcp-home', HOME + '/.multica', '--shared-master', '/mnt/d/GodotProjects/king-of-likes', ...extra], { encoding: 'utf8' });
     // hard-fail 前置态（KOL 签名 + NEUTRAL 默认 HOME）
-    const bad = run(['--godot-mcp-home', path.join(HOME, '.config', 'godot-mcp')], true);
-    assert.ok(bad.stderr.includes('HOME_HEALTH_UNSAFE'), 'sanity: hard-fail state reached');
-    assert.ok(!bad.stderr.includes('DRDFS_ESCAPE'), `hard-fail non-escape stderr must contain zero DRDFS_ESCAPE bytes, got ${JSON.stringify(bad.stderr)}`);
-    // escape 场景语义不变：--allow-drvfs 且 DRDFS 执行路径 → 完整 DRDFS_STAGE_LINE
-    const esc = run(['--launcher', '/mnt/d/x/launcher.sh', '--allow-drvfs'], false);
-    assert.ok(esc.stderr.includes('stage=DRDFS_ESCAPE msg="GODOT_MCP_ALLOW_DRVFS_PATHS=1 escape active"'), `escape path must emit the full DRDFS stage line, got ${JSON.stringify(esc.stderr)}`);
+    const bad = run(['--godot-mcp-home', path.join(HOME, '.config', 'godot-mcp')]);
+    const badErr = bad.stderr || '';
+    assert.ok(badErr.includes('HOME_HEALTH_UNSAFE'), 'sanity: hard-fail state reached');
+    assert.ok(!badErr.includes('DRDFS_ESCAPE'), `hard-fail non-escape stderr must contain zero DRDFS_ESCAPE bytes, got ${JSON.stringify(badErr)}`);
+    // escape 场景语义不变：KOL 签名 + DRDFS 执行路径 + --allow-drvfs → 完整 DRDFS_STAGE_LINE
+    const esc = run(['--launcher', '/mnt/d/x/launcher.sh', '--allow-drvfs']);
+    const escErr = esc.stderr || '';
+    assert.ok(escErr.includes('stage=DRDFS_ESCAPE msg="GODOT_MCP_ALLOW_DRVFS_PATHS=1 escape active"'), `escape path must emit the full DRDFS stage line, got ${JSON.stringify(escErr)}`);
     fs.rmSync(tmp, { recursive: true, force: true });
 });
 

@@ -24,8 +24,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const SHIM_STAGE_LINE = '[godot-mcp-shim] stage=CONFIG_VALIDATE';
+// 模板串不得内嵌 DRDFS_ESCAPE 字面量：launcher 以 case *DRDFS_ESCAPE* glob 判定，
+// 占位符会导致非 escape 场景每次误发 DRDFS_ESCAPE stage log（SEE-1328 D1）。
 export const LAUNCHER_STAGE_LINE =
-    '[godot-mcp-launcher] stage=CONFIG_VALIDATE ok=<bool> reason=<reason> escape=<DRDFS_ESCAPE=1|none>';
+    '[godot-mcp-launcher] stage=CONFIG_VALIDATE';
 export const DRDFS_STAGE_LINE = '[godot-mcp-launcher] stage=DRDFS_ESCAPE msg="GODOT_MCP_ALLOW_DRVFS_PATHS=1 escape active"';
 
 // 内置默认 GODOT_MCP_HOME（NEUTRAL 默认 = daemon 注入通道被绕过）。
