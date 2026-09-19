@@ -43,7 +43,7 @@ function startShim(env) {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'see1244-v2-'));
     const proc = spawn(process.execPath, [SHIM_PATH, 'V2GateTest'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, HOME: home, ...env },
+        env: { ...process.env, HOME: home, GODOT_MCP_HOME: path.join(home, '.multica'), ...env },
     });
     const outLines = [], errLines = [];
     createInterface({ input: proc.stdout, terminal: false, crlfDelay: Infinity }).on('line', (l) => outLines.push(l));
