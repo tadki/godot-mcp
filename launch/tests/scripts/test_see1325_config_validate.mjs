@@ -259,11 +259,43 @@ test('§SPEC-012 逃生门只豁免 DRDFS 执行路径，不豁免 HOME 健康�
 });
 
 // ---- stage log 常量 -------------------------------------------------------------
-test('stage log 常量：launcher 侧 [stage=...] 行含 DRDFS_ESCAPE 与失败诊断键', () => {
+test('stage log 常量：launcher 侧 [stage=...] 行含失败诊断键且 escape 场景有专用 DRDFS 行', () => {
     if (!mod) return assert.fail('RED: config-validate.mjs 不存在');
-    assert.match(LAUNCHER_STAGE_LINE, /DRDFS_ESCAPE=1/);
     assert.match(LAUNCHER_STAGE_LINE, /stage=CONFIG_VALIDATE/);
     assert.ok(typeof SHIM_STAGE_LINE === 'string' && SHIM_STAGE_LINE.length > 0);
+});
+
+// ---- D1 反断言（SEE-1328 A-fix）：非 escape 场景 stderr 零 DRDFS_ESCAPE ----------
+// 修复前：LAUNCHER_STAGE_LINE 模板字面量含 `escape=<DRDFS_ESCAPE=1|none>` 占位，
+// launcher `case *DRDFS_ESCAPE*` glob 每次误命中。模板去掉占位后此用例转绿。
+test('D1 非 escape 场景 CLI stderr 零 DRDFS_ESCAPE 行（NON_KOL + KOL_HEALTHY + hard-fail 前置态）', () => {
+    if (!mod) return assert.fail('RED: config-validate.mjs 不存在');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'see1325d1-'));
+    const { root, shim, launcher } = makeRepo(tmp);
+    const run = (extra, expectFail) => {
+        try {
+            return execFileSync(process.execPath, [VALIDATE_MJS, '--repo-root', root, '--shim', shim, '--launcher', launcher, '--fork-cli', path.join(root, 'server', 'dist', 'cli.js'), '--home', HOME, '--godot-mcp-home', HOME + '/.multica', '--shared-master', '/mnt/d/GodotProjects/king-of-likes', ...extra], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+        } catch (e) {
+            if (!expectFail) throw e;
+            return { stderr: e.stderr || '' };
+        }
+    };
+    // NON_KOL passthrough（无 env 文件时签名不命中）
+    // hard-fail 前置态（KOL 签名 + NEUTRAL 默认 HOME）
+    const bad = run(['--godot-mcp-home', path.join(HOME, '.config', 'godot-mcp')], true);
+    assert.ok(bad.stderr.includes('HOME_HEALTH_UNSAFE'), 'sanity: hard-fail state reached');
+    assert.ok(!bad.stderr.includes('DRDFS_ESCAPE'), `hard-fail non-escape stderr must contain zero DRDFS_ESCAPE bytes, got ${JSON.stringify(bad.stderr)}`);
+    // escape 场景语义不变：--allow-drvfs 且 DRDFS 执行路径 → 完整 DRDFS_STAGE_LINE
+    const esc = run(['--launcher', '/mnt/d/x/launcher.sh', '--allow-drvfs'], false);
+    assert.ok(esc.stderr.includes('stage=DRDFS_ESCAPE msg="GODOT_MCP_ALLOW_DRVFS_PATHS=1 escape active"'), `escape path must emit the full DRDFS stage line, got ${JSON.stringify(esc.stderr)}`);
+    fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+// shim 侧同类 glob 误命中核对：shim 不做任何 *DRDFS_ESCAPE* case 匹配，
+// 此用例钉死 SHIM_STAGE_LINE 不得包含 DRDFS_ESCAPE 字面量（防回归）。
+test('D1 shim 侧 stage 常量零 DRDFS_ESCAPE 字面量（同类 glob 误命中排查钉死）', () => {
+    if (!mod) return assert.fail('RED: config-validate.mjs 不存在');
+    assert.ok(!SHIM_STAGE_LINE.includes('DRDFS_ESCAPE'), 'SHIM_STAGE_LINE must not embed a DRDFS_ESCAPE literal (shim does no glob matching on it)');
 });
 
 // ---- CLI 墙钟断言（§SPEC-011：墙钟 ≤2s）------------------------------------------
