@@ -41,6 +41,9 @@ function startShimWithChain(mockArgs, extraEnv = {}) {
         env: {
             ...process.env,
             HOME: home,
+            // SEE-1328 H2 guard 适配：fresh temp HOME 下注入合法 GODOT_MCP_HOME
+            // （模拟 daemon 合法注入形态），防 KOL 签名 + NEUTRAL 默认误判 hard fail。
+            GODOT_MCP_HOME: path.join(home, '.multica'),
             KOL_AGENT_NAME: '', CLAUDE_AGENT_NAME: '', MULTICA_AGENT_NAME: '',
             KOL_SEE1244_LAUNCHER_OVERRIDE: [process.execPath, MOCK_CHAIN, ...(mockArgs || [])].join(' '),
             KOL_SEE1244_ALLOW_TEST_OVERRIDE: '1',
