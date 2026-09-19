@@ -109,6 +109,8 @@ function main(argv) {
         if (!k.startsWith('--')) continue;
         arg[k.slice(2)] = argv[++i] ?? '';
     }
+    // §SPEC-012 逃生门是 env 语义（GODOT_MCP_ALLOW_DRVFS_PATHS=1）：shim/launcher
+    // 双入口都不透传 --allow-drvfs，CLI 必须同时读 env，否则逃生门在真实链上失效。
     const r = validateLaunchConfig({
         repoRoot: arg['repo-root'],
         scriptPath: arg.shim,
@@ -118,7 +120,7 @@ function main(argv) {
         home: arg.home || process.env.HOME,
         sharedMaster: arg['shared-master'] || '',
         envInjectedMarker: arg.marker || '',
-        allowDrvfsPaths: arg.allowDrvfs,
+        allowDrvfsPaths: arg.allowDrvfs || process.env.GODOT_MCP_ALLOW_DRVFS_PATHS === '1',
     });
     const line = r.escape === 'DRDFS_ESCAPE'
         ? DRDFS_STAGE_LINE

@@ -292,6 +292,18 @@ test('D1 shim 侧 stage 常量零 DRDFS_ESCAPE 字面量（同类 glob 误命中
     assert.ok(!SHIM_STAGE_LINE.includes('DRDFS_ESCAPE'), 'SHIM_STAGE_LINE must not embed a DRDFS_ESCAPE literal (shim does no glob matching on it)');
 });
 
+// §SPEC-012 逃生门是 env 语义：shim/launcher 双入口不透传 --allow-drvfs，
+// CLI 必须从 GODOT_MCP_ALLOW_DRVFS_PATHS=1 读取（C0 实测发现的真实缺口）。
+test('D2 逃生门 env 形态（GODOT_MCP_ALLOW_DRVFS_PATHS=1）经 CLI 生效', () => {
+    if (!mod) return assert.fail('RED: config-validate.mjs 不存在');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'see1325d2-'));
+    const { root, shim } = makeRepo(tmp);
+    const r = spawnSync(process.execPath, [VALIDATE_MJS, '--repo-root', root, '--shim', shim, '--launcher', '/mnt/d/x/l', '--fork-cli', path.join(root, 'cli.js'), '--home', HOME, '--godot-mcp-home', path.join(HOME, '.multica'), '--shared-master', '/mnt/d/master'], { encoding: 'utf8', env: { ...process.env, GODOT_MCP_ALLOW_DRVFS_PATHS: '1' } });
+    assert.equal(r.status, 0, `env escape must pass, got ${JSON.stringify((r.stderr || '').slice(0, 300))}`);
+    assert.ok((r.stderr || '').includes('stage=DRDFS_ESCAPE'), 'env escape must emit the DRDFS stage line');
+    fs.rmSync(tmp, { recursive: true, force: true });
+});
+
 // ---- CLI 墙钟断言（§SPEC-011：墙钟 ≤2s）------------------------------------------
 // 真 CLI 入口（node config-validate.mjs --shim <path> ...）以 execFileSync 墙钟
 // 计时，硬断言 <2000ms。实现后此用例自然转绿。
