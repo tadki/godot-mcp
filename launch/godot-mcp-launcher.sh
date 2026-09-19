@@ -1085,6 +1085,13 @@ fi
 if [[ -x "$FORK_CLI" ]]; then
     export GODOT_MCP_GODOT_MCP_CMD="${GODOT_MCP_GODOT_MCP_CMD:-${KOL_GODOT_MCP_CMD:-$FORK_CLI}}"
     export GODOT_MCP_QUICK_TIMEOUT_MS="${GODOT_MCP_QUICK_TIMEOUT_MS:-90000}"
+    # SEE-1325 C-code 阻断项①：fork build 产物 server/addon/ 与根级 addon 的
+    # GDScript 同名同类（UID duplicate → plugin 编译失败 → editor 首启从不
+    # 监听租赁端口）。launch 域修复：dist 就绪后给 server/addon 落 .gdignore，
+    # 让 Godot 扫描跳过 build 产物（C0 实测首启阻断，幂等 touch 无害）。
+    if [[ -d "${FORK_SERVER_DIR}/addon" ]]; then
+        touch "${FORK_SERVER_DIR}/addon/.gdignore" 2>/dev/null || true
+    fi
     log_stage "stage=FORK_WIRED msg=\"godot-mcp served from owner fork\" cli=${GODOT_MCP_GODOT_MCP_CMD} quick_timeout_ms=${GODOT_MCP_QUICK_TIMEOUT_MS}"
 else
     log "WARNING: fork CLI not found at ${FORK_CLI}; keeping upstream godot-mcp (${GODOT_MCP_QUICK_TIMEOUT_MS:-default 30s} timeout)."

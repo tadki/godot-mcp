@@ -56,6 +56,8 @@ import {
 } from './see1240-exec-constraints.mjs';
 import { decideReuse } from './see1129-reuse-predicate.mjs';
 import { decideSidecarGuard } from './see1129-sidecar-guard-predicate.mjs';
+// SEE-1325 H1（§SPEC-002/003/005/007）：恢复轮纯决策函数 + 预算记账口径 (a)。
+import { decideRecoveryAction, planRecoveryBudget, attributeHolder, RECOVERY_ROUND_WORST_MS } from './see1325-recovery.mjs';
 import {
     STAGE_ENUM,
     STAGE_TOTAL,
@@ -138,7 +140,128 @@ const RENDER_STABLE_TIMEOUT_MS = 20000;
 // warmup timeout (RECOVERING state) before giving up and exiting, so Claude can
 // restart against a genuinely dead editor. Defaults to 2x the cold warmup window.
 const FAILED_EXIT_MS = parseInt(process.env.GODOT_MCP_FAILED_EXIT_MS || process.env.KOL_FAILED_EXIT_MS || String(2 * COLD_WARMUP_TIMEOUT_MS), 10);
-// SEE-1134 RECOVERING deadlock: in the warm+recovering branch the editor is
+// SEE-1325 H1（§SPEC-002/003）：RECOVERING 内嵌恢复轮。复用 runScript/
+// evictStaleHolder/ensureEditor 已有编排；判定全部走 see1325-recovery.mjs
+// 纯函数。触发于冷（warmup timeout）与暖（editor_gone respawn）两分支入口；
+// 预算口径 (a)：恢复轮在 FAILED_EXIT_MS 窗口内消耗，剩余不足单轮最坏耗时
+// （RECOVERY_ROUND_WORST_MS）即记账前置终态，不再开轮。失败计入
+// SPAWN_MAX_ATTEMPTS 连击通道（handleSpawnFailure 已统一计数）。
+let recoveryRound = 0;
+let recoveryWindowStart = null;
+
+async function runRecoveryRound(trigger) {
+    // 共用门：与 warmRespawnInFlight/spawnTriggered 互斥，防止恢复轮与
+    // respawn 循环并发对同一端口做双 stop/double-spawn。
+    if (warmRespawnInFlight) return false;
+    warmRespawnInFlight = true;
+    try {
+        if (recoveryWindowStart === null) recoveryWindowStart = startedAt;
+        const budget = planRecoveryBudget({ failedExitMs: FAILED_EXIT_MS, startedAt: recoveryWindowStart, now: Date.now() });
+        if (!budget.canStartRound) {
+            stageLog('RECOVERY_ROUND_SKIP', `reason=budget_exhausted remaining=${budget.remainingMs}ms round=${recoveryRound}`);
+            log(`recovery: budget exhausted (remaining ${budget.remainingMs}ms < worst round ${RECOVERY_ROUND_WORST_MS}ms); giving up (记账前置终态).`);
+            return false;
+        }
+        recoveryRound += 1;
+        stageLog('RECOVERY_ROUND', `n=${recoveryRound}/${budget.maxRounds} remaining=${budget.remainingMs}ms trigger=${trigger}`);
+        log(`recovery round ${recoveryRound}/${budget.maxRounds} (trigger=${trigger}, remaining=${budget.remainingMs}ms).`);
+        // 归因先于二分（§SPEC-007）：文件 cross-check 主通道；PS 兜底 ≤2s。
+        const lease = await readLeaseSidecar();
+        const holderWorktree = await readHolderWorktree();
+        const ourWorktree = await resolveWorktreeForSpawn();
+        const holderPidAlive = lease?.proxy_pid ? pidAlive(Number(lease.proxy_pid)) : false;
+        const psMatch = holderPidAlive ? await probeHolderCmdline(Number(lease.proxy_pid), ourWorktree) : null;
+        const attr = attributeHolder({
+            leaseRuntimeId: String(lease?.runtime_id || ''),
+            ourRuntimeId: String(KOL_RUNTIME_ID || ''),
+            registryWorktree: holderWorktree || '',
+            holderWorktree: String(lease?.worktree || ''),
+            ourWorktree,
+            psCmdlineMatch: psMatch,
+        });
+        const portOpen = await tcpProbe();
+        const decision = decideRecoveryAction({
+            portOpen,
+            holderProxyAlive: holderPidAlive,
+            holderRuntimeId: attr.holderRuntimeId,
+            ourRuntimeId: String(KOL_RUNTIME_ID || ''),
+            leaseState: String(lease?.state || ''),
+            releasedAt: lease?.released_at || null,
+            holderIdentityReadable: attr.holderIdentityReadable,
+        });
+        stageLog('RECOVERY_DECISION', `action=${decision.action} reason=${decision.reason} channel=${attr.channel}`);
+        if (decision.action === 'fail_fast') {
+            log(`ERROR: recovery refused: ${decision.diagnostic}`);
+            return false;
+        }
+        if (decision.action === 'takeover_wait') {
+            // 活同 runtime proxy：沿用既有 takeover 等待语义，不做任何 stop。
+            log('recovery: live same-runtime proxy holds the slot; deferring to takeover wait (no stop).');
+            return false;
+        }
+        if (decision.action === 'stop_first') {
+            stageLog('EMBEDDED_HEAL_BEGIN', `mode=stop_first port=${GODOT_PORT}`);
+            await evictStaleHolder(holderWorktree);
+            const stillOpen = await tcpProbe();
+            stageLog('EMBEDDED_HEAL_CONFIRMED', `port_still_open=${stillOpen}`);
+            if (stillOpen) {
+                log('ERROR: recovery stop-first could not free the port after evict; refusing to double-spawn.');
+                return false;
+            }
+            stageLog('EMBEDDED_HEAL_END', `mode=stop_first ok=true`);
+        }
+        // respawn（冷分支或 stop-first 清场后）：同端口重钉（GODOT_PORT 不变），
+        // 走既有 ensureEditor 全链（prepare→configure→spawn 由其内部编排）。
+        try {
+            await ensureEditor(Date.now());
+            return true;
+        } catch (err) {
+            // 自愈 spawn 失败同步计入 SPAWN_MAX_ATTEMPTS 连击通道。
+            handleSpawnFailure(err);
+            return false;
+        }
+    } finally {
+        warmRespawnInFlight = false;
+    }
+}
+
+// PS PID→cmdline 兜底（§SPEC-007，≤2s 超时由 runScript 竞速保证）：
+// 只读探测，命中 = 该 PID 的命令行包含本 worktree 目录名。
+const POWERSHELL_BIN = ['/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe']
+    .find((p) => { try { return fs.existsSync(p); } catch { return false; } }) || null;
+
+async function probeHolderCmdline(pid, ourWorktree) {
+    if (!POWERSHELL_BIN) return null;
+    const dirName = (ourWorktree || '').split('/').filter(Boolean).pop();
+    if (!dirName) return null;
+    const result = await Promise.race([
+        new Promise((resolve) => {
+            execFile(POWERSHELL_BIN, ['-NoProfile', '-Command',
+                `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], {
+                env: { ...process.env }, timeout: 2000,
+            }, (err, stdout) => resolve(err ? null : (typeof stdout === 'string' && stdout.includes(dirName))));
+        }),
+        new Promise((resolve) => setTimeout(() => resolve(null), 2000)),
+    ]);
+    return result;
+}
+
+// Linux 侧 PID 存活判定（/proc 存在性即活进程；zombie 属罕见残余，恢复轮
+// 保守视为活——错判活比误杀安全，§SPEC-006 健康度先行原则的 pid 侧体现）。
+function pidAlive(pid) {
+    try { return fs.existsSync(`/proc/${pid}`); } catch { return false; }
+}
+
+// Lease sidecar 读取（恢复轮归因输入）。
+async function readLeaseSidecar() {
+    try {
+        const pg = process.env.GODOT_MCP_PROJECT_GODOT || process.env.KOL_PROJECT_GODOT
+            || path.join(await resolveWorktreeForSpawn(), 'project.godot');
+        const sidecar = pg.replace(/project\.godot$/, '.godot/mcp-lease.json');
+        return JSON.parse(await fs.promises.readFile(sidecar, 'utf8'));
+    } catch { return null; }
+}
+
 // already bound but the CLI never landed. After this many seconds the proxy
 // kills the npx child so the existing npx.on('exit') respawn machinery brings
 // up a fresh CLI (bounded by HOT_NPX_RESTART_DEADLINE_MS, hot-attempt budget).
@@ -3675,11 +3798,11 @@ async function warmupLoop() {
                     if (KOL_PROGRESS_PROTOCOL !== 'off') maybeNotifyStageChange();
                     log(`WARNING: warmup timed out after ${Math.floor(currentWarmupTimeout() / 1000)}s; entering RECOVERING (held call(s) answered with retryable timeout; will retry for ${Math.floor(FAILED_EXIT_MS / 1000)}s before FAILED_EXIT).`);
                 } else if (recovering && (now - lastTcpOkAt) >= FAILED_EXIT_MS) {
-                    // T4: sustained probe failure. Reject buffered calls and —
-                    // legacy — exit so Claude can restart us against a genuinely
-                    // dead editor. SEE-1240 WS-5 (default): record the give-up,
-                    // arm the cooldown, and re-arm in-band — the NEXT tools/call
-                    // (after cooldown) re-triggers the spawn with no MCP restart.
+                    // T4: sustained probe failure. SEE-1325 H1（§SPEC-002）：先跑
+                    // 内嵌恢复轮（预算口径 (a)，剩余不足单轮最坏耗时即终态），
+                    // 恢复轮拿不到端口/身份不可读才走 FAILED_EXIT 终态。
+                    const healed = await runRecoveryRound('cold_failed_exit');
+                    if (!healed) {
                     log(`ERROR: editor did not recover within ${Math.floor(FAILED_EXIT_MS / 1000)}s (FAILED_EXIT); rejecting ${pendingCalls.length} buffered call(s).`);
                     rejectQueue(`editor did not recover within ${Math.floor(FAILED_EXIT_MS / 1000)}s (FAILED_EXIT)`, warmupDiagnostic('failed_exit'));
                     if (GIVEUP_REARM_ENABLED) {
@@ -3689,6 +3812,8 @@ async function warmupLoop() {
                     }
                     warmupTimedOut = true;
                     process.exit(1);
+                    }
+                    // healed=true：恢复轮已重开 spawn（同端口重钉），继续探 warm。
                 }
             }
 
@@ -4594,6 +4719,10 @@ async function runWarmupLoop() {
         }
         if (shutdownRequested || spawnTerminal) return;
         resetForRespawn();
+        // SEE-1325 H1（§SPEC-002 暖分支入口）：editor_gone respawn 再入前先跑
+        // 内嵌恢复轮（归因→判定→stop-first/respawn），确保下一次 tools/call
+        // 落在已恢复链上而非再次 editor_gone。
+        await runRecoveryRound('warm_editor_gone');
         warmRespawnInFlight = false;
         log(`respawn loop: re-entering warmup after post-warm editor death (warmEditorDead=${warmEditorDead}). Next tools/call will re-spawn the editor.`);
         // Loop back; the outer COLD_EMPTY idle waits for the next tools/call.
