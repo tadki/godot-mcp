@@ -14,27 +14,46 @@
 #     （「配置完好 + tool list 缺失」= 注册窗口时序竞态，非静默丢弃）。
 #
 # 用法：由 SessionStart hook（repo-checkout.sh 末尾）被动调用，也可手动跑：
-#   bash .dev/godot-mcp/launch/mcp-assert-registration.sh [--json]
+#   bash addons/godot_mcp/launch/mcp-assert-registration.sh [--json]
+# SEE-1316 (hardener): the script now lives INSIDE the vendored addon at
+# addons/godot_mcp/launch/ (the .dev/godot-mcp/ tree is retired — SEE-1273 M3).
+# Location is resolved in order: this script's own dir (in-addon layout),
+# then the legacy .dev/godot-mcp/launch/ for old checkouts.
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# SCRIPT_DIR = <repo>/KingOfLikes-Godot/.dev/godot-mcp/launch → repo root 三级上跳
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-HOOK_FIRE_LOG="${PROJECT_ROOT:-$(cd "$REPO_ROOT/.." && pwd)}/.claude/hook-fire.log"
+# Layout resolution: when this script sits in addons/godot_mcp/launch, the
+# addon root is one level up and godot-status.sh is a sibling. The legacy
+# .dev/godot-mcp/launch path is kept as a fallback for old checkouts.
+STATUS_SH=""
+if [[ -f "$SCRIPT_DIR/godot-status.sh" ]]; then
+    STATUS_SH="$SCRIPT_DIR/godot-status.sh"
+elif [[ -n "${PROJECT_ROOT:-}" && -f "$PROJECT_ROOT/.dev/godot-mcp/launch/godot-status.sh" ]]; then
+    STATUS_SH="$PROJECT_ROOT/.dev/godot-mcp/launch/godot-status.sh"
+else
+    # Legacy self-location: walk up to a repo root that still has the old tree.
+    _cand="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+    if [[ -f "$_cand/.dev/godot-mcp/launch/godot-status.sh" ]]; then
+        STATUS_SH="$_cand/.dev/godot-mcp/launch/godot-status.sh"
+    fi
+fi
+
+HOOK_FIRE_LOG="${PROJECT_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}/.claude/hook-fire.log"
 [[ -d "$(dirname "$HOOK_FIRE_LOG")" ]] || HOOK_FIRE_LOG="$HOME/.claude/hook-fire.log"
 
 JSON_MODE=0
 [[ "${1:-}" == "--json" ]] && JSON_MODE=1
 
-if [[ ! -f "$REPO_ROOT/.dev/godot-mcp/launch/godot-status.sh" ]]; then
-    # 软失败：godot-status.sh 不在（旧分支/未检出），只记一行缺位事实
-    printf '[%s] [mcp-assert-registration] SKIP: godot-status.sh not found at %s\n' \
-        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$REPO_ROOT" >> "$HOOK_FIRE_LOG" 2>/dev/null || true
+if [[ -z "$STATUS_SH" ]]; then
+    # Soft failure: godot-status.sh not found (old branch / not checked out) —
+    # record the missing-tool fact and exit clean.
+    printf '[%s] [mcp-assert-registration] SKIP: godot-status.sh not found (searched addon launch dir and legacy .dev/godot-mcp/launch)\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$HOOK_FIRE_LOG" 2>/dev/null || true
     exit 0
 fi
 
-DOCTOR_JSON="$(bash "$REPO_ROOT/.dev/godot-mcp/launch/godot-status.sh" doctor --json 2>/dev/null || true)"
+DOCTOR_JSON="$(bash "$STATUS_SH" doctor --json 2>/dev/null || true)"
 
 if [[ -z "$DOCTOR_JSON" ]]; then
     printf '[%s] [mcp-assert-registration] WARN: doctor produced no output (godot-status.sh failed)\n' \

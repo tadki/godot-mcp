@@ -105,6 +105,10 @@ sidecar_get() {
 # Arguments: <project_godot_path> <port> <agent_name_or_empty>
 # Generates a fresh lease_id (uuid-v4 via node) and timestamp (ISO8601).
 # Atomicity: write to mktemp, chmod 0644, then mv (rename) into place.
+# SEE-1316 (hardener): SIDE_PROXY_PID (optional) records the proxy process PID
+# so the reaper can distinguish "proxy died, editor orphaned" from "both alive"
+# — without it, a SIGKILLed proxy leaves an active lease the stale branches
+# never match (configured_by_pid is the already-dead configure shell).
 sidecar_write_active() {
     local project_godot="$1" port="$2" agent="${3:-}"
     [[ -n "$project_godot" ]] || die "sidecar_write_active: project.godot path required."
@@ -118,6 +122,7 @@ sidecar_write_active() {
     SIDE_WORKTREE="$worktree" SIDE_PORT="$port" SIDE_AGENT="$agent" \
     SIDE_PID="$$" SIDE_NOTES="$SIDECAR_NOTES" \
     SIDE_RUNTIME_ID="${KOL_RUNTIME_ID:-}" SIDE_TASK_ID="${KOL_TASK_ID:-}" \
+    SIDE_PROXY_PID="${SIDE_PROXY_PID:-}" \
     SIDE_KEEP_LEASE_ID="${KOL_KEEP_LEASE_ID:-}" \
     node -e '
         const crypto = require("crypto");
@@ -140,6 +145,11 @@ sidecar_write_active() {
             released_at: null,
             notes: env.SIDE_NOTES || ""
         };
+        // SEE-1316 (hardener): the owning proxy PID when the caller knows it.
+        // Absent on pre-fix sidecars; the reaper treats a missing proxy_pid as
+        // unknown-legacy and skips the proxy-dead branch rather than guessing.
+        const pp = Number(env.SIDE_PROXY_PID);
+        out.proxy_pid = Number.isFinite(pp) && pp > 0 ? pp : null;
         process.stdout.write(JSON.stringify(out, null, 2) + "\n");
     ' > "$tmp"
     chmod 0644 "$tmp"
@@ -197,6 +207,48 @@ sidecar_state() {
     local sidecar="$1"
     [[ -f "$sidecar" ]] || return 0
     sidecar_get "$sidecar" "state"
+}
+
+# SEE-1316 (hardener): atomically stamp the owning proxy's PID onto an ACTIVE
+# sidecar. Called by the proxy itself once it is connected and warm, so the
+# reaper can attribute the lease to a killable process (configured_by_pid is
+# the short-lived configure shell, not the proxy). Idempotent, best-effort:
+# no-op on absent / non-active / foreign-runtime sidecars; never overwrites a
+# previously recorded live proxy_pid with a different live one (concurrent
+# same-agent slot protection — runtime_id must match or be empty).
+# Arguments: <project_godot_path> <proxy_pid>
+sidecar_set_proxy_pid() {
+    local project_godot="$1" proxy_pid="$2"
+    [[ -n "$project_godot" && "$proxy_pid" =~ ^[0-9]+$ ]] || return 0
+    local sidecar
+    sidecar="$(sidecar_path_for "$project_godot")"
+    [[ -f "$sidecar" ]] || return 0
+    local tmp
+    tmp="$(mktemp)"
+    PROXY_PID="$proxy_pid" \
+    RID="${KOL_RUNTIME_ID:-}" SIDE="$sidecar" \
+    node -e '
+        const fs = require("fs");
+        let o;
+        try { o = JSON.parse(fs.readFileSync(process.env.SIDE, "utf8")); } catch (e) { process.exit(0); }
+        // Only our runtime active lease; concurrent-slot protection mirrors
+        // markIntentionalRelease (proxy.mjs): a DIFFERENT runtime_id is never
+        // touched, an empty one (legacy) is accepted.
+        if (o.runtime_id && o.runtime_id !== process.env.RID) process.exit(0);
+        if (o.state !== "active") process.exit(0);
+        // Do not clobber a recorded live proxy_pid with a different value —
+        // that means another proxy of a concurrent slot owns this lease.
+        const cur = Number(o.proxy_pid);
+        if (Number.isFinite(cur) && cur > 0 && cur !== Number(process.env.PROXY_PID)) {
+            try { if (process.kill(cur, 0)) process.exit(0); } catch (e) { /* dead — proceed */ }
+        }
+        o.proxy_pid = Number(process.env.PROXY_PID);
+        const tmp = process.env.SIDE + ".tmp." + process.pid;
+        fs.writeFileSync(tmp, JSON.stringify(o, null, 2) + "\n", "utf8");
+        fs.renameSync(tmp, process.env.SIDE);
+    ' || { rm -f "$tmp"; return 0; }
+    rm -f "$tmp"
+    return 0
 }
 
 # SEE-1240 WS-8 retirement note: sidecar_write_override_cfg() (the WS-1
