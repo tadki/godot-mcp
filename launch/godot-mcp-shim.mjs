@@ -17,6 +17,7 @@
 // never consulted.
 
 import { spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -252,9 +253,24 @@ function answerPing(msg) {
 }
 
 // --- background chain spawn (§4.1) ----------------------------------------------
+function runConfigValidate() {
+    // SEE-1325 H2: KOL 签名命中 + HOME 健康度失败 → T+0 hard fail（rc≤2），
+    // 在 spawnChain 之前拦截 —— 防止 daemon 模板（硬编码 D 盘 launcher）把链
+    // 拉到共享 master 检出上产生 split-brain。平台根治项 = daemon 模板收敛。
+    const validateUrl = path.join(path.dirname(fileURLToPath(import.meta.url)), 'config-validate.mjs');
+    if (!fs.existsSync(validateUrl)) return; // guard 模块缺失时不阻塞链（防御式，测试 seam 同样依赖此语义）
+    try {
+        execFileSync(process.execPath, [validateUrl, '--repo-root', REPO_ROOT, '--shim', fileURLToPath(import.meta.url), '--launcher', LAUNCHER_PATH, '--fork-cli', FORK_CLI, '--home', process.env.HOME, '--godot-mcp-home', GODOT_MCP_HOME, '--shared-master', process.env.GODOT_MCP_SHARED_MASTER || '', '--marker', process.env.GODOT_MCP_ENV_INJECTED || ''], { encoding: 'utf8', timeout: 2000 });
+    } catch (e) {
+        process.stderr.write(e.stderr || '');
+        die(`config-validate hard fail rc=${e.status ?? '?'} — daemon mcp-config template hardcodes D-drive paths (platform root cause); see [config-validate] diagnostics`, 2);
+    }
+}
+
 function spawnChain() {
     if (chainSpawned) return;
     chainSpawned = true;
+    runConfigValidate();
     // 测试 seam 生产防御 (decision 01a08100 增量③): the override is a test-only
     // seam — it is honored ONLY with the explicit allow flag (tests set both);
     // a stray override in production is ignored loudly, never silently used.

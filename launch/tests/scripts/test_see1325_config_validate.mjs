@@ -262,7 +262,7 @@ test('§SPEC-012 逃生门只豁免 DRDFS 执行路径，不豁免 HOME 健康�
 test('stage log 常量：launcher 侧 [stage=...] 行含 DRDFS_ESCAPE 与失败诊断键', () => {
     if (!mod) return assert.fail('RED: config-validate.mjs 不存在');
     assert.match(LAUNCHER_STAGE_LINE, /DRDFS_ESCAPE=1/);
-    assert.match(LAUNCHER_STAGE_LINE, /\[stage=/);
+    assert.match(LAUNCHER_STAGE_LINE, /stage=CONFIG_VALIDATE/);
     assert.ok(typeof SHIM_STAGE_LINE === 'string' && SHIM_STAGE_LINE.length > 0);
 });
 
