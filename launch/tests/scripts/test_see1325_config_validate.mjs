@@ -10,7 +10,7 @@
 // 磁盘签名（非 env 证据）三条同时成立才算 KOL 部署：
 //   S1 repo 布局：repo root 有 project.godot
 //   S2 .dev/env/kol-mcp.env 存在于 repo root
-//   S3 shim/launcher 的 realpath 不落在共享 master 检出（GODOT_MCP_SHARED_MASTER）之内
+//   S3 shim 的 realpath 不落在共享 master 检出（GODOT_MCP_SHARED_MASTER）之内
 // 注入健康度（仅签名命中时参与判定）：
 //   H1 GODOT_MCP_HOME 位于 $HOME 之下
 //   H2 GODOT_MCP_HOME ≠ 内置默认 ~/.config/godot-mcp

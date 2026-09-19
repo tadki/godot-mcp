@@ -3,7 +3,8 @@
 //
 // 判定链（§SPEC-011/012，仅当磁盘签名命中 KOL 部署形态时硬约束生效）：
 //   1. 磁盘签名（非 env 证据）：repo root 有 project.godot 且 .dev/env/kol-mcp.env
-//      存在，且 shim/launcher 的 realpath 不落在共享 master 检出内。
+//      存在，且 shim 的 realpath 不落在共享 master 检出内（S3 仅锚 shim，
+//      理由见 detectKolSignature 内注）。
 //   2. 注入健康度：GODOT_MCP_HOME 必须位于 $HOME 之下且 ≠ 内置默认
 //      ~/.config/godot-mcp（NEUTRAL 默认 = daemon 注入通道被绕过）。
 //   3. 执行路径（LAUNCHER_PATH / FORK_CLI）禁 /mnt/ 字面量；SHARED_MASTER 数据
@@ -27,7 +28,10 @@ export const LAUNCHER_STAGE_LINE =
     '[godot-mcp-launcher] stage=CONFIG_VALIDATE ok=<bool> reason=<reason> escape=<DRDFS_ESCAPE=1|none>';
 export const DRDFS_STAGE_LINE = '[godot-mcp-launcher] stage=DRDFS_ESCAPE msg="GODOT_MCP_ALLOW_DRVFS_PATHS=1 escape active"';
 
-const NEUTRAL_DEFAULT = () => path.join(process.env.HOME || '/', '.config', 'godot-mcp');
+// 内置默认 GODOT_MCP_HOME（NEUTRAL 默认 = daemon 注入通道被绕过）。
+function neutralDefault() {
+    return path.join(process.env.HOME || '/', '.config', 'godot-mcp');
+}
 
 function isUnder(child, parent) {
     const rel = path.relative(parent, child);
@@ -60,7 +64,7 @@ function homeHealth(input) {
     // ~/.config/godot-mcp 的比较防的是"NEUTRAL 默认漏网"。
     if (!isUnder(home, input.home)) return false;
     const neutral = input.home === (process.env.HOME || '/')
-        ? NEUTRAL_DEFAULT()
+        ? neutralDefault()
         : path.join(input.home, '.config', 'godot-mcp');
     if (path.resolve(home) === path.resolve(neutral)) return false;
     return true;
