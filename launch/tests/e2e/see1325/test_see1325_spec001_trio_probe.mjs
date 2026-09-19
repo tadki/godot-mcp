@@ -39,8 +39,16 @@ const FORK = path.resolve(HERE, '../../../..');
 const CONFIGURE = path.join(FORK, 'launch', 'configure-mcp-port.sh');
 
 const readJson = (p) => JSON.parse(fs.readFileSync(path.join(EV, p), 'utf8'));
+// 证据文件依赖防御：本套件断言的对象是 2026-09-19 实机运行的固化证据；在
+// 没有证据文件的环境（如 fresh clone 丢 .log）应 skip-with-reason 而非 ENOENT
+// fail（C0 收讫裁定：Atlas 2026-09-19）。
+function requireEvidence(t, ...names) {
+    const missing = names.filter((n) => !fs.existsSync(path.join(EV, n)));
+    if (missing.length > 0) t.skip(`evidence file(s) absent: ${missing.join(', ')} — C0 实机证据未随此环境分发，跳过而非误报失败`);
+}
 
-test('§SPEC-001 E1 三要素态成立（lease active + 无释放痕迹 + proxy_pid 已死 + 端口闭合）', () => {
+test('§SPEC-001 E1 三要素态成立（lease active + 无释放痕迹 + proxy_pid 已死 + 端口闭合）', (t) => {
+    requireEvidence(t, 'trio_sidecar_after_phaseA.json');
     const trio = readJson('trio_sidecar_after_phaseA.json');
     assert.equal(trio.state, 'active');
     assert.equal(trio.released_at, null);
@@ -49,7 +57,8 @@ test('§SPEC-001 E1 三要素态成立（lease active + 无释放痕迹 + proxy_
     assert.ok(fs.existsSync(path.join(FORK, 'launch', 'godot-mcp-proxy.mjs')));
 });
 
-test('§SPEC-001 E2 fast-path 命中且跳过重写（CONFIGURE_SH rc=0 dt≈321ms，lease_id 不变）', () => {
+test('§SPEC-001 E2 fast-path 命中且跳过重写（CONFIGURE_SH rc=0 dt≈321ms，lease_id 不变）', (t) => {
+    requireEvidence(t, 'phaseB_proxy_stages.log', 'phaseB_sidecar_after.json', 'trio_sidecar_after_phaseA.json');
     const stages = fs.readFileSync(path.join(EV, 'phaseB_proxy_stages.log'), 'utf8');
     assert.match(stages, /\[stage=CONFIGURE_SH_BEGIN\]/);
     const m = stages.match(/CONFIGURE_SH_END\][^\n]*rc=0 dt_ms=(\d+)/);
@@ -60,7 +69,8 @@ test('§SPEC-001 E2 fast-path 命中且跳过重写（CONFIGURE_SH rc=0 dt≈321
     assert.equal(after.lease_id, trio.lease_id, 'lease_id preserved across phase B (fast-path skip-rewrite)');
 });
 
-test('§SPEC-001 E3 误判核心证据：异步 reaper 在 editor 启动窗口内翻转 lease（released_at T0+4.5s）', () => {
+test('§SPEC-001 E3 误判核心证据：异步 reaper 在 editor 启动窗口内翻转 lease（released_at T0+4.5s）', (t) => {
+    requireEvidence(t, 'phaseB_proxy_stages.log', 'phaseB_sidecar_after.json', 'trio_sidecar_after_phaseA.json');
     const trio = readJson('trio_sidecar_after_phaseA.json');
     const after = readJson('phaseB_sidecar_after.json');
     const stages = fs.readFileSync(path.join(EV, 'phaseB_proxy_stages.log'), 'utf8');
@@ -76,7 +86,8 @@ test('§SPEC-001 E3 误判核心证据：异步 reaper 在 editor 启动窗口�
     assert.equal(after.intentional_release ?? null, null, 'not an intentional release — reaper stale path');
 });
 
-test('§SPEC-001 E4 editor 呈现 released → 回退 6550 → proxy 探 64777 空等 → 300s 超时（链路死亡）', () => {
+test('§SPEC-001 E4 editor 呈现 released → 回退 6550 → proxy 探 64777 空等 → 300s 超时（链路死亡）', (t) => {
+    requireEvidence(t, 'phaseB_editor_port_64777.log', 'phaseB_driver_result.json');
     const editorLog = fs.readFileSync(path.join(EV, 'phaseB_editor_port_64777.log'), 'utf8');
     assert.match(editorLog, /WS_BIND_OK[^\n]*port=6550/, 'editor bound the 6550 fallback (lease rejected)');
     assert.doesNotMatch(editorLog, /WS_BIND_OK[^\n]*port=64777/, 'editor never bound the leased port');
