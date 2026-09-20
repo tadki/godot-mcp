@@ -17,7 +17,7 @@ import { join, dirname } from 'node:path';
 
 const PARSER_PATH = join(
     dirname(new URL(import.meta.url).pathname),
-    '..', '..', 'launch', 'warmup-stage-parser.mjs'
+    '..', '..', 'warmup-stage-parser.mjs'
 );
 const {
     STAGE_ENUM,
