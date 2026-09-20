@@ -1,0 +1,11 @@
+2026-09-19T22:01:08.743Z [godot-mcp-shim] [chain] [godot-mcp-proxy] [stage=NPX_SPAWN] [t=+1ms] [ts=2026-09-19T22:01:08.743Z] cmd=/usr/bin/node
+2026-09-19T22:01:09.532Z [godot-mcp-shim] [chain] [godot-mcp-proxy] [stage=ENSURE_EDITOR_BEGIN] [t=+790ms] [ts=2026-09-19T22:01:09.532Z] attempt=1
+2026-09-19T22:01:12.612Z [godot-mcp-shim] [chain] [configure-mcp-port] [stage=REAPER_ASYNC_BEGIN] [t=+39ms] [ts=2026-09-19T22:01:12.611Z]
+2026-09-19T22:01:12.616Z [godot-mcp-shim] [chain] [configure-mcp-port] [stage=REAPER_ASYNC_END] [t=+43ms] [ts=2026-09-19T22:01:12.615Z] pid=310764
+2026-09-19T22:01:12.754Z [godot-mcp-shim] [chain] [godot-mcp-proxy] warmup mode: cold (editor not yet listening; timeout 300s).
+2026-09-19T22:01:12.930Z [godot-mcp-shim] [chain] [godot-mcp-proxy] [stage=CONFIGURE_SH_BEGIN] [t=+4187ms] [ts=2026-09-19T22:01:12.929Z] path=spawn project_godot=/home/jerry/c0-see1328-worktree/project.godot
+2026-09-19T22:01:12.979Z [godot-mcp-shim] [chain] [configure-mcp-port] [stage=REAPER_ASYNC_BEGIN] [t=+33ms] [ts=2026-09-19T22:01:12.978Z]
+2026-09-19T22:01:12.983Z [godot-mcp-shim] [chain] [configure-mcp-port] [stage=REAPER_ASYNC_END] [t=+37ms] [ts=2026-09-19T22:01:12.982Z] pid=310893
+2026-09-19T22:01:13.250Z [godot-mcp-shim] [chain] [godot-mcp-proxy] [stage=CONFIGURE_SH_END] [t=+4508ms] [ts=2026-09-19T22:01:13.250Z] path=spawn rc=0 dt_ms=321
+2026-09-19T22:01:14.579Z [godot-mcp-shim] [chain] [godot-mcp-proxy] [stage=SPAWN_RETURNED] [t=+5837ms] [ts=2026-09-19T22:01:14.579Z] dt_ms=5047
+2026-09-19T22:01:14.579Z [godot-mcp-shim] [chain] [godot-mcp-proxy] [stage=ENSURE_EDITOR_END] [t=+5837ms] [ts=2026-09-19T22:01:14.579Z] spawned=true reused=false dt_ms=5047

@@ -101,7 +101,7 @@ function runShimRead(home, label) {
         // captured before resolving.
         const proc = spawn(process.execPath, [SHIM_PATH, label], {
             stdio: ['pipe', 'pipe', 'pipe'],
-            env: { ...process.env, HOME: home },
+            env: { ...process.env, HOME: home, GODOT_MCP_HOME: path.join(home, '.multica') },
         });
         const errLines = [];
         createInterface({ input: proc.stderr, terminal: false, crlfDelay: Infinity }).on('line', (l) => errLines.push(l));
@@ -124,7 +124,10 @@ section('proxy writes post-patch cache through the real chain entry');
 {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'see1244-cache-'));
     const r = await runProxyForCache('CacheTest', home);
-    const cacheFile = path.join(home, '.config', 'godot-mcp', 'godot-mcp-tools-cache-cachetest.json');
+    // SEE-1328 H2 guard 适配：shim/launcher 的状态目录随注入的 GODOT_MCP_HOME
+    // 走（= $HOME/.multica），cache 路径常量同步 —— 断言语义（proxy 写 / shim 读 /
+    // stale 旗标）不变，仅落点随 env 前置移动。
+    const cacheFile = path.join(home, '.multica', 'godot-mcp-tools-cache-cachetest.json');
     if (r.timeout) {
         ok('proxy answered tools/list within timeout', false, JSON.stringify((r.errLines || []).slice(-5)));
     } else {
@@ -148,7 +151,7 @@ section('proxy writes post-patch cache through the real chain entry');
 section('fork mtime drift → shim stale flag (still answers)');
 {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'see1244-stale-'));
-    const cacheDir = path.join(home, '.config', 'godot-mcp');
+    const cacheDir = path.join(home, '.multica');
     fs.mkdirSync(cacheDir, { recursive: true });
     fs.writeFileSync(path.join(cacheDir, 'godot-mcp-tools-cache-staletest.json'), JSON.stringify({
         schema: 1,
@@ -158,7 +161,7 @@ section('fork mtime drift → shim stale flag (still answers)');
     }));
     const proc = spawn(process.execPath, [SHIM_PATH, 'StaleTest'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, HOME: home },
+        env: { ...process.env, HOME: home, GODOT_MCP_HOME: path.join(home, '.multica') },
     });
     const errLines = [];
     createInterface({ input: proc.stderr, terminal: false, crlfDelay: Infinity }).on('line', (l) => errLines.push(l));

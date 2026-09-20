@@ -124,6 +124,8 @@ sidecar_write_active() {
     SIDE_RUNTIME_ID="${KOL_RUNTIME_ID:-}" SIDE_TASK_ID="${KOL_TASK_ID:-}" \
     SIDE_PROXY_PID="${SIDE_PROXY_PID:-}" \
     SIDE_KEEP_LEASE_ID="${KOL_KEEP_LEASE_ID:-}" \
+    SIDE_PREDECESSOR_LEASE_ID="${SIDE_PREDECESSOR_LEASE_ID:-}" \
+    SIDE_WORKTREE_FIELD="${SIDE_WORKTREE_FIELD:-}" \
     node -e '
         const crypto = require("crypto");
         const env = process.env;
@@ -150,6 +152,11 @@ sidecar_write_active() {
         // unknown-legacy and skips the proxy-dead branch rather than guessing.
         const pp = Number(env.SIDE_PROXY_PID);
         out.proxy_pid = Number.isFinite(pp) && pp > 0 ? pp : null;
+        // SEE-1325 C-code（§SPEC-009）：端口迁移时记录前 lease_id（addon 宽松
+        // 取值容忍未知键）；worktree 字段可由 writer 覆写为 Windows 形态
+        // （/mnt/d 宿主归一，D:/... == Godot 项目目录形态）。
+        if (env.SIDE_PREDECESSOR_LEASE_ID) out.predecessor_lease_id = env.SIDE_PREDECESSOR_LEASE_ID;
+        if (env.SIDE_WORKTREE_FIELD) out.worktree = env.SIDE_WORKTREE_FIELD;
         process.stdout.write(JSON.stringify(out, null, 2) + "\n");
     ' > "$tmp"
     chmod 0644 "$tmp"

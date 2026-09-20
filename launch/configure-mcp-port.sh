@@ -359,8 +359,20 @@ fi
 if [[ "$cur_state" == "$SIDECAR_STATE_ACTIVE" && "$cur_port" == "$PORT" \
       && ( -z "$cur_released_at" || "$cur_released_at" == "null" ) \
       && "$cur_intentional" != "true" ]]; then
-    echo "[configure-mcp-port] Fast path: sidecar already active on port=${PORT}, no stale release traces (lease_id unchanged)."
-    exit 0
+    # SEE-1325 C-code 阻断项②：/mnt/ 宿主下旧 lease 的 worktree 字段若仍是
+    # Linux 形态（/mnt/d/...），必须落穿重写为 Windows 形态——否则插件
+    # _normalize_worktree_path（仅折叠 //wsl.localhost）比对永远失败 → lease
+    # 被忽略 → 6550 回退（C0 实测）。Windows 形态 = 快路径可保留。
+    _cfg_cur_wt="$(sidecar_get "$LEASE_FILE" worktree 2>/dev/null || true)"
+    _cfg_want_wt="$(dirname "$PROJECT_GODOT")"
+    if [[ "$_cfg_want_wt" == /mnt/* ]] && command -v wslpath >/dev/null 2>&1; then
+        _cfg_want_wt="$(wslpath -w "$_cfg_want_wt" 2>/dev/null || echo "$_cfg_want_wt")"
+    fi
+    if [[ "$_cfg_cur_wt" == "$_cfg_want_wt" ]]; then
+        echo "[configure-mcp-port] Fast path: sidecar already active on port=${PORT}, no stale release traces (lease_id unchanged)."
+        exit 0
+    fi
+    echo "[configure-mcp-port] Fast path bypass: sidecar active on port=${PORT} but worktree field form drifts (${_cfg_cur_wt} != ${_cfg_want_wt}); rewriting (lease_id preserved)."
 fi
 if [[ "$cur_state" == "$SIDECAR_STATE_ACTIVE" && "$cur_port" == "$PORT" ]]; then
     _cfg_stage_log LEASE_TRACES_CLEARED "released_at=${cur_released_at:-none} intentional=${cur_intentional:-none}"
@@ -382,8 +394,28 @@ fi
 if [[ "$cur_state" == "$SIDECAR_STATE_ACTIVE" && "$cur_port" == "$PORT" && -n "$cur_lease_id" ]]; then
     export KOL_KEEP_LEASE_ID="$cur_lease_id"
 fi
+# SEE-1325 C-code（§SPEC-009 强化）：端口迁移语义。旧 lease 挂在不同端口时记
+# predecessor_lease_id（addon 侧宽松取值容忍未知键，plugin.gd:257-296 已实测）
+# + LEASE_PORT_MIGRATED stage log。同端口重写是 stale-traces 清理、不是迁移，
+# 不写 predecessor（lease_id 由上面的 KEEP 分支保留）。
+_cfg_pred_lease_id=""
+if [[ -n "$cur_lease_id" && "$cur_port" != "$PORT" ]]; then
+    _cfg_pred_lease_id="$cur_lease_id"
+    _cfg_stage_log LEASE_PORT_MIGRATED "from_port=${cur_port:-none} to_port=${PORT} predecessor_lease_id=${_cfg_pred_lease_id}"
+    echo "[configure-mcp-port] Port migration: previous lease on port=${cur_port} (lease_id=${_cfg_pred_lease_id}); new lease binds port=${PORT}."
+fi
+# SEE-1325 C-code 阻断项②：/mnt/d 宿主 worktree 的 Windows 形态归一——插件
+# _normalize_worktree_path 只折叠 //wsl.localhost 前缀，D:/... 项目目录与
+# /mnt/d/... sidecar 字段永远不相等 → lease 被忽略 → 6550 回退（C0 实测）。
+# writer 侧把 worktree 字段写成 wslpath -w 的 Windows 形态即可，零 addon 改动。
+_SIDE_WT_FIELD="$(dirname "$PROJECT_GODOT")"
+if [[ "$_SIDE_WT_FIELD" == /mnt/* ]] && command -v wslpath >/dev/null 2>&1; then
+    _SIDE_WT_FIELD="$(wslpath -w "$_SIDE_WT_FIELD" 2>/dev/null || echo "$_SIDE_WT_FIELD")"
+fi
+export SIDE_WORKTREE_FIELD="$_SIDE_WT_FIELD"
+if [[ -n "$_cfg_pred_lease_id" ]]; then export SIDE_PREDECESSOR_LEASE_ID="$_cfg_pred_lease_id"; fi
 sidecar_write_active "$PROJECT_GODOT" "$PORT" "${AGENT_NAME:-${KOL_AGENT_NAME:-}}" >/dev/null
-unset KOL_KEEP_LEASE_ID
+unset KOL_KEEP_LEASE_ID SIDE_PREDECESSOR_LEASE_ID SIDE_WORKTREE_FIELD
 echo "[configure-mcp-port] runtime_id: ${KOL_RUNTIME_ID}"
 
 # SEE-1240 WS-8: machine-level bind settings (bind_mode / custom_bind_ip) live

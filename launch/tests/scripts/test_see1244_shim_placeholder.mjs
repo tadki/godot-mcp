@@ -30,7 +30,10 @@ async function getPlaceholderTools() {
     return new Promise((resolve, reject) => {
         const proc = spawn(process.execPath, [SHIM_PATH, 'PlaceholderTest'], {
             stdio: ['pipe', 'pipe', 'ignore'],
-            env: { ...process.env, HOME: home },
+            // SEE-1328 H2 guard 适配：fresh temp HOME 下显式注入合法 GODOT_MCP_HOME
+            // （模拟 daemon 合法注入形态），否则 KOL 签名 + NEUTRAL 默认命中
+            // HOME_HEALTH_UNSAFE → SHIM_DIE → 套件 8s 超时。
+            env: { ...process.env, HOME: home, GODOT_MCP_HOME: path.join(home, '.multica') },
         });
         let buf = '';
         const timer = setTimeout(() => { proc.kill(); reject(new Error('timeout')); }, 8000);

@@ -36,6 +36,9 @@ function startShim(extraEnv = {}) {
         env: {
             ...process.env,
             HOME: TEST_HOME,
+            // SEE-1328 H2 guard 适配：fresh temp HOME 下注入合法 GODOT_MCP_HOME
+            // （模拟 daemon 合法注入形态），防 KOL 签名 + NEUTRAL 默认误判 hard fail。
+            GODOT_MCP_HOME: path.join(TEST_HOME, '.multica'),
             MULTICA_AGENT_NAME: '', CLAUDE_AGENT_NAME: '', KOL_AGENT_NAME: '',
             KOL_AGENT_NAME_OVERRIDE: undefined,
             ...extraEnv,
@@ -125,7 +128,7 @@ section('tools/list: cache hit');
     // SEE-1292 §DECPL-001: the shim resolves its state dir from GODOT_MCP_HOME
     // (default ${HOME}/.config/godot-mcp, NOT the legacy ~/.multica) — seed the
     // cache at the path the shim actually reads under the sandboxed HOME.
-    const cacheDir = path.join(TEST_HOME, '.config', 'godot-mcp');
+    const cacheDir = path.join(TEST_HOME, '.multica');
     fs.mkdirSync(cacheDir, { recursive: true });
     const cacheTools = [
         { name: 'godot_exec', description: 'real exec schema', inputSchema: { type: 'object', properties: { action: { type: 'string' } } } },
@@ -148,7 +151,7 @@ section('tools/list: cache hit');
 
 section('tools/list: corrupt cache → placeholder fallback (D5)');
 {
-    const cacheDir = path.join(TEST_HOME, '.config', 'godot-mcp');
+    const cacheDir = path.join(TEST_HOME, '.multica');
     fs.writeFileSync(path.join(cacheDir, 'godot-mcp-tools-cache-handshaketest.json'), '{not-json');
     const proc = startShim();
     await waitShimStarted(proc);

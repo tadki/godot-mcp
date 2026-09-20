@@ -46,6 +46,7 @@ function runColdFlow(home, label) {
             env: {
                 ...process.env,
                 HOME: home,
+                GODOT_MCP_HOME: path.join(home, '.multica'),
                 KOL_AGENT_NAME: label,
                 // Real chain, mock fork + fake editor WS (hermetic). Isolated
                 // random port: the earlier flakiness was the test leaning on a
@@ -107,7 +108,7 @@ function runColdFlow(home, label) {
         // NOTE: deliberately NO second tools/list — claude does not re-pull.
         // Poll for cache closure; on the 20s boundary, dump the chain stderr
         // tail so a stall is attributable (which warm gate never opened).
-        const cacheFile = path.join(home, '.config', 'godot-mcp', `godot-mcp-tools-cache-${label.toLowerCase()}.json`);
+        const cacheFile = path.join(home, '.multica', `godot-mcp-tools-cache-${label.toLowerCase()}.json`);
         let diagnosed = false;
         const poll = setInterval(() => {
             if (fs.existsSync(cacheFile)) { clearInterval(poll); clearTimeout(timer); setTimeout(() => finish({ cacheReady: true }), 400); }
@@ -126,7 +127,7 @@ section('cold flow through shim interception → proactive proxy cache closure')
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'see1244-closure-'));
     const label = 'ClosureTest';
     const r = await runColdFlow(home, label);
-    const cacheFile = path.join(home, '.config', 'godot-mcp', 'godot-mcp-tools-cache-closuretest.json');
+    const cacheFile = path.join(home, '.multica', 'godot-mcp-tools-cache-closuretest.json');
 
     // The falsification core: with the OLD implementation the cache never lands.
     ok('cache file EXISTS after cold session (defect #1 fixed)', fs.existsSync(cacheFile),
@@ -140,7 +141,7 @@ section('cold flow through shim interception → proactive proxy cache closure')
         // AC-3 shape: a SECOND session (new shim, same HOME) must hit the cache.
         const proc2 = spawn(process.execPath, [SHIM_PATH, label], {
             stdio: ['pipe', 'pipe', 'pipe'],
-            env: { ...process.env, HOME: home },
+            env: { ...process.env, HOME: home, GODOT_MCP_HOME: path.join(home, '.multica') },
         });
         const err2 = [];
         createInterface({ input: proc2.stderr, terminal: false, crlfDelay: Infinity }).on('line', (l) => err2.push(l));

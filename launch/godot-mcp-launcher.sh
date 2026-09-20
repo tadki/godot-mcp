@@ -83,6 +83,27 @@ unset _gmc_depl_root
 : "${GODOT_MCP_AGENT_ID:=${MULTICA_AGENT_ID:-}}"
 export GODOT_MCP_WORKSPACE_ID GODOT_MCP_AGENT_ID
 
+# SEE-1325 H2: bootstrap source 之后、任何写操作之前的双轨 fail-fast —— KOL 磁盘
+# 签名命中且注入健康度失败时 rc≤2 立即退出（daemon 模板硬编码 D 盘 launcher 的
+# split-brain 止血；平台根治项 = daemon mcp-config 模板收敛，由 Atlas 立项）。
+if command -v node >/dev/null 2>&1; then
+    _cv_out="$(node "${SCRIPT_DIR}/config-validate.mjs" \
+        --repo-root "$(cd "${SCRIPT_DIR}/../../.." && pwd)" \
+        --shim "${SCRIPT_DIR}/godot-mcp-shim.mjs" \
+        --launcher "${SCRIPT_DIR}/godot-mcp-launcher.sh" \
+        --fork-cli "${GODOT_MCP_FORK_CLI:-${SCRIPT_DIR}/../server/dist/cli.js}" \
+        --home "${HOME:-/}" \
+        --godot-mcp-home "${GODOT_MCP_HOME:-}" \
+        --shared-master "${GODOT_MCP_SHARED_MASTER:-}" \
+        --marker "${GODOT_MCP_ENV_INJECTED:-}" 2>&1)" || {
+        printf '%s\n' "$_cv_out" >&2
+        printf '[godot-mcp-launcher] stage=CONFIG_VALIDATE_FAIL msg="fork-side stopgap for daemon template split-brain (platform root cause: daemon mcp-config template hardcoded D-drive paths)"\n' >&2
+        exit 2
+    }
+    case "$_cv_out" in *DRDFS_ESCAPE*) printf '[godot-mcp-launcher] stage=DRDFS_ESCAPE msg="GODOT_MCP_ALLOW_DRVFS_PATHS=1 escape active"\n' >&2 ;; esac
+    unset _cv_out
+fi
+
 MCP_TIMEOUT_SEC=60
 
 # Per-agent port allocation — single source of truth is agent-ports.json
@@ -1064,6 +1085,13 @@ fi
 if [[ -x "$FORK_CLI" ]]; then
     export GODOT_MCP_GODOT_MCP_CMD="${GODOT_MCP_GODOT_MCP_CMD:-${KOL_GODOT_MCP_CMD:-$FORK_CLI}}"
     export GODOT_MCP_QUICK_TIMEOUT_MS="${GODOT_MCP_QUICK_TIMEOUT_MS:-90000}"
+    # SEE-1325 C-code 阻断项①：fork build 产物 server/addon/ 与根级 addon 的
+    # GDScript 同名同类（UID duplicate → plugin 编译失败 → editor 首启从不
+    # 监听租赁端口）。launch 域修复：dist 就绪后给 server/addon 落 .gdignore，
+    # 让 Godot 扫描跳过 build 产物（C0 实测首启阻断，幂等 touch 无害）。
+    if [[ -d "${FORK_SERVER_DIR}/addon" ]]; then
+        touch "${FORK_SERVER_DIR}/addon/.gdignore" 2>/dev/null || true
+    fi
     log_stage "stage=FORK_WIRED msg=\"godot-mcp served from owner fork\" cli=${GODOT_MCP_GODOT_MCP_CMD} quick_timeout_ms=${GODOT_MCP_QUICK_TIMEOUT_MS}"
 else
     log "WARNING: fork CLI not found at ${FORK_CLI}; keeping upstream godot-mcp (${GODOT_MCP_QUICK_TIMEOUT_MS:-default 30s} timeout)."

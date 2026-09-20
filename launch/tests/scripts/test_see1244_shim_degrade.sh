@@ -42,8 +42,8 @@ drive_shim() {
         export "$extraenv"
         export KOL_SEE1244_ALLOW_TEST_OVERRIDE=1
     fi
-    env HOME="$TMP/home-$label" timeout 10 bash -c \
-        "sleep 0.3; cat '$infile'; sleep 2" | env HOME="$TMP/home-$label" node "$SHIM" "$label" \
+    env HOME="$TMP/home-$label" GODOT_MCP_HOME="$TMP/home-$label/.multica" timeout 10 bash -c \
+        "sleep 0.3; cat '$infile'; sleep 2" | env HOME="$TMP/home-$label" GODOT_MCP_HOME="$TMP/home-$label/.multica" node "$SHIM" "$label" \
         >"$outfile" 2>"$errfile"
     if [[ -n "$extraenv" ]]; then
         unset "${extraenv%%=*}"
@@ -112,10 +112,11 @@ section "D3: chain spawned but launcher dies immediately"
 
 section "D5: corrupt cache → placeholder fallback"
 {
-    # NOTE: drive_shim derives HOME from the label ($TMP/home-$label), so the
-    # corrupt cache must be planted at $TMP/home-d5test/.multica/ BEFORE the run.
-    mkdir -p "$TMP/home-d5test/.config/godot-mcp"
-    echo '{corrupt json' > "$TMP/home-d5test/.config/godot-mcp/godot-mcp-tools-cache-d5test.json"
+    # NOTE: drive_shim derives HOME from the label ($TMP/home-$label), and this
+    # suite now injects GODOT_MCP_HOME=$HOME/.multica (SEE-1328 H2 guard 适配),
+    # so the corrupt cache must be planted at $TMP/home-d5test/.multica/.
+    mkdir -p "$TMP/home-d5test/.multica"
+    echo '{corrupt json' > "$TMP/home-d5test/.multica/godot-mcp-tools-cache-d5test.json"
     in="$TMP/d5-in.ndjson"
     echo '{"jsonrpc":"2.0","id":5,"method":"tools/list"}' > "$in"
     drive_shim "$in" "$TMP/d5-out.ndjson" "$TMP/d5-err.log" "" "d5test"

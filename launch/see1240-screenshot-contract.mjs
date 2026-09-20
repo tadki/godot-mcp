@@ -53,6 +53,16 @@
 // stamps width×height from the PNG header so a caller can VERIFY the actual
 // resolution of what landed on disk.
 //
+// ## Retention (SEE-1328 §SPEC-016 定稿) — report-only, zero automatic cleanup
+//
+// Exports accumulate under .dev/godot-mcp/exports/ and this module NEVER
+// deletes anything: no automatic cleanup, no size/age cap, no unlink/rm on
+// exports at any point in the capture path. The directory is git-ignored, so
+// retention cost is local disk only. Cleanup is MANUAL, on demand — e.g.
+//   find <worktree>/.dev/godot-mcp/exports -name 'screenshot-*.png' \
+//     -mtime +30 -delete
+// Agents should treat exports as append-only evidence artifacts.
+//
 // The width×height pair is decoded from the PNG IHDR (bytes 16..24) — no image
 // library dependency. A decode failure marks exports with a decode_error note
 // instead of guessing.
@@ -66,6 +76,18 @@ import path from 'node:path';
 // response arrived long after the request was issued, which under freeze/pause
 // means the frame pre-dates the state the caller believes they captured.
 export const DEFAULT_STALE_CAPTURE_MS = 1500;
+
+// §SPEC-015: the freshness threshold is parameterized via
+// GODOT_MCP_STALE_CAPTURE_MS (integer ms ≥ 1). Any invalid value (absent,
+// empty, non-numeric, zero, negative, fractional) silently falls back to the
+// documented default so a typo'd env can never disable the contract.
+export function resolveStaleCaptureMs(env = process.env) {
+    const raw = env && env.GODOT_MCP_STALE_CAPTURE_MS;
+    if (typeof raw !== 'string') return DEFAULT_STALE_CAPTURE_MS;
+    // Strict decimal-integer form only: no floats, no exponent notation, no
+    // surrounding whitespace — a sloppy value falls back to the default.
+    return /^\d+$/.test(raw) && Number(raw) >= 1 ? Number(raw) : DEFAULT_STALE_CAPTURE_MS;
+}
 
 // Fresh capture following an explicit auto_step: the step just drew the target
 // state, but give the engine a full step's worth of slack before declaring the
@@ -119,7 +141,7 @@ export function base64ToBuffer(b64) {
 //      latency cannot see.
 // An auto_step capture is definitionally fresh (the step drew the frame we
 // captured), so neither signal marks it stale.
-export function frameAgeVerdict({ latencyMs, autoStep = null, thresholdMs = DEFAULT_STALE_CAPTURE_MS, mutationBeforeCaptureMs = 0, lastFrameAdvanceMs = 0 }) {
+export function frameAgeVerdict({ latencyMs, autoStep = null, thresholdMs = resolveStaleCaptureMs(), mutationBeforeCaptureMs = 0, lastFrameAdvanceMs = 0 }) {
     const latency = Number.isFinite(latencyMs) ? Math.max(0, Math.round(latencyMs)) : 0;
     if (autoStep) {
         return { stale: false, latencyMs: latency, reason: 'auto_step' };
@@ -134,6 +156,7 @@ export function frameAgeVerdict({ latencyMs, autoStep = null, thresholdMs = DEFA
     return {
         stale: latency > thresholdMs,
         latencyMs: latency,
+        thresholdMs,
         reason: latency > thresholdMs ? 'latency_over_threshold' : 'ok',
     };
 }
@@ -144,7 +167,7 @@ export function frameAgeVerdict({ latencyMs, autoStep = null, thresholdMs = DEFA
 export function staleAdvisoryText(verdict, autoStepEnabled = false) {
     const diagnosis = verdict.reason === 'no_step_after_mutation'
         ? 'An exec/input mutation was applied after the last game-time frame advance — the captured texture shows the PRE-MUTATION scene (frozen/paused games only redraw on step/thaw).'
-        : `Capture latency ${verdict.latencyMs}ms exceeds the ${DEFAULT_STALE_CAPTURE_MS}ms freshness threshold — the frame_post_draw wait resolved late (frozen/paused games only redraw on step/thaw).`;
+        : `Capture latency ${verdict.latencyMs}ms exceeds the ${verdict.thresholdMs ?? DEFAULT_STALE_CAPTURE_MS}ms freshness threshold — the frame_post_draw wait resolved late (frozen/paused games only redraw on step/thaw).`;
     const lines = [
         `⚠ STALE FRAME RISK (${verdict.reason}): ${diagnosis}`,
         'Remedy: advance one frame (godot_game_time step frames=1) and re-capture, or call screenshot_game with auto_step=true to have the step performed for you.',
