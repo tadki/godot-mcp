@@ -102,7 +102,16 @@ test('§SPEC-009 INV4（阻断项②）：/mnt/d 宿主 worktree → sidecar wor
     }
 });
 
-test('§SPEC-009 INV5（阻断项①）：launcher 对 fork build server/addon 落 .gdignore（脚本含该逻辑）', () => {
+test('§SPEC-009 INV5（阻断项①，D-fix 翻新）：.gdignore 为 git track 版 + copy-addon build 保留写回', () => {
+    // Owner 定稿方案（SEE-1328 thread 01a0bf51）：gdignore 直接加 git track，
+    // 替代 C-code 的 launcher 运行时 touch；copy-addon rmSync 需保留写回。
+    const tracked = execFileSync('git', ['-C', FORK, 'ls-files', 'server/addon/.gdignore'], { encoding: 'utf8' }).trim();
+    assert.equal(tracked, 'server/addon/.gdignore', '.gdignore must be git-tracked in server/addon/');
+    const gdi = fs.readFileSync(path.join(FORK, 'server', 'addon', '.gdignore'), 'utf8');
+    assert.match(gdi, /scan-skip|double-register/i, 'tracked .gdignore must carry the WHY comment');
+    const copyAddon = fs.readFileSync(path.join(FORK, 'server', 'scripts', 'copy-addon.ts'), 'utf8');
+    assert.match(copyAddon, /gdignoreBackup/, 'copy-addon must preserve .gdignore across the rmSync wipe');
+    // launcher 运行时 touch 已退役（防回归复活）
     const launcher = fs.readFileSync(path.join(FORK, 'launch', 'godot-mcp-launcher.sh'), 'utf8');
-    assert.match(launcher, /addon\/\.gdignore/, 'launcher must write .gdignore into server/addon (UID duplicate first-boot blocker)');
+    assert.doesNotMatch(launcher, /touch[^\n]*gdignore/, 'runtime touch of .gdignore must stay retired (track版替代)');
 });
