@@ -30,6 +30,31 @@ BASH_BIN="$(command -v bash)"
 out="$(PATH=/usr/bin:/bin POWERSHELL= "$BASH_BIN" -c "source '$LIB'; PATH=/nonexistent; export PATH; port_probe_verdict 64210")"
 tc "no-probe closed port → UNDETERMINED (fail-closed)" "UNDETERMINED" "$out"
 
+echo "== C-fix: command-failure/empty-output → UNDETERMINED (not FREE) =="
+# ss 层失败注入：ss 返回 rc≠0（模拟命令执行失败）→ UNDETERMINED，不落 FREE。
+# 用 PATH 里的假 ss 覆盖真实 ss（探针链第一个命中的工具即注入点）。
+FIXTURE="$(mktemp -d)"
+printf '#!/bin/sh\nexit 1\n' > "$FIXTURE/ss"; chmod +x "$FIXTURE/ss"
+out="$(PATH="$FIXTURE:/usr/bin:/bin" "$BASH_BIN" -c "source '$LIB'; port_probe_verdict 64210")"
+tc "ss command failure → UNDETERMINED" "UNDETERMINED" "$out"
+# ss 层空输出注入（rc0 但零行）→ UNDETERMINED 而非 FREE（Revy C-qa §3 语义区分）。
+printf '#!/bin/sh\nexit 0\n' > "$FIXTURE/ss"
+out="$(PATH="$FIXTURE:/usr/bin:/bin" "$BASH_BIN" -c "source '$LIB'; port_probe_verdict 64210")"
+tc "ss empty output (rc0) → UNDETERMINED" "UNDETERMINED" "$out"
+# 正常"确认无监听"仍 FREE：假 ss 输出真实格式的无监听列表（rc0 非空）。
+printf '#!/bin/sh\necho "State Recv-Q Send-Q Local Address:Port Peer Address:Port"\n' > "$FIXTURE/ss"
+out="$(PATH="$FIXTURE:/usr/bin:/bin" "$BASH_BIN" -c "source '$LIB'; port_probe_verdict 64210")"
+tc "ss normal no-listener output → FREE (existing semantics preserved)" "FREE" "$out"
+# 正常"确认有监听"仍 IN_USE。
+printf '#!/bin/sh\necho "LISTEN 0 128 *:64210 *:*"\n' > "$FIXTURE/ss"
+out="$(PATH="$FIXTURE:/usr/bin:/bin" "$BASH_BIN" -c "source '$LIB'; port_probe_verdict 64210")"
+tc "ss normal listener present → IN_USE" "IN_USE" "$out"
+# netstat.exe 层失败注入同理。
+printf '#!/bin/sh\nexit 1\n' > "$FIXTURE/netstat.exe"; chmod +x "$FIXTURE/netstat.exe"; rm -f "$FIXTURE/ss"
+out="$(PATH="$FIXTURE:/usr/bin:/bin" "$BASH_BIN" -c "source '$LIB'; port_probe_verdict 64210")"
+tc "netstat.exe command failure → UNDETERMINED" "UNDETERMINED" "$out"
+rm -rf "$FIXTURE"
+
 echo "== host chain =="
 # 双 host 皆配置且皆不可达（死端口）→ UNDETERMINED（§SPEC-008 不可判定单列）
 out="$(GODOT_MCP_HOST=127.0.0.1 GODOT_MCP_GATEWAY_HOST=127.0.0.2 bash -c "source '$LIB'; host_probe_verdict 64210")"

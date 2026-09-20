@@ -26,14 +26,26 @@ port_in_use() {
         return 1
     fi
     if command -v netstat.exe >/dev/null 2>&1; then
-        local pattern=":${p}\\b"
-        if netstat.exe -ano -p tcp 2>/dev/null | grep -E "LISTENING" | grep -qE "$pattern"; then
+        local pattern=":${p}\\b" _ns_out _ns_rc
+        _ns_out="$(netstat.exe -ano -p tcp 2>/dev/null)"; _ns_rc=$?
+        # SEE-1328 C-fix（§SPEC-008 fail-closed）：命令失败（rc≠0）或异常空输出
+        # 不能证明"无监听"——只有命令成功且输出经 grep 确认无匹配才是 FREE。
+        if [[ $_ns_rc -ne 0 || -z "$_ns_out" ]]; then
+            return 2
+        fi
+        if printf '%s\n' "$_ns_out" | grep -E "LISTENING" | grep -qE "$pattern"; then
             return 0
         fi
         return 1
     fi
     if command -v ss >/dev/null 2>&1; then
-        ss -H -tln 2>/dev/null | grep -qE ":${p}\\b"
+        local _ss_out _ss_rc
+        _ss_out="$(ss -H -tln 2>/dev/null)"; _ss_rc=$?
+        # 同上：ss 失败或异常空输出 → 不可判定（正常确认无监听 = rc0 且非空输出无匹配）。
+        if [[ $_ss_rc -ne 0 || -z "$_ss_out" ]]; then
+            return 2
+        fi
+        printf '%s\n' "$_ss_out" | grep -qE ":${p}\\b"
         return $?
     fi
     # /dev/tcp 自探（最后手段；bash 内建，但容器/受限 shell 可能禁用）
