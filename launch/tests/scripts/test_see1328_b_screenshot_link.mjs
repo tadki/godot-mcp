@@ -27,7 +27,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PROXY = path.resolve(HERE, '..', '..', 'godot-mcp-proxy.mjs');
+const PROXY = path.resolve(HERE, '..', '..', 'proxy', 'screenshot.mjs'); // SEE-1334 Phase 0a: 截图契约函数落在 proxy/screenshot.mjs
 const src = fs.readFileSync(PROXY, 'utf8');
 
 // 提取 proxy 内真实函数体（eval，不重实现——沿用 test_ac_m3reorg_011 模式）。

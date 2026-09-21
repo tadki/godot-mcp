@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PROXY = path.resolve(HERE, '..', '..', 'godot-mcp-proxy.mjs');
+const PROXY = path.resolve(HERE, '..', '..', 'proxy', 'screenshot.mjs'); // SEE-1334 Phase 0a: 截图契约函数落在 proxy/screenshot.mjs
 const src = fs.readFileSync(PROXY, 'utf8');
 
 function extractFunction(name) {
