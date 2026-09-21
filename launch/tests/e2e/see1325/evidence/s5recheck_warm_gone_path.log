@@ -1,0 +1,619 @@
+[godot-mcp-proxy] starting; GODOT_HOST=172.17.192.1 GODOT_PORT=64798 log=<none>
+[godot-mcp-proxy] launching godot-mcp via node /home/jerry/s5recheck-worktree/addons/godot_mcp/server/dist/cli.js (owner fork)
+[godot-mcp-proxy] [stage=NPX_SPAWN] [t=+1ms] [ts=2026-09-21T02:13:22.415Z] cmd=/usr/bin/node
+[godot-mcp-proxy] DEBUG: godot-mcp child spawned via /usr/bin/node (pid=177532)
+[godot-mcp-proxy] DEBUG: npx stdin writable immediately
+[godot-mcp-proxy] waiting for editor warmup... 0s elapsed, 0 call(s) queued (waiting)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","method":"notifications/initialized"}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","method":"notifications/initialized"}
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] [stage=ENSURE_EDITOR_BEGIN] [t=+7ms] [ts=2026-09-21T02:13:22.421Z] attempt=1
+[godot-mcp-proxy] waiting for editor warmup... 0s elapsed, 1 call(s) queued (waiting)
+[godot-mcp-proxy] [stage=TCP_PROBE_SHORTCIRCUIT] [t=+10ms] [ts=2026-09-21T02:13:22.424Z] port=64798
+[godot-mcp-proxy] [stage=ARBITER_VERDICT] [t=+25ms] [ts=2026-09-21T02:13:22.439Z] verdict=evict dt_ms=15
+[godot-mcp-proxy] port 64798 held by a DEAD cross-runtime proxy (runtime id mismatch); immediate evict then cold-start (no 300s wait).
+[godot-mcp-proxy] [stage=EVICT_BEGIN] [t=+26ms] [ts=2026-09-21T02:13:22.440Z] port=64798
+[godot-mcp-proxy] [stage=EVICT_STOP_SH] [t=+125ms] [ts=2026-09-21T02:13:22.539Z] rc=0 dt_ms=99
+[godot-mcp-proxy] evictStaleHolder: stop-godot-editor.sh rc=0
+[godot-mcp] [info] Server started
+[godot-mcp] [debug] Using GODOT_HOST override {"host":"172.17.192.1"}
+[godot-mcp] [debug] Using GODOT_HOST override {"host":"172.17.192.1"}
+[godot-mcp] [info] Godot connection strategy {"environment":"wsl","targetHost":"172.17.192.1","wsUrl":"ws://172.17.192.1:64798"}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"[\n  {\n    \"expected\": \"object\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"params\",\n      \"clientInfo\"\n    ],\n    
+[godot-mcp] [info] Connected to Godot
+[godot-mcp-proxy] [stage=NPX_CLI_CONNECTED] [t=+257ms] [ts=2026-09-21T02:13:22.671Z] elapsed_ms=257
+[godot-mcp-proxy] [stage=WARM_MODE] [t=+1012ms] [ts=2026-09-21T02:13:23.426Z] mode=hot timeout_ms=30000
+[godot-mcp-proxy] warmup mode: hot (editor already listening; timeout 30s).
+[godot-mcp-proxy] [stage=WARM] [t=+1077ms] [ts=2026-09-21T02:13:23.491Z] elapsed_ms=67 reused=false
+[godot-mcp-proxy] editor warm detected on 172.17.192.1:64798; slot freed, waiting for godot-mcp CLI to connect before releasing 1 queued call(s).
+[godot-mcp-proxy] self-registered proxy_pid=177525 on lease sidecar (runtime S5Diag3-solo).
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] editor warm detected on 172.17.192.1:64798 and godot-mcp CLI connected; releasing 1 queued call(s).
+[godot-mcp-proxy] [stage=WARM_FLUSH] [t=+3079ms] [ts=2026-09-21T02:13:25.493Z] path=recovering_connected queued=1 elapsed_ms=2069
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] tools cache refresh: pulling tools/list from fork (id=see1244-tools-cache-1789956805493-661896516).
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":"see1244-tools-cache-1789956805493-661896516","method":"tools/list"}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"tools":[{"name":"godot_scene","description":"Manage scenes in the editor: open a scene, save the open scene, or reload an open scene from disk after you edit its .tscn directly (so the edi
+[godot-mcp-proxy] tools cache written: /home/jerry/s5d2-4l9u/.multica/godot-mcp-tools-cache-s5diag3.json tools=22
+[godot-mcp-proxy] tools cache refresh complete: tools=22 (post-patch).
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 6s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 11s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 17s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 23s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 29s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 35s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 41s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] [stage=EVICT_REAP_SH] [t=+46289ms] [ts=2026-09-21T02:14:08.703Z] rc=0 dt_ms=46164
+[godot-mcp-proxy] evictStaleHolder: reap-stale-leases.sh rc=0 (global) stderr=itions and KILL orphaned editor PIDs.
+[reap-stale-leases] WARNING: pass --dry-run first to preview without side effects.
+[reap-stale-leases] WARNING: starting LIVE reap in 3s — press Ctrl-C to abort.
+
+[godot-mcp-proxy] [stage=EVICT_END] [t=+46289ms] [ts=2026-09-21T02:14:08.703Z] dt_ms=46263
+[godot-mcp-proxy] [stage=PREPARE_SH_BEGIN] [t=+46290ms] [ts=2026-09-21T02:14:08.704Z] worktree=/home/jerry/s5recheck-worktree
+[configure-mcp-port] [stage=REAPER_ASYNC_BEGIN] [t=+31ms] [ts=2026-09-21T02:14:08.762Z]
+[configure-mcp-port] [stage=REAPER_ASYNC_END] [t=+34ms] [ts=2026-09-21T02:14:08.765Z] pid=178549
+[godot-mcp-proxy] [stage=PREPARE_SH_END] [t=+46674ms] [ts=2026-09-21T02:14:09.088Z] rc=0 dt_ms=384
+[godot-mcp-proxy] [stage=CONFIGURE_SH_BEGIN] [t=+46675ms] [ts=2026-09-21T02:14:09.089Z] path=spawn project_godot=/home/jerry/s5recheck-worktree/project.godot
+[configure-mcp-port] [stage=REAPER_ASYNC_BEGIN] [t=+29ms] [ts=2026-09-21T02:14:09.130Z]
+[configure-mcp-port] [stage=REAPER_ASYNC_END] [t=+32ms] [ts=2026-09-21T02:14:09.134Z] pid=178705
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 46s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] [stage=CONFIGURE_SH_END] [t=+47070ms] [ts=2026-09-21T02:14:09.484Z] path=spawn rc=0 dt_ms=395
+[godot-mcp-proxy] [stage=START_SH_BEGIN] [t=+47071ms] [ts=2026-09-21T02:14:09.485Z] worktree=/home/jerry/s5recheck-worktree
+[start-godot-editor] [stage=PORT_PROBE_BEGIN] [t=+8ms] [ts=2026-09-21T02:14:09.508Z] port=64798
+[godot-mcp-proxy] [stage=START_SH_END] [t=+48733ms] [ts=2026-09-21T02:14:11.147Z] rc=1 dt_ms=1662
+[godot-mcp-proxy] persisted helper stderr to /home/jerry/s5d2-4l9u/.multica/godot-editor/S5Diag3-solo.stderr.log (source=start-godot-editor.sh rc=1, 398 chars)
+[godot-mcp-proxy] ERROR: editor spawn failed (bucket=spawn_failed_start, attempt=1, streak=1): start-godot-editor.sh rc=1
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 52s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 58s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":24,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":24,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 64s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":25,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":25,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":26,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":26,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 70s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":27,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":27,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp] [warning] Disconnected from Godot
+[godot-mcp] [warning] Reconnecting to Godot {"attempt":1,"delayMs":1000}
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":28,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":28,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp] [debug] Using GODOT_HOST override {"host":"172.17.192.1"}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"Error: Not connected to Godot\nStatus: Connection to Godot was lost\nDetails: 1 reconnection attempts made\nSuggestion: Check if Godot is still running."}]
+[godot-mcp-proxy] waiting for editor warmup... 76s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] WARNING: warm liveness probe failed 1/3 (editor may be dying); continuing.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":29,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":29,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp] [debug] Using GODOT_HOST override {"host":"172.17.192.1"}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"Error: Not connected to Godot\nStatus: Connection to Godot was lost\nDetails: 1 reconnection attempts made\nSuggestion: Check if Godot is still running."}]
+[godot-mcp-proxy] WARNING: warm liveness probe failed 2/3 (editor may be dying); continuing.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp] [debug] Using GODOT_HOST override {"host":"172.17.192.1"}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"Error: Not connected to Godot\nStatus: Connection to Godot was lost\nDetails: 1 reconnection attempts made\nSuggestion: Check if Godot is still running."}]
+[godot-mcp-proxy] waiting for editor warmup... 82s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp] [debug] Using GODOT_HOST override {"host":"172.17.192.1"}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"Error: Not connected to Godot\nStatus: Connection to Godot was lost\nDetails: 1 reconnection attempts made\nSuggestion: Check if Godot is still running."}]
+[godot-mcp-proxy] ERROR: warm liveness probe failed 3 consecutive times; editor presumed dead — triggering respawn (缺陷 #8).
+[godot-mcp-proxy] editor gone after warmup; resetting warm state for respawn (缺陷 #7). Next tools/call will re-spawn the editor.
+[godot-mcp-proxy] respawn loop: re-entering warmup after post-warm editor death (warmEditorDead=true). Next tools/call will re-spawn the editor.
+[godot-mcp-proxy] waiting for editor warmup... 87s elapsed, 0 call(s) queued (waiting)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":32,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] [stage=ENSURE_EDITOR_BEGIN] [t=+88417ms] [ts=2026-09-21T02:14:50.831Z] attempt=2
+[godot-mcp-proxy] [stage=PREPARE_SH_BEGIN] [t=+91419ms] [ts=2026-09-21T02:14:53.833Z] worktree=/home/jerry/s5recheck-worktree
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":33,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[configure-mcp-port] [stage=REAPER_ASYNC_BEGIN] [t=+39ms] [ts=2026-09-21T02:14:53.903Z]
+[configure-mcp-port] [stage=REAPER_ASYNC_END] [t=+43ms] [ts=2026-09-21T02:14:53.907Z] pid=180424
+[godot-mcp-proxy] [stage=WARM_MODE] [t=+91563ms] [ts=2026-09-21T02:14:53.977Z] mode=cold timeout_ms=60000
+[godot-mcp-proxy] warmup mode: cold (editor not yet listening; timeout 60s).
+[godot-mcp-proxy] [stage=PREPARE_SH_END] [t=+91896ms] [ts=2026-09-21T02:14:54.310Z] rc=0 dt_ms=477
+[godot-mcp-proxy] [stage=CONFIGURE_SH_BEGIN] [t=+91896ms] [ts=2026-09-21T02:14:54.310Z] path=spawn project_godot=/home/jerry/s5recheck-worktree/project.godot
+[configure-mcp-port] [stage=REAPER_ASYNC_BEGIN] [t=+38ms] [ts=2026-09-21T02:14:54.368Z]
+[configure-mcp-port] [stage=REAPER_ASYNC_END] [t=+42ms] [ts=2026-09-21T02:14:54.371Z] pid=180639
+[godot-mcp-proxy] [stage=CONFIGURE_SH_END] [t=+92355ms] [ts=2026-09-21T02:14:54.769Z] path=spawn rc=0 dt_ms=459
+[godot-mcp-proxy] [stage=START_SH_BEGIN] [t=+92355ms] [ts=2026-09-21T02:14:54.769Z] worktree=/home/jerry/s5recheck-worktree
+[start-godot-editor] [stage=PORT_PROBE_BEGIN] [t=+8ms] [ts=2026-09-21T02:14:54.796Z] port=64798
+[start-godot-editor] [stage=PORT_PROBE_END] [t=+860ms] [ts=2026-09-21T02:14:55.647Z] port=64798 free=true dt_ms=845
+[start-godot-editor] [stage=SCHTASKS_BEGIN] [t=+874ms] [ts=2026-09-21T02:14:55.662Z] task=kol-editor-S5Diag3-solo
+[start-godot-editor] [stage=SCHTASKS_END] [t=+1327ms] [ts=2026-09-21T02:14:56.115Z] ok=true dt_ms=449
+[start-godot-editor] [stage=EDITOR_LAUNCH_TRIGGERED] [t=+1334ms] [ts=2026-09-21T02:14:56.122Z] pid_kind=schtasks pid=pending
+[godot-mcp-proxy] [stage=START_SH_END] [t=+93714ms] [ts=2026-09-21T02:14:56.128Z] rc=0 dt_ms=1359
+[godot-mcp-proxy] editor spawn launched (configure rc=0, start rc=0, t=5297ms); waiting for port 64798.
+[godot-mcp-proxy] [stage=SPAWN_RETURNED] [t=+93714ms] [ts=2026-09-21T02:14:56.128Z] dt_ms=5297
+[godot-mcp-proxy] [stage=ENSURE_EDITOR_END] [t=+93714ms] [ts=2026-09-21T02:14:56.128Z] spawned=true reused=false dt_ms=5297
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":34,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 94s elapsed, 0 call(s) queued (waiting)
+[godot-mcp-proxy] WARNING: warmup timed out after 60s; entering RECOVERING (held call(s) answered with retryable timeout; will retry for 300s before FAILED_EXIT).
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":35,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":36,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 100s elapsed, 0 call(s) queued (recovering)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":37,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":38,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 105s elapsed, 0 call(s) queued (recovering)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":39,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":40,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 111s elapsed, 0 call(s) queued (recovering)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":41,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 117s elapsed, 0 call(s) queued (recovering)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":43,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":44,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 123s elapsed, 0 call(s) queued (recovering)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":45,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":46,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 129s elapsed, 0 call(s) queued (recovering)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":47,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":48,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 135s elapsed, 0 call(s) queued (recovering)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":49,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] [stage=WARM] [t=+141288ms] [ts=2026-09-21T02:15:43.702Z] elapsed_ms=140278 reused=false
+[godot-mcp-proxy] editor warm detected on 172.17.192.1:64798; slot freed, waiting for godot-mcp CLI to connect before releasing 0 queued call(s).
+[godot-mcp-proxy] waiting for editor warmup... 141s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":50,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":50,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp] [debug] Using GODOT_HOST override {"host":"172.17.192.1"}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"Error: Not connected to Godot\nStatus: Connection to Godot was lost\nDetails: 1 reconnection attempts made\nSuggestion: Check if Godot is still running."}]
+[godot-mcp] [info] Connected to Godot
+[godot-mcp-proxy] [stage=NPX_CLI_CONNECTED] [t=+142153ms] [ts=2026-09-21T02:15:44.567Z] elapsed_ms=141143
+[godot-mcp-proxy] editor warm detected on 172.17.192.1:64798 after recovery; dropping 0 buffered call(s) with retry guidance.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":51,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":51,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":52,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":52,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 147s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":53,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":53,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 153s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":54,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":54,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":55,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":55,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 159s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":56,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":56,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":57,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":57,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 165s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":58,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":58,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":59,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":59,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 170s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":60,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":60,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":61,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":61,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 176s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":62,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":62,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":63,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":63,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 182s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":64,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":64,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":65,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":65,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 188s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":66,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":66,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":67,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":67,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 194s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":68,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":68,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":69,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":69,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 200s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":70,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":70,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":71,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":71,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 206s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":72,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":72,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":73,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":73,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 212s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":74,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":74,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":75,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":75,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 218s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":76,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":76,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":77,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":77,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 224s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":78,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":78,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":79,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":79,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 230s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":80,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":80,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":81,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":81,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 235s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":82,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":82,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":83,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":83,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 241s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":84,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":84,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":85,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":85,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 247s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":86,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":86,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":87,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":87,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 253s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":88,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":88,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":89,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":89,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 259s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":90,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":90,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":91,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":91,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 265s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":92,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":92,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":93,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":93,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":94,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":94,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 271s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":95,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":95,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 277s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":96,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":96,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":97,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":97,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":98,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":98,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 283s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":99,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":99,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":100,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":100,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 289s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":101,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":101,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":102,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":102,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 295s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":103,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":103,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":104,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":104,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 300s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":105,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":105,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":106,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":106,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 306s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":107,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":107,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":108,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":108,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 312s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":109,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":109,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 318s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":110,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":110,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":111,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":111,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 324s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":112,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":112,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":113,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":113,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 330s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":114,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":114,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":115,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":115,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 336s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":116,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":116,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":117,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":117,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 342s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":118,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":118,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":119,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":119,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 348s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":120,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":120,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":121,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":121,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 354s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":122,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":122,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":123,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":123,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 360s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":124,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":124,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":125,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":125,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 365s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":126,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":126,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":127,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":127,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 371s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":128,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":128,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":129,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":129,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 377s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":130,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":130,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":131,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":131,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 383s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":132,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":132,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":133,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":133,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 389s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":134,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":134,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":135,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":135,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 395s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":136,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":136,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":137,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":137,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 401s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":138,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":138,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":139,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":139,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 407s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":140,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":140,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":141,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":141,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 413s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":142,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":142,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":143,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":143,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 419s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":144,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":144,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":145,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":145,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":146,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":146,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 424s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":147,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":147,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 430s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":148,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":148,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":149,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":149,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":150,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":150,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 436s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":151,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":151,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 442s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":152,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":152,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":153,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":153,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":154,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":154,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 448s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":155,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":155,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":156,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":156,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 454s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":157,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":157,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":158,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":158,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] waiting for editor warmup... 460s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":159,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":159,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":160,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":160,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[godot-mcp-proxy] waiting for editor warmup... 466s elapsed, 0 call(s) queued (warm)
+[godot-mcp-proxy] DEBUG: stdin line received: {"jsonrpc":"2.0","id":161,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: forwarded to npx stdin: {"jsonrpc":"2.0","id":161,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}
+[godot-mcp-proxy] DEBUG: npx stdout line: {"result":{"content":[{"type":"text","text":"{\"godot_version\":\"4.6.2-stable (official)\",\"main_scene\":\"res://scenes/ui/title_screen/title_screen.tscn\",\"name\":\"KingOfLikes\",\"path\":\"//wsl.
+[feeder] proxy exit code=null
