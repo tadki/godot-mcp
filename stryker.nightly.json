@@ -25,14 +25,9 @@
   "vitest": {
     "configFile": "server/vitest.config.ts"
   },
-  "thresholds": {
-    "high": 76,
-    "low": 74,
-    "break": 70
-  },
   "timeoutMS": 10000,
   "concurrency": 4,
-  "//thresholds": "First measured baseline 72.25 (run 1, 591 mutants) — break pinned 2.25 points BELOW it for headroom; ratchet ONLY-UP (plan §8 / SPEC-040).",
+  "//thresholds": "Report-only nightly (SPEC-041): NO thresholds block — kill rate is reported, never gated here; the strict gate lives in stryker.config.json. (Rework 2026-09-22: the copied break:70 contradicted the report-only claim and would red every run scoring <70 despite continue-on-error.)",
   "//mutate-note": "excludes tests via vitest default test-file matching; launch/tests kept out via ignorePatterns",
   "ignorePatterns": [
     "launch/tests",

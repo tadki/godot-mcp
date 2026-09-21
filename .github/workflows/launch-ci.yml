@@ -15,8 +15,10 @@ name: Launch CI (fast tier)
 # KOL worktree, no Windows). Long-running / environment-bound / drift-red
 # suites are NOT here — they live in launch-special.yml.
 #
-# Two parallel jobs stay under the 10-minute budget; node-units also seeds
-# the NODE_V8_COVERAGE child-process capture for the coverage gate (SPEC-021)
+# Two parallel jobs stay under the 10-minute budget. The launch coverage gate
+# (SPEC-021, revised: repo-internal `npm run coverage:launch` — wrapper-injected
+# NODE_V8_COVERAGE + c8 merge + threshold exit code) runs as its own job so
+# node-units keeps its 5-min shape and the gate gets the full-suite window.
 # — see the coverage step notes.
 
 on:
@@ -94,3 +96,30 @@ jobs:
         timeout-minutes: 4
         run: npx vitest run launch/tests/.vitest-gen/fast --testNamePattern "\.mjs$"
         working-directory: launch
+
+  # SEE-1334 SPEC-021 (revised per QA D1): launch coverage gate as a
+  # repo-internal, reproducible command. The generated wrappers inject
+  # NODE_V8_COVERAGE into every harness child; the gate script merges the raw
+  # v8 dumps with c8 and judges line/branch floors (exit code). Job name is a
+  # NEW context (`coverage-launch`) — not added to required checks (SPEC-013's
+  # list is unchanged; adding it is a later, separate decision).
+  coverage-launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Build server CLI (harness fork-CLI path)
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      - name: Install root dev tooling (vitest + c8)
+        run: npm ci --no-audit --no-fund
+      - name: Run launch coverage gate (wrapper injection → c8 merge → thresholds)
+        timeout-minutes: 18
+        run: npm run coverage:launch

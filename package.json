@@ -7,13 +7,15 @@
   "scripts": {
     "lint": "eslint . --max-warnings 59",
     "mutation": "stryker run",
-    "mutation-all": "stryker run stryker.nightly.json"
+    "mutation-all": "stryker run stryker.nightly.json",
+    "coverage:launch": "node launch/tests/runner/coverage-gate.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@vitest/coverage-v8": "^4.1.11",
+    "c8": "^12.0.0",
     "eslint": "^9.39.2",
     "eslint-plugin-sonarjs": "^3.0.5",
     "globals": "^16.5.0",
