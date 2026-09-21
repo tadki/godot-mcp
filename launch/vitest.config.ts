@@ -134,11 +134,18 @@ import { test } from 'vitest';
 import { spawn } from 'node:child_process';
 
 // stdin: 'ignore' ≙ the old runner's '</dev/null' defense (read → EOF, no hang).
+// NODE_V8_COVERAGE injection (SEE-1334 SPEC-021 revised): harnesses run the
+// launch runtime in CHILD processes, so vitest's in-process coverage provider
+// cannot see it. When the suite runs under the coverage gate
+// (LAUNCH_COVERAGE_DIR is set), every child dumps raw v8 coverage there;
+// launch/tests/runner/coverage-gate.mjs merges and judges it. Outside the
+// gate the var is unset and children skip the dump (zero overhead).
 test(${JSON.stringify(rel)}, { timeout: ${timeout} }, async () => {
   await new Promise((resolve, reject) => {
     const child = spawn(${JSON.stringify(runner)}, [${JSON.stringify(rel)}], {
       cwd: ${JSON.stringify(REPO)},
       stdio: ['ignore', 'inherit', 'inherit'],
+      env: { ...process.env, ...(process.env.LAUNCH_COVERAGE_DIR ? { NODE_V8_COVERAGE: process.env.LAUNCH_COVERAGE_DIR } : {}) },
     });
     child.on('error', reject);
     child.on('exit', (code, signal) => {
@@ -178,26 +185,13 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 600_000,
     hookTimeout: 30_000,
-    coverage: {
-      provider: 'v8',
-      // launch-side runtime surface: proxy modules + thin entry + the launch
-      // control-plane .mjs files the fast tier exercises.
-      include: ['launch/godot-mcp-proxy.mjs', 'launch/proxy/**/*.mjs', 'launch/*.mjs'],
-      exclude: ['launch/tests/**', 'launch/vitest.config.ts'],
-      // Floor just under the measured P2 baseline (71.6% stmts/lines, 69.4%
-      // branch, 73.0% funcs — harnesses drive the proxy through child
-      // processes, so these numbers come from merged child-process v8 output;
-      // see tests/runner/README notes in the CI job). Thresholds fail on
-      // regression while leaving honest room for hard-to-test code.
-      // NOTE: per-child-process coverage requires NODE_V8_COVERAGE in the
-      // environment (set by the CI job); a plain `vitest run --coverage`
-      // reports 0% because the wrappers spawn harnesses as subprocesses.
-      thresholds: {
-        statements: 70,
-        branches: 68,
-        functions: 72,
-        lines: 70,
-      },
-    },
+    // SEE-1334 SPEC-021 revised: launch-side coverage is judged by the
+    // repo-internal gate (tests/runner/coverage-gate.mjs) over child-process
+    // v8 dumps — NOT by vitest's provider. The provider cannot see the
+    // harness subprocesses (0% always), so its thresholds here were a fake
+    // gate on top of the real one; per the rework ruling the vitest-side
+    // threshold block is REMOVED (single true gate, no dual-track fiction).
+    // The gate script owns include/exclude + thresholds + exit code.
+    coverage: { provider: 'v8' },
   },
 });
