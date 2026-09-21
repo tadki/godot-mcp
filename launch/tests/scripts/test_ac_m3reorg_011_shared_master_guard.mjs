@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // SEE-1273 AC-M3REORG-011: isSharedMasterWorktree empty-guard unit test.
 //
-// Extracts the REAL function + its env-const from godot-mcp-proxy.mjs (eval,
-// no re-implementation) and drives it under both env shapes:
+// Extracts the REAL function + its env-const from the split proxy module
+// (launch/proxy/config.mjs — SEE-1334 Phase 0a moved both out of the monolith
+// entry; eval, no re-implementation) and drives it under both env shapes:
 //   (a) GODOT_MCP_SHARED_MASTER='' → guard must return false for every path
 //       (pre-fix bug: startsWith('' + '/') was true for all absolute paths)
 //   (b) GODOT_MCP_SHARED_MASTER=<real path> → matches that path + children only
@@ -12,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PROXY = path.resolve(HERE, '..', '..', 'godot-mcp-proxy.mjs');
+const PROXY = path.resolve(HERE, '..', '..', 'proxy', 'config.mjs');
 const src = fs.readFileSync(PROXY, 'utf8');
 
 let PASS = 0, FAIL = 0;

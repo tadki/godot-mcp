@@ -8,7 +8,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 import { existsSync as _mcp_exists } from "node:fs";
-const _proxy_default = path.resolve(new URL("../../../launch/godot-mcp-proxy.mjs", import.meta.url).pathname); // SEE-1273 T5-F 单落点（fork 根 = launch/；argv[2] 或 KOL 场景传 KOL proxy 绝对路径可覆盖）
+const _proxy_default = path.resolve(new URL("../../../launch/proxy/worktree.mjs", import.meta.url).pathname); // SEE-1334 Phase 0a: SEE-1170 函数落在 proxy/worktree.mjs（argv[2] 或 KOL 场景传 KOL proxy 绝对路径可覆盖）
 const PROXY = path.resolve(process.argv[2] || _proxy_default);
 const src = readFileSync(PROXY, 'utf8');
 
@@ -25,10 +25,10 @@ function extractFn(name) {
   if (!m) throw new Error(`fn ${name} not found in proxy source`);
   return m[0];
 }
-// also need the two state vars
+// also need the shared state object (SEE-1334 Phase 0a: the proxy's module-level
+// lets moved into a single exported S; the extracted bodies reference S.x)
 const stateVars = `
-let hasPrunedBareRepo = false;
-let lastBareRepoPruneDiag = null;
+const S = { hasPrunedBareRepo: false, lastBareRepoPruneDiag: null };
 const stageLogCalls = [];
 function stageLog(stage, msg) { stageLogCalls.push(stage + '|' + msg); }
 `;
@@ -40,7 +40,7 @@ function buildSandbox(extraEnv = {}) {
     extractFn('deriveBareRepoFromAnchor'),
     extractFn('tryPruneBareRepo'),
     extractFn('pruneThenRestat'),
-    'return { deriveBareRepoFromAnchor, tryPruneBareRepo, pruneThenRestat, getDiag: () => lastBareRepoPruneDiag, getLog: () => stageLogCalls.slice(), getHasPruned: () => hasPrunedBareRepo, resetState: () => { hasPrunedBareRepo = false; lastBareRepoPruneDiag = null; stageLogCalls.length = 0; } };',
+    'return { deriveBareRepoFromAnchor, tryPruneBareRepo, pruneThenRestat, getDiag: () => S.lastBareRepoPruneDiag, getLog: () => stageLogCalls.slice(), getHasPruned: () => S.hasPrunedBareRepo, resetState: () => { S.hasPrunedBareRepo = false; S.lastBareRepoPruneDiag = null; stageLogCalls.length = 0; } };',
   ].join('\n');
   const sandbox = {
     readFileSync,
