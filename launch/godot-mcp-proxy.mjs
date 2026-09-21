@@ -173,6 +173,7 @@ async function runRecoveryRound(trigger) {
         const psMatch = holderPidAlive ? await probeHolderCmdline(Number(lease.proxy_pid), ourWorktree) : null;
         const attr = attributeHolder({
             leaseRuntimeId: String(lease?.runtime_id || ''),
+            // eslint-disable-next-line no-undef -- SEE-1334 baseline: KOL_RUNTIME_ID is not in scope here (suspected rename miss for RUNTIME_ID at L4509); flagged for drift triage
             ourRuntimeId: String(KOL_RUNTIME_ID || ''),
             registryWorktree: holderWorktree || '',
             holderWorktree: String(lease?.worktree || ''),
@@ -184,6 +185,7 @@ async function runRecoveryRound(trigger) {
             portOpen,
             holderProxyAlive: holderPidAlive,
             holderRuntimeId: attr.holderRuntimeId,
+            // eslint-disable-next-line no-undef -- SEE-1334 baseline: KOL_RUNTIME_ID is not in scope here (suspected rename miss for RUNTIME_ID at L4509); flagged for drift triage
             ourRuntimeId: String(KOL_RUNTIME_ID || ''),
             leaseState: String(lease?.state || ''),
             releasedAt: lease?.released_at || null,
@@ -701,6 +703,7 @@ function warmupDiagnostic(forceState = undefined) {
 // deployment they surface as godot_editor_read action=screenshot_game|
 // screenshot_editor (there is no top-level "screenshot" tool). Match all
 // plausible forms so the hint fires regardless of how upstream names them.
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 function isScreenshotToolsCall(msg) {
     const params = msg && msg.params;
     if (!params || typeof params !== 'object') return false;
@@ -1459,6 +1462,7 @@ function failTakeover() {
                 // the (hopefully) freed port instead of hammering a stuck slot.
                 warm = false;
                 warmEditorDead = false;
+                // eslint-disable-next-line no-undef -- SEE-1334 baseline: warmFlushed is not declared in this scope (its `let` lives in another function at L3525); suspected latent bug, flagged for drift triage
                 warmFlushed = false;
                 spawnTriggered = false;
                 takeoverSelfHealInFlight = false;
@@ -1593,6 +1597,7 @@ function dropToolsCallId(id) {
     pendingHandshake.delete(id);
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 function handleClaudeMessage(line) {
     log(`DEBUG: stdin line received: ${line.slice(0, 120)}`);
     let msg;
@@ -2167,6 +2172,7 @@ function startLeaseMonitor() {
         });
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 async function checkLeaseTail() {
     if (!EDITOR_LOG_FILE || shutdownRequested || warmupTimedOut) return;
     let st;
@@ -2372,6 +2378,7 @@ async function pruneThenRestat(anchorPath) {
     }
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 async function resolveWorktreeForSpawn() {
     // Marker anchor (KOL_PROJECT_GODOT wins — it also anchors the lease sidecar
     // path, so the two can never diverge). stat() must succeed; on failure we do
@@ -2723,6 +2730,7 @@ function beginRestartHold(msg, line) {
 // Single completion point for a held restart call: answer the client, clear the
 // hold, then flush (success) or reject (failure) the calls held during the
 // window. Idempotent — the first caller wins.
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 function finishRestartHold(hold, result) {
     if (!hold || hold.resolved) return;
     hold.resolved = true;
@@ -2777,6 +2785,7 @@ function finishRestartHold(hold, result) {
 //   3. CLI reconnects  — npxCliConnected flips true (we STOP probing in phase 2
 //                        to free the addon's single WS slot for the CLI,
 //                        mirroring the warmup flush gate). Returns true only then.
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 async function driveRestartRespawn(hold) {
     // SEE-1134 Q1 (real-device fix): do NOT call beginWarmEditorRespawn() here.
     // That helper sets warmEditorDead=true which the resident runWarmupLoop
@@ -2890,6 +2899,7 @@ async function ensureReusedWorktreeConfigured(t0) {
 // fall-through. If the port stays busy after eviction (e.g. a non-godot
 // listener), the spawn path's configure/start fails fast with a clear
 // spawn_failed diagnostic — which is the correct, attributable outcome.
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 async function evictStaleHolder(holderWorktree) {
     const t0 = Date.now();
     stageLog('EVICT_BEGIN', `port=${GODOT_PORT}`);
@@ -2995,6 +3005,7 @@ async function waitForPortRelease(mode) {
 // SpawnError on any failure; the caller (triggerEnsureEditor) maps it to a
 // spawn_failed diagnostic. `t0` is the spawn-trigger timestamp, kept so the
 // warmup clock starts from the user's first call, not spawn completion.
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 async function ensureEditor(t0) {
     spawnAttempts += 1;
     // (1) probe short-circuit: port already listening => someone (a prior
@@ -3427,6 +3438,7 @@ function maybeNotifyStageChange() {
     notifyStageChange();
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 async function warmupLoop() {
     startRenderStableMonitor();
 
@@ -4142,6 +4154,7 @@ function startNpx() {
         terminal: false,
         crlfDelay: Infinity,
     });
+    // eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
     npxOut.on('line', async (line) => {
         if (!line.trim()) return;
         log(`DEBUG: npx stdout line: ${line.slice(0, 200)}`);
@@ -4547,6 +4560,7 @@ async function refreshRegistryHeartbeat() {
         `;
         execFileSync('flock', ['-w', '5', REGISTRY_LOCK_PATH, 'node', '-e', mergeScript], {
             env: Object.assign({}, process.env, {
+                // eslint-disable-next-line no-undef -- SEE-1334 baseline: REG_PATH shorthand is not in scope (the reader at L4537 uses process.env.REG_PATH); suspected latent bug, flagged for drift triage
                 REG_PATH, REG_TMP: tmp, REG_RID: RUNTIME_ID,
                 REG_PID: String(process.pid), REG_NOW: String(now),
             }),

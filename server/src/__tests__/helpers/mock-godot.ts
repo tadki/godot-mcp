@@ -59,6 +59,7 @@ export function createToolContext(mock: MockGodotConnection) {
 // Extract the structured payload from a tool result. Query actions return a
 // StructuredToolResult ({ text, structuredContent }); this returns the
 // structuredContent. Falls back to parsing a plain JSON-string result.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SEE-1334 baseline: test helper, callers index arbitrary tool payloads directly
 export function structuredOf(result: unknown): any {
   if (
     result &&

@@ -26,6 +26,7 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 export async function installAddon(projectPath: string, options: InstallOptions = {}): Promise<InstallResult> {
   const absolutePath = resolve(projectPath);
 

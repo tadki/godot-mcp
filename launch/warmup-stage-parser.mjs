@@ -60,6 +60,7 @@ export function createStageState(startedAt) {
 // so the parser stays deterministic under test; each matched milestone records
 // its first-seen timestamp and `stage` advances monotonically. Returns a fresh
 // state object (the previous state is never mutated).
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 export function scanStageLines(state, slice, now) {
     const next = {
         stage: state.stage,

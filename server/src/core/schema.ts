@@ -13,6 +13,7 @@ type JsonObj = Record<string, unknown>;
 // So the discriminator property carries a per-action summary line for each
 // branch, and every merged property description gets a "(required for: ...)"
 // or "(for: ...)" marker naming the actions it belongs to.
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 function flattenUnionToObject(schema: JsonObj): JsonObj {
   // oneOf/anyOf only: allOf is an intersection, where this merge's
   // required-in-every-branch logic would be inverted (union, not intersection,

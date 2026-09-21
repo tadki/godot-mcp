@@ -43,6 +43,7 @@
 //
 // Returns the expanded entries array, or { error } for invalid args (same
 // error-strings contract as the bridge's compile errors).
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 export function expandDragEntry(entry) {
     const d = entry && entry.drag;
     if (!d || typeof d !== 'object') {
@@ -101,6 +102,7 @@ export function expandDragEntry(entry) {
 // expanding drag entries. Returns { msg } unchanged when no drag entries are
 // present, or the rewritten message; or { error } with a message for the
 // response when the drag entry itself is malformed.
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 export function expandDragInToolsCall(msg) {
     const params = msg && msg.params;
     if (!params || typeof params !== 'object') return { msg };

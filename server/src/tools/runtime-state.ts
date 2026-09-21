@@ -412,6 +412,7 @@ export const runtimeState = defineTool({
     'Use watch_start → watch_collect for state-over-time without context blowup.',
   schema: RuntimeStateSchema,
 
+  // eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
   async execute(args: RuntimeStateArgs, { godot }) {
     switch (args.action) {
       case 'digest': {

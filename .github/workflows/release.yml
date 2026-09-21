@@ -128,7 +128,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Create addon zip
         run: |
-          zip -r godot-mcp-addon-${{ needs.release-please.outputs.version }}.zip . -x 'server/*' -x 'launch/*' -x 'docs/*' -x '.github/*'
+          zip -r godot-mcp-addon-${{ needs.release-please.outputs.version }}.zip . -x 'server/*' -x 'launch/*' -x 'docs/*' -x '.github/*' -x 'package.json' -x 'package-lock.json' -x 'node_modules/*'
       - name: Upload addon to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
