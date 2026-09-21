@@ -47,8 +47,13 @@ rmSync(MERGED_DIR, { recursive: true, force: true });
 
 // 1) Run the suite; the generated wrappers inject NODE_V8_COVERAGE into every
 //    harness child when LAUNCH_COVERAGE_DIR is set (this process's env).
-console.log('[coverage-gate] 1/3 running launch vitest suite (children dump raw v8)...');
-const vitest = spawnSync('npx', ['vitest', 'run'], {
+//    Scope = the FAST tier (66 entries) — the set PR CI actually gates. The
+//    long tier stays in launch-special's long-suites job: its ws5 harness
+//    reads a dev-box artifact from the real $HOME (R3.5) and cannot pass on
+//    a clean CI runner — a pre-existing harness property (reported, not
+//    fixed here: 用例语义不动).
+console.log('[coverage-gate] 1/3 running launch vitest fast tier (children dump raw v8)...');
+const vitest = spawnSync('npx', ['vitest', 'run', 'launch/tests/.vitest-gen/fast'], {
     cwd: path.join(REPO, 'launch'),
     stdio: 'inherit',
     env: { ...process.env, LAUNCH_COVERAGE_DIR: DUMP_DIR },
