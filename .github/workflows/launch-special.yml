@@ -33,6 +33,10 @@ on:
   schedule:
     # Sundays 03:07 UTC — off-minute per house convention.
     - cron: '7 3 * * 0'
+    # Wednesdays 03:13 UTC — SEE-1334 SPEC-023 fast-tier speed audit (nightly
+    # cadence, non-blocking evidence; per-entry >60s or total >8min flags a
+    # downgrade review, decision trail lives on the issue).
+    - cron: '13 3 * * 3'
 
 permissions:
   contents: read
@@ -54,20 +58,14 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
         working-directory: server
+      - name: Install root dev tooling
+        run: npm ci --no-audit --no-fund
       - name: Long green suites (slow but stable)
-        run: |
-          set -uo pipefail
-          FAIL=0
-          for t in \
-            launch/tests/scripts/test_see1148_t14_reaper_grace_guard.sh \
-            launch/tests/scripts/test_see1240_ws5_giveup_rearm.sh \
-            ; do
-            echo "::group::bash $t"
-            if timeout 600 bash "$t"; then echo "[special:long] PASS $t"
-            else echo "::error::[special:long] FAIL $t (rc=$?)"; FAIL=1; fi
-            echo "::endgroup::"
-          done
-          exit $FAIL
+        # SEE-1334 Phase 2 (SPEC-020): the same 2 entries now run through the
+        # vitest long-tier wrappers (launch/vitest.config.ts is the SSOT list);
+        # bucket structure, timeouts and gate semantics unchanged.
+        run: npx vitest run launch/tests/.vitest-gen/long
+        working-directory: launch
 
   env-bound:
     if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' || inputs.bucket == 'env' }}
@@ -111,6 +109,10 @@ jobs:
           npm run build
         working-directory: server
       - name: Drift-red suites (evidence runs, non-blocking)
+        # SEE-1334 P2 note: this drift inventory stays a raw runner loop on
+        # purpose — drift entries are evidence runs (continue-on-error), not
+        # vitest-managed tests. Graduation into fast = moving the entry into
+        # launch/vitest.config.ts's FAST list.
         run: |
           set -uo pipefail
           for t in \
@@ -177,3 +179,43 @@ jobs:
             echo "::endgroup::"
           done
           exit 0
+
+  # SEE-1334 Phase 2 / SPEC-023 — fast-tier speed audit (nightly, non-blocking).
+  # Runs the fast+long vitest suite and flags: any entry >60s (downgrade
+  # review candidate → long tier) or total >8min (80% of the fast job budget).
+  # Findings are advisory; the downgrade DECISION is recorded on the issue.
+  speed-audit:
+    if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Build server CLI
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      - name: Cache Godot binary
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/godot
+          key: godot-${{ runner.os }}-4.6.2-stable
+      - name: Install Godot 4.x (cache miss path)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          GODOT_VERSION=4.6.2
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          sudo mv "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+      - name: Install root dev tooling
+        run: npm ci --no-audit --no-fund
+      - name: Fast-tier speed audit (per-entry >60s / job >8min flags)
+        run: bash launch/tests/runner/speed-audit.sh
