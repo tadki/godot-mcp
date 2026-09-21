@@ -1,0 +1,3 @@
+# Godot scan-skip marker: the Godot editor must not scan this build-copy
+# directory (it would double-register every addon GDScript class/UID against
+# the repo-root addon — SEE-1328 D-fix, Owner-approved git-tracked .gdignore).
