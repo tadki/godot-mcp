@@ -54,3 +54,6 @@ CLAUDE.md
 .vitest-gen/
 __pycache__/
 *.junit.xml
+.stryker-tmp/
+reports/
+reports/mutation/

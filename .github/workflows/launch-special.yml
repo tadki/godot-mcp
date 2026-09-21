@@ -242,3 +242,31 @@ jobs:
       - name: Gherkin task-spec scenarios (strict)
         run: npx cucumber-js --strict
         working-directory: server
+
+  # SEE-1334 Phase 4 (SPEC-041) — FULL-REPO mutation evidence run, nightly,
+  # NON-BLOCKING (health snapshot: kill rate is reported, never gated; the
+  # strict gate is the whitelist in stryker.config.json). Estimated 2.5-3h
+  # on a 4-core runner (16.7k mutants measured on run 1) — hence 240min
+  # timeout and the Wednesday cadence shared with speed-audit.
+  mutation-evidence:
+    if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Full-repo mutation evidence (kill-rate report, non-blocking)
+        run: npm run mutation-all
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-nightly-report
+          path: reports/mutation/
+          retention-days: 14
