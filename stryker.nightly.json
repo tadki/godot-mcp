@@ -1,0 +1,45 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/api/schema/stryker-schema.json",
+  "//": [
+    "SEE-1334 Phase 4 nightly FULL-REPO evidence run (plan §8 / SPEC-041).",
+    "Non-blocking health snapshot: whole server/src + launch control-plane,",
+    "coverage analysis off (fast), and thresholds.break disabled — kill rate",
+    "is REPORTED, never gated. Strictness lives in stryker.config.json's",
+    "whitelist only."
+  ],
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "reporters": [
+    "html",
+    "clear-text",
+    "progress"
+  ],
+  "coverageAnalysis": "off",
+  "incremental": false,
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "mutate": [
+    "server/src/**/*.ts",
+    "launch/**/*.mjs"
+  ],
+  "vitest": {
+    "configFile": "server/vitest.config.ts"
+  },
+  "thresholds": {
+    "high": 76,
+    "low": 74,
+    "break": 70
+  },
+  "timeoutMS": 10000,
+  "concurrency": 4,
+  "//thresholds": "First measured baseline 72.25 (run 1, 591 mutants) — break pinned 2.25 points BELOW it for headroom; ratchet ONLY-UP (plan §8 / SPEC-040).",
+  "//mutate-note": "excludes tests via vitest default test-file matching; launch/tests kept out via ignorePatterns",
+  "ignorePatterns": [
+    "launch/tests",
+    "server/dist",
+    "reports",
+    "coverage",
+    ".vitest-gen"
+  ],
+  "//runtime-note": "run-1 measurement: 16706 mutants, ~5min per ~12k => est. 2.5-3h full run; job timeout set to 240min (see launch-special.yml)."
+}

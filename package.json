@@ -5,10 +5,14 @@
   "type": "module",
   "description": "Repo-root dev tooling only (lint). Not published; runtime code in server/ and launch/ stays zero-dependency.",
   "scripts": {
-    "lint": "eslint . --max-warnings 59"
+    "lint": "eslint . --max-warnings 59",
+    "mutation": "stryker run",
+    "mutation-all": "stryker run stryker.nightly.json"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.39.2",
     "eslint-plugin-sonarjs": "^3.0.5",

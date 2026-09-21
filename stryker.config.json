@@ -1,0 +1,49 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/api/schema/stryker-schema.json",
+  "//": [
+    "SEE-1334 Phase 4 (plan §8 / SPEC-040/041). StrykerJS at the root dev",
+    "tooling layer; server runtime stays zero-dependency.",
+    "",
+    "Strict gate = the MUTATE WHITELIST only: pure-logic server/src/utils",
+    "modules + the discriminated-union slice of core/schema.ts (toInputSchema",
+    "union flattening, validActions, branchRequirements,",
+    "describeValidationError) — all covered by existing vitest suites and",
+    "seconds-fast per run. The full-repo nightly evidence run (mutation-all",
+    "script) is a non-blocking health snapshot; strictness lives here.",
+    "",
+    "thresholds.break is the ratchet floor: first-run MEASURED baseline minus",
+    "headroom, then ONLY-UP (plan §8). timeoutMS scales with the measured",
+    "slowest test (gqt adaptive_timeout analogue): baseline vitest cold-run",
+    "≈4s → 10s gives ~2.5x headroom."
+  ],
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "reporters": [
+    "html",
+    "clear-text",
+    "progress"
+  ],
+  "coverageAnalysis": "perTest",
+  "incremental": false,
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "mutate": [
+    "server/src/utils/gateway-resolver.ts",
+    "server/src/utils/host-ip-resolver.ts",
+    "server/src/utils/connection-strategy.ts",
+    "server/src/utils/wsl-detection.ts",
+    "server/src/utils/logger.ts",
+    "server/src/core/schema.ts"
+  ],
+  "vitest": {
+    "configFile": "server/vitest.config.ts"
+  },
+  "thresholds": {
+    "high": 76,
+    "low": 74,
+    "break": 70
+  },
+  "timeoutMS": 10000,
+  "concurrency": 4,
+  "//thresholds": "First measured baseline 72.25 (run 1, 591 mutants) — break pinned 2.25 points BELOW it for headroom; ratchet ONLY-UP (plan §8 / SPEC-040)."
+}
