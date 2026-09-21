@@ -1,0 +1,17 @@
+{
+  "name": "godot-mcp-repo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Repo-root dev tooling only (lint). Not published; runtime code in server/ and launch/ stays zero-dependency.",
+  "scripts": {
+    "lint": "eslint . --max-warnings 59"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.2",
+    "eslint-plugin-sonarjs": "^3.0.5",
+    "globals": "^16.5.0",
+    "typescript-eslint": "^8.50.1"
+  }
+}

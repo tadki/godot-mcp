@@ -78,6 +78,7 @@ const TOOL_NAMED_EXAMPLES: Record<string, Record<string, unknown>> = {
 // Build a representative, schema-VALID value for one JSON-Schema property.
 // Recurses through arrays/objects/unions and produces NON-EMPTY arrays +
 // populated required object fields, so min-length / nested-required constraints hold.
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 export function exampleForProp(name: string, prop: Record<string, unknown>, toolName?: string): unknown {
   if (prop.const !== undefined) return prop.const;
   if (Array.isArray(prop.enum)) return (prop.enum as unknown[])[0];

@@ -59,6 +59,7 @@ export const EXEC_GUARD_NOTE = 'An accident guard against process/file-write esc
 // Escape handling mirrors the addon: an escaped char never ends the string; an
 // escaped NEWLINE still advances the line counter. Known accepted miss (same
 // as addon): r"..." raw strings treat backslash as an escape here.
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 function lexStrip(source) {
     let stripped = '';
     let quote = '';

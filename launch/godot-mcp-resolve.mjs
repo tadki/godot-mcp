@@ -92,6 +92,7 @@ function readBinEntry(pkgDir, pkgName, pkg) {
 //      harnesses that inject a mock npx onto PATH (and do not set the override)
 //      keep using their mock instead of an unrelated cached package.
 //   3. `npx -y <pkg>` fallback (default, and also when opt-in finds nothing).
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 export function resolveGodotMcpCommand() {
     const override = (process.env.GODOT_MCP_GODOT_MCP_CMD || process.env.KOL_GODOT_MCP_CMD || '').trim();
     if (override) {

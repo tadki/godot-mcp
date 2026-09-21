@@ -194,6 +194,7 @@ export function freshAdvisoryText(verdict) {
 // responses are untouched), or an object describing the additions:
 //   { advisoryText: string|null, _screenshot: {...}, exports: {...}|null }
 // The caller (proxy) is responsible for splicing these into the MCP response.
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 export async function enrichScreenshotResponse({
     resultContent,
     forwardedAtMs,

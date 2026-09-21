@@ -185,6 +185,7 @@ export const profiler = defineTool({
   description:
     'Profile a running game; every action errors if no game is playing. Use snapshot for one-shot engine metrics, or start → get_data for a per-frame time series with percentile stats, frame-budget usage, spike detection, and monitor trends. get_active_processes lists scripts with live _process/_physics_process callbacks (useful for finding per-frame cost sources); get_signal_connections maps signal wiring. For observing game state rather than performance, use godot_runtime_state.',
   schema: ProfilerSchema,
+  // eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
   async execute(args: ProfilerArgs, { godot }) {
     switch (args.action) {
       case 'snapshot': {

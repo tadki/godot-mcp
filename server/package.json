@@ -22,6 +22,7 @@
   },
   "homepage": "https://github.com/satelliteoflove/godot-mcp#readme",
   "scripts": {
+    "lint": "npm run lint --prefix ..",
     "build": "tsc && npm run copy-addon",
     "copy-addon": "tsx scripts/copy-addon.ts",
     "start": "node dist/index.js",
