@@ -2,15 +2,22 @@ name: Launch CI (fast tier)
 
 # SEE-1291 AC-CI-001/002 — fast tier for the launch/ control-plane test tree.
 #
-# Scope: every launch/tests entry point that is verified green in a clean
-# checkout on ubuntu-latest (headless, mock npx/ws-listener on PATH, no real
-# editor, no KOL worktree, no Windows). Long-running / environment-bound /
-# currently-red suites are NOT here — they live in launch-special.yml.
+# SEE-1334 Phase 2 (SPEC-020/022): the two jobs now run the SAME fast-tier
+# entries through vitest (launch/vitest.config.ts is the SSOT entry list —
+# the heredoc inventory is gone; new/graduated entries join by editing that
+# list). Case semantics are untouched: each harness runs as its own process,
+# stdin: 'ignore' replaces the old `< /dev/null` defense, exit code decides
+# pass/fail. Job names (`shell-harnesses`, `node-units`) are kept verbatim —
+# they are required status checks (SEE-1334 SPEC-013).
 #
-# Two parallel jobs to stay under the 10-minute budget: shell harnesses
-# (bootstrap a server build first — the launcher rebuilds server/dist when
-# missing, which several harnesses exercise via the fork-CLI path) and the
-# pure-node unit tests.
+# Scope: the 66 launch/tests entries verified green in a clean checkout on
+# ubuntu-latest (headless, mock npx/ws-listener on PATH, no real editor, no
+# KOL worktree, no Windows). Long-running / environment-bound / drift-red
+# suites are NOT here — they live in launch-special.yml.
+#
+# Two parallel jobs stay under the 10-minute budget; node-units also seeds
+# the NODE_V8_COVERAGE child-process capture for the coverage gate (SPEC-021)
+# — see the coverage step notes.
 
 on:
   push:
@@ -39,9 +46,7 @@ jobs:
         working-directory: server
       # SEE-1292 AC-DECPL-006: cache the UNPACKED binary (single ELF ~130MB),
       # version inside the key so a Godot bump can never serve a stale cached
-      # binary (design: qa-toolkit docs/godot-binary-cache-design.md §2). Same
-      # template as KOL ci-gut-tests.yml — the headless-runnable launch tests
-      # (t1_import class) graduate into this gate once the binary is cached.
+      # binary (design: qa-toolkit docs/godot-binary-cache-design.md §2).
       - name: Cache Godot binary
         id: godot-cache
         uses: actions/cache@v4
@@ -61,87 +66,15 @@ jobs:
       # die here, not at the test layer with a confusing parse error.
       - name: Verify Godot binary health
         run: godot --version
-      - name: Run fast-tier shell harnesses
+      # Root devDeps provide vitest + the generated wrappers' runtime.
+      - name: Install root dev tooling
+        run: npm ci --no-audit --no-fund
+      # SEE-1334 SPEC-023: the fast tier's speed promise is checked nightly by
+      # launch-special.yml's speed-audit job; PR runs stay plain.
+      - name: Run fast-tier shell harnesses via vitest (52 entries)
         timeout-minutes: 10
-        run: |
-          set -uo pipefail
-          PASS=0; FAIL=0; FAILED=()
-          while IFS= read -r t; do
-            [ -z "$t" ] && continue
-            case "$t" in
-              *.mjs) runner="node" ;;
-              *.py)  runner="python3" ;;
-              *)     runner="bash" ;;
-            esac
-            echo "::group::$runner $t"
-            if timeout 300 "$runner" "$t" </dev/null; then
-              PASS=$((PASS+1)); echo "[fast-tier] PASS $t"
-            else
-              rc=$?
-              FAIL=$((FAIL+1)); FAILED+=("$t (rc=$rc)")
-              echo "[fast-tier] FAIL $t (rc=$rc)"
-            fi
-            echo "::endgroup::"
-          done <<'LIST'
-          launch/tests/hooks/see1273/test_see1273_t1_import.sh
-          launch/tests/hooks/see1273/test_see1273_t1_tree_consistency.sh
-          launch/tests/hooks/see1273/test_see1273_t2_chain.sh
-          launch/tests/hooks/see1273/test_see1273_t3_chain.sh
-          launch/tests/hooks/see1273/test_see1273_t4_chain.sh
-          launch/tests/scripts/test_ac_m3reorg_013_shell_guard_empty.sh
-          launch/tests/scripts/test_see1070_proxy_default_port_guard.sh
-          launch/tests/scripts/test_see1077_lease_fast_fail.sh
-          launch/tests/scripts/test_see1085_t1_cold_spawn.sh
-          launch/tests/scripts/test_see1085_t2_hot_reuse.sh
-          launch/tests/scripts/test_see1085_t3_spawn_fail.sh
-          launch/tests/scripts/test_see1085_t4_lease_respawn.sh
-          launch/tests/scripts/test_see1085_t5_dedup.sh
-          launch/tests/scripts/test_see1110_e5_multi_agent_channelA.sh
-          launch/tests/scripts/test_see1111_cold_start_gate.sh
-          launch/tests/scripts/test_see1111_defect6_wsprobe_first_call.sh
-          launch/tests/scripts/test_see1111_defect7_respawn.sh
-          launch/tests/scripts/test_see1111_defect8_respawn_probe.sh
-          launch/tests/scripts/test_see1111_defect9_npx_death_gate.sh
-          launch/tests/scripts/test_see1111_spawn_prepare_generates_project_godot.sh
-          launch/tests/scripts/test_see1111_timeline_negative_degradation.sh
-          launch/tests/scripts/test_see1111_ws_handshake_gate.sh
-          launch/tests/scripts/test_see1148_b6_fastfail_race.sh
-          launch/tests/scripts/test_see1148_p24_dynamic_release.sh
-          launch/tests/scripts/test_see1148_p3_intentional_release.sh
-          launch/tests/scripts/test_see1148_p3_t16_live_editor.sh
-          launch/tests/scripts/test_see1148_port_arbiter.sh
-          launch/tests/scripts/test_see1148_registry_concurrent.sh
-          launch/tests/scripts/test_see1148_t15_reaper_port_sweep.sh
-          launch/tests/scripts/test_see1152_reaper_registry_sweep.sh
-          launch/tests/scripts/test_see1164_adversarial_revy.sh
-          launch/tests/scripts/test_see1164_persist_stderr.sh
-          launch/tests/scripts/test_see1164_port_die_adversarial_revy.sh
-          launch/tests/scripts/test_see1164_port_die_owner.sh
-          launch/tests/scripts/test_see1240_d1_corrupt_accounting.sh
-          launch/tests/scripts/test_see1240_ws4_status_doctor.sh
-          launch/tests/scripts/test_see1240_ws7_grace_race.sh
-          launch/tests/scripts/test_see1148_t16_runtime_identity.sh
-          launch/tests/scripts/test_see1244_shim_degrade.sh
-          launch/tests/scripts/test_see1244_tier1_wait.sh
-          launch/tests/scripts/test_see1288_build_fallback_negative.sh
-          launch/tests/scripts/test_see990_live_gate_race.sh
-          launch/tests/scripts/see1129/test_lease_lifecycle_boundary_matrix.sh
-          launch/tests/scripts/see1129/test_multi_path_drift_assertion.sh
-          launch/tests/scripts/see1129/test_multi_slot_reuse_predicate.sh
-          launch/tests/scripts/see1129/test_reaper_grace_integration.sh
-          launch/tests/scripts/see1129/test_runtime_registry_marker.sh
-          launch/tests/scripts/see1129/test_sidecar_guard_predicate.sh
-          launch/tests/scripts/see1137/test_reaper_headless_orphan_sweep.sh
-          launch/tests/scripts/test_see1117_phase1_marker_lifecycle.sh
-          launch/tests/scripts/test_see1117_sidecar_lifecycle.sh
-          launch/tests/scripts/test_see1152_configure_async_reaper.sh
-          LIST
-          echo "=============================================="
-          echo "[fast-tier shell] PASS=$PASS FAIL=$FAIL"
-          if [ "$FAIL" -gt 0 ]; then
-            printf '  FAILED: %s\n' "${FAILED[@]}"
-            exit 1
-          fi
+        run: npx vitest run launch/tests/.vitest-gen/fast --testNamePattern "\.sh$"
+        working-directory: launch
 
   node-units:
     runs-on: ubuntu-latest
@@ -151,41 +84,13 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
-      - name: Run fast-tier node unit tests
+      - name: Install root dev tooling
+        run: npm ci --no-audit --no-fund
+      # NODE_V8_COVERAGE propagates to the harness child processes (vitest's
+      # own coverage provider cannot see subprocesses). Merging happens in the
+      # audit workflow; here it is collected so any single job can be re-run
+      # with --coverage without a code change.
+      - name: Run fast-tier node unit tests via vitest (14 entries)
         timeout-minutes: 4
-        run: |
-          set -uo pipefail
-          PASS=0; FAIL=0; FAILED=()
-          while IFS= read -r t; do
-            [ -z "$t" ] && continue
-            echo "::group::node $t"
-            if timeout 120 node "$t" </dev/null; then
-              PASS=$((PASS+1)); echo "[fast-tier] PASS $t"
-            else
-              rc=$?
-              FAIL=$((FAIL+1)); FAILED+=("$t (rc=$rc)")
-              echo "[fast-tier] FAIL $t (rc=$rc)"
-            fi
-            echo "::endgroup::"
-          done <<'LIST'
-          launch/tests/scripts/see1129/selftest_integration_combined.mjs
-          launch/tests/scripts/see1129/test_anchor_passthrough.mjs
-          launch/tests/scripts/see1129/test_release_after_start_race.mjs
-          launch/tests/scripts/see1129/test_reuse_short_circuit.mjs
-          launch/tests/scripts/test_ac_m3reorg_011_shared_master_guard.mjs
-          launch/tests/scripts/test_see1152_stage_log.mjs
-          launch/tests/scripts/test_see1170_channel3.mjs
-          launch/tests/scripts/test_see1240_exec_constraints.mjs
-          launch/tests/scripts/test_see1240_screenshot_contract.mjs
-          launch/tests/scripts/test_see1240_ui_tools.mjs
-          launch/tests/scripts/test_see1244_rechain.mjs
-          launch/tests/scripts/test_see1244_shim_handshake.mjs
-          launch/tests/scripts/test_see1244_shim_placeholder.mjs
-          launch/tests/scripts/test_see1244_v2_gate.mjs
-          LIST
-          echo "=============================================="
-          echo "[fast-tier node] PASS=$PASS FAIL=$FAIL"
-          if [ "$FAIL" -gt 0 ]; then
-            printf '  FAILED: %s\n' "${FAILED[@]}"
-            exit 1
-          fi
+        run: npx vitest run launch/tests/.vitest-gen/fast --testNamePattern "\.mjs$"
+        working-directory: launch

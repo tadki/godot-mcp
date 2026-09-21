@@ -51,3 +51,6 @@ ai/
 .copilot/
 CLAUDE.md
 *.backup
+.vitest-gen/
+__pycache__/
+*.junit.xml
