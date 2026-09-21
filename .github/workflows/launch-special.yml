@@ -26,10 +26,10 @@ on:
   workflow_dispatch:
     inputs:
       bucket:
-        description: 'Which bucket to run (long|env|drift|all)'
+        description: 'Which bucket to run (long|env|drift|gherkin|all)'
         type: choice
         default: all
-        options: [all, long, env, drift]
+        options: [all, long, env, drift, gherkin]
   schedule:
     # Sundays 03:07 UTC — off-minute per house convention.
     - cron: '7 3 * * 0'
@@ -219,3 +219,26 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Fast-tier speed audit (per-entry >60s / job >8min flags)
         run: bash launch/tests/runner/speed-audit.sh
+
+  # SEE-1334 Phase 3 (SPEC-030/031) — gherkin 任务 spec 可执行条款, nightly
+  # evidence run (plan §7: 任务验收必跑 + nightly 证据；暂不入 PR CI).
+  # Strict cucumber: any failing/pending scenario blocks the job — the
+  # suite is protocol-level mocked and should be seconds-fast and stable.
+  gherkin-evidence:
+    if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' || inputs.bucket == 'gherkin' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Complete root devDeps
+        run: npm install --no-audit --no-fund --package-lock-only
+      - run: npm ci --no-audit --no-fund
+        working-directory: server
+      - name: Gherkin task-spec scenarios (strict)
+        run: npx cucumber-js --strict
+        working-directory: server
