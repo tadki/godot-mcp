@@ -19,11 +19,11 @@ function flattenUnionToObject(schema: JsonObj): JsonObj {
   // required-in-every-branch logic would be inverted (union, not intersection,
   // of requireds). No tool uses intersections; reject loudly if one appears.
   const branches = (schema.oneOf ?? schema.anyOf) as JsonObj[] | undefined;
-  // Stryker disable next-line ConditionalExpression, LogicalOperator -- SEE-1334 ledger: empty-branches guard unreachable via the public Zod API (zod unions are never empty) — internal shape-robustness
-  // Stryker disable all -- SEE-1334 ledger: empty-branches guard unreachable via the public Zod API (zod unions are never empty); ids 7/8/9
+  // Stryker disable next-line ConditionalExpression, LogicalOperator: SEE-1334 ledger: empty-branches guard unreachable via the public Zod API (zod unions are never empty) — internal shape-robustness
+  // Stryker disable all : SEE-1334 ledger: empty-branches guard unreachable via the public Zod API (zod unions are never empty); ids 7/8/9
   if (!branches || branches.length === 0) {
     return { type: 'object' };
-  // Stryker restore all -- SEE-1334 ledger end
+  // Stryker restore all : SEE-1334 ledger end
   }
 
   const propsOf = (b: JsonObj) => (b.properties ?? {}) as Record<string, JsonObj>;
@@ -36,7 +36,7 @@ function flattenUnionToObject(schema: JsonObj): JsonObj {
   // Discriminators: common-required fields with a `const` in every branch
   // (in practice: `action`). Their per-branch const is the branch's label.
   const discriminators = commonRequired.filter((key) =>
-    // Stryker disable next-line MethodExpression, OptionalChaining -- SEE-1334 ledger: discriminator filter: every→some variants yield equivalent published schemas for discriminatedUnion inputs (const-in-every-branch invariant)
+    // Stryker disable next-line MethodExpression, OptionalChaining: SEE-1334 ledger: discriminator filter: every→some variants yield equivalent published schemas for discriminatedUnion inputs (const-in-every-branch invariant)
     branches.every((b) => propsOf(b)[key]?.const !== undefined)
   );
   const labelKey = discriminators[0];
@@ -86,16 +86,16 @@ function flattenUnionToObject(schema: JsonObj): JsonObj {
     // Description: single shared text when all appearances agree, otherwise
     // one labeled segment per distinct text so no branch's wording is lost.
     const descs = apps
-    // Stryker disable all -- SEE-1334 ledger: description-filter internals observable-equivalent: non-string/empty descriptions produce the same merged output (no text to lose); ids 65/67
+    // Stryker disable all : SEE-1334 ledger: description-filter internals observable-equivalent: non-string/empty descriptions produce the same merged output (no text to lose); ids 65/67
       .filter((a) => typeof a.schema.description === 'string' && a.schema.description !== '')
       .map((a) => ({ label: a.label, text: a.schema.description as string }));
-    // Stryker restore all -- SEE-1334 ledger end
+    // Stryker restore all : SEE-1334 ledger end
     const distinct = [...new Set(descs.map((d) => d.text))];
     let description =
       distinct.length <= 1
-        // Stryker disable next-line ConditionalExpression, StringLiteral -- SEE-1334 ledger: description fold variants pinned end-to-end by exact description tests (equivalence at published contract)
+        // Stryker disable next-line ConditionalExpression, StringLiteral: SEE-1334 ledger: description fold variants pinned end-to-end by exact description tests (equivalence at published contract)
         ? (distinct[0] ?? '')
-        // Stryker disable next-line StringLiteral -- SEE-1334 ledger: per-branch labeled segment form pinned by conflicting-description tests
+        // Stryker disable next-line StringLiteral: SEE-1334 ledger: per-branch labeled segment form pinned by conflicting-description tests
         : descs.map((d) => `for ${d.label}: ${d.text}`).join('; ');
 
     // Scope marker: which actions need or accept this field. Skip when the
@@ -106,14 +106,14 @@ function flattenUnionToObject(schema: JsonObj): JsonObj {
       if (requiredLabels.length > 0) {
         const optionalLabels = allLabels.filter((l) => !requiredLabels.includes(l));
         const marker =
-    // Stryker disable all -- SEE-1334 ledger: scope-marker templates: both arms pinned by exact-string tests; separator/literal mutations observable-equivalent; ids 102/237(@102 arm)
+    // Stryker disable all : SEE-1334 ledger: scope-marker templates: both arms pinned by exact-string tests; separator/literal mutations observable-equivalent; ids 102/237(@102 arm)
           optionalLabels.length > 0
             ? `(required for: ${requiredLabels.join(', ')}; optional for: ${optionalLabels.join(', ')})`
             : `(required for: ${requiredLabels.join(', ')})`;
         description = description ? `${description} ${marker}` : marker;
-    // Stryker restore all -- SEE-1334 ledger end
+    // Stryker restore all : SEE-1334 ledger end
       } else if (allLabels.length < branches.length) {
-        // Stryker disable next-line StringLiteral -- SEE-1334 ledger: (for:) marker literal pinned by the optional-subset exact test
+        // Stryker disable next-line StringLiteral: SEE-1334 ledger: (for:) marker literal pinned by the optional-subset exact test
         const marker = `(for: ${allLabels.join(', ')})`;
         description = description ? `${description} ${marker}` : marker;
       }
@@ -136,12 +136,12 @@ function flattenUnionToObject(schema: JsonObj): JsonObj {
 // model and noise in every published schema. Strip exactly those sentinels,
 // recursively; real bounds (min_width: 1, etc.) stay.
 function stripSafeIntSentinels(node: unknown): void {
-  // Stryker disable next-line BlockStatement, ConditionalExpression -- SEE-1334 ledger: array-recursion guard: sentinel-bearing arrays unreachable (bounds live only in object minimum/maximum form)
+  // Stryker disable next-line BlockStatement, ConditionalExpression: SEE-1334 ledger: array-recursion guard: sentinel-bearing arrays unreachable (bounds live only in object minimum/maximum form)
   if (Array.isArray(node)) {
     node.forEach(stripSafeIntSentinels);
     return;
   }
-  // Stryker disable next-line ConditionalExpression -- SEE-1334 ledger: scalar leaf guard: zod toJSONSchema emits no raw-null leaves on the recurse path
+  // Stryker disable next-line ConditionalExpression: SEE-1334 ledger: scalar leaf guard: zod toJSONSchema emits no raw-null leaves on the recurse path
   if (node === null || typeof node !== 'object') return;
   const obj = node as JsonObj;
   if (obj.minimum === -Number.MAX_SAFE_INTEGER) delete obj.minimum;
@@ -171,7 +171,7 @@ export function toInputSchema(schema: ZodType): object {
 export function validActions(schema: ZodType): string[] | null {
   const flat = toInputSchema(schema) as JsonObj;
   const props = flat.properties as Record<string, JsonObj> | undefined;
-  // Stryker disable next-line OptionalChaining -- SEE-1334 ledger: optional-chaining flip observable-equivalent (upstream null checked; falsy enum resolves identically)
+  // Stryker disable next-line OptionalChaining: SEE-1334 ledger: optional-chaining flip observable-equivalent (upstream null checked; falsy enum resolves identically)
   const actionEnum = props?.action?.enum;
   return Array.isArray(actionEnum) ? actionEnum.map(String) : null;
 }
@@ -184,21 +184,21 @@ function branchRequirements(
 ): { required: string[]; optional: string[] } | null {
   const raw = z.toJSONSchema(schema, { target: 'draft-07', io: 'input' }) as JsonObj;
   const branches = (raw.oneOf ?? raw.anyOf) as JsonObj[] | undefined;
-  // Stryker disable next-line ConditionalExpression -- SEE-1334 ledger: branchRequirements: !branches unreachable — callers gate on validActions non-null (union exists)
+  // Stryker disable next-line ConditionalExpression: SEE-1334 ledger: branchRequirements: !branches unreachable — callers gate on validActions non-null (union exists)
   if (!branches) return null;
 
   const branch = branches.find(
-    // Stryker disable next-line OptionalChaining -- SEE-1334 ledger: optional-chaining on branch properties — reachable branches always carry properties (const discriminator)
+    // Stryker disable next-line OptionalChaining: SEE-1334 ledger: optional-chaining on branch properties — reachable branches always carry properties (const discriminator)
     (b) => ((b.properties ?? {}) as Record<string, JsonObj>).action?.const === action
   );
-  // Stryker disable next-line ConditionalExpression -- SEE-1334 ledger: !branch → null unreachable when action ∈ validActions (implied branch exists)
+  // Stryker disable next-line ConditionalExpression: SEE-1334 ledger: !branch → null unreachable when action ∈ validActions (implied branch exists)
   if (!branch) return null;
 
   const props = Object.keys((branch.properties ?? {}) as JsonObj).filter((k) => k !== 'action');
-    // Stryker disable all -- SEE-1334 ledger: branch.required is always an array from zod toJSONSchema — ArrayDeclaration + ternary null-arm unreachable; id 192
+    // Stryker disable all : SEE-1334 ledger: branch.required is always an array from zod toJSONSchema — ArrayDeclaration + ternary null-arm unreachable; id 192
   const required = (Array.isArray(branch.required) ? (branch.required as string[]) : []).filter(
     (k) => k !== 'action'
-    // Stryker restore all -- SEE-1334 ledger end
+    // Stryker restore all : SEE-1334 ledger end
   );
   return { required, optional: props.filter((k) => !required.includes(k)) };
 }
@@ -227,18 +227,18 @@ export function describeValidationError(
   }
 
   const issues = error.issues
-    // Stryker disable all -- SEE-1334 ledger: LATENT BUG (root-level non-object args crash describeValidationError, flagged for drift ledger) + label literal: both message shapes pinned by exact-message tests; ids 237/238
+    // Stryker disable all : SEE-1334 ledger: LATENT BUG (root-level non-object args crash describeValidationError, flagged for drift ledger) + label literal: both message shapes pinned by exact-message tests; ids 237/238
     .map((issue) => `${issue.path.join('.') || 'arguments'}: ${issue.message}`)
     .join('; ');
-    // Stryker restore all -- SEE-1334 ledger end
+    // Stryker restore all : SEE-1334 ledger end
 
   let message = `Invalid arguments for ${toolName}`;
-  // Stryker disable next-line ConditionalExpression -- SEE-1334 ledger: action-segment append: both polarities pinned downstream by exact-message tests (redundant append guard)
+  // Stryker disable next-line ConditionalExpression: SEE-1334 ledger: action-segment append: both polarities pinned downstream by exact-message tests (redundant append guard)
   if (action) message += ` action "${action}"`;
   message += `: ${issues}`;
 
   const reqs = action ? branchRequirements(schema, action) : null;
-  // Stryker disable next-line ConditionalExpression, EqualityOperator -- SEE-1334 ledger: parts-assembly guards: branches returned only for matched action; empty-parts shape unreachable via the tool-union contract
+  // Stryker disable next-line ConditionalExpression, EqualityOperator: SEE-1334 ledger: parts-assembly guards: branches returned only for matched action; empty-parts shape unreachable via the tool-union contract
   if (reqs && (reqs.required.length > 0 || reqs.optional.length > 0)) {
     const parts: string[] = [];
     if (reqs.required.length > 0) parts.push(`requires ${reqs.required.join(', ')}`);

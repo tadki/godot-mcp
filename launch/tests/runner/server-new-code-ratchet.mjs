@@ -38,7 +38,7 @@ console.log(`[server-ratchet] new files under the ≥${NEW_FILE_FLOOR}% rule:\n 
 
 const covDir = path.join(REPO, 'coverage', 'server-new');
 rmSync(covDir, { recursive: true, force: true });
-const vitest = spawnSync('npx', ['vitest', 'run', '--coverage.coverageProvider', 'v8', '--coverage.reporter', 'json-summary', '--coverage.reportsDirectory', covDir], {
+const vitest = spawnSync('npx', ['vitest', 'run', '--coverage', '--coverage.coverageProvider', 'v8', '--coverage.reporter', 'json-summary', '--coverage.reportsDirectory', covDir], {
     cwd: path.join(REPO, 'server'), stdio: 'inherit', timeout: 10 * 60 * 1000,
     env: { ...process.env, NODE_V8_COVERAGE: '' },
 });
