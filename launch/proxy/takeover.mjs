@@ -11,6 +11,7 @@ import { log } from './log.mjs';
 import { forwardToNpx, makeErrorResponse, sendToClaude } from './protocol.mjs';
 import { readHolderWorktree } from './worktree.mjs';
 import { evictStaleHolder } from './spawn.mjs';
+import { attemptStaleProxyTakeover } from './stale-proxy.mjs';
 
 // ---- SEE-1085 §1 (Revy §4.3): editor_busy wait/retry takeover ----------------
 // When a tools/call comes back as editor_busy (a concurrent same-agent session
@@ -131,6 +132,21 @@ function failTakeover() {
             { warmupDiagnostic: editorBusyTakeoverDiagnostic() },
         ));
     }
+    // SEE-1338 §GM1b: every timed-out takeover against a holder that never
+    // releases is stale-residue evidence — try a VERIFIED stale-proxy takeover
+    // in the background so the next tools/call lands on a free slot instead of
+    // re-competing with the same ghost for another 30s cycle. The decision fn
+    // refuses anything that is not provably a leftover godot-mcp proxy for our
+    // port, so a legitimate concurrent slot is never touched here.
+    if (!S.staleTakeoverInFlight) {
+        S.staleTakeoverInFlight = true;
+        attemptStaleProxyTakeover({ allowSameRuntime: false })
+            .then((r) => {
+                if (r.tookOver) log(`post-timeout stale proxy taken over (pid=${r.pid}); next tools/call re-runs against the freed slot.`);
+            })
+            .catch((err) => log(`stale proxy takeover after timeout failed (non-fatal): ${err && err.message}`))
+            .finally(() => { S.staleTakeoverInFlight = false; });
+    }
     // SEE-1316 (hardener) — bounded self-heal for a stuck-holder 4001 loop:
     // TAKEOVER_TIMEOUT_MS waits are designed for a HEALTHY holder that will
     // release shortly (its proxy disconnects / lease self-exits). When they
@@ -158,10 +174,14 @@ function failTakeover() {
             } finally {
                 // Re-arm: next tools/call walks the spawn/arbiter path against
                 // the (hopefully) freed port instead of hammering a stuck slot.
+                // SEE-1338: this self-heal used to assign an UNDECLARED
+                // `warmFlushed` (the monolith's closure `let` never made it
+                // into this extracted module) — a strict-mode ReferenceError
+                // that killed the finally block and stuck the in-flight flag.
+                // The flag lives only inside warmupLoop's probe scope; there is
+                // nothing to reset here.
                 S.warm = false;
                 S.warmEditorDead = false;
-                // eslint-disable-next-line no-undef -- SEE-1334 baseline: warmFlushed is not declared in this scope (its `let` lives in another function at L3525); suspected latent bug, flagged for drift triage
-                warmFlushed = false;
                 S.spawnTriggered = false;
                 S.takeoverSelfHealInFlight = false;
                 log('takeover self-heal: warmup re-armed — next tools/call re-runs the spawn/arbiter path.');

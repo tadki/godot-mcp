@@ -154,8 +154,7 @@ async function refreshRegistryHeartbeat() {
         `;
         execFileSync('flock', ['-w', '5', REGISTRY_LOCK_PATH, 'node', '-e', mergeScript], {
             env: Object.assign({}, process.env, {
-                // eslint-disable-next-line no-undef -- SEE-1334 baseline: REG_PATH shorthand is not in scope (the reader at L4537 uses process.env.REG_PATH); suspected latent bug, flagged for drift triage
-                REG_PATH, REG_TMP: tmp, REG_RID: RUNTIME_ID,
+                REG_PATH: REGISTRY_PATH, REG_TMP: tmp, REG_RID: RUNTIME_ID,
                 REG_PID: String(process.pid), REG_NOW: String(now),
             }),
             stdio: ['ignore', 'ignore', 'ignore'],

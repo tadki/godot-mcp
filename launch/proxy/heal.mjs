@@ -2,7 +2,7 @@
 // godot-mcp-proxy.mjs, SEE-1334 Phase 0a): attribution → decision →
 // stop-first/respawn, budget-booked inside the FAILED_EXIT window.
 import { S } from './state.mjs';
-import { FAILED_EXIT_MS, GODOT_PORT } from './config.mjs';
+import { FAILED_EXIT_MS, GODOT_PORT, RUNTIME_ID } from './config.mjs';
 import { log, stageLog } from './log.mjs';
 import {
     attributeHolder, decideRecoveryAction, planRecoveryBudget, RECOVERY_ROUND_WORST_MS,
@@ -45,8 +45,7 @@ async function runRecoveryRound(trigger) {
         const psMatch = holderPidAlive ? await probeHolderCmdline(Number(lease.proxy_pid), ourWorktree) : null;
         const attr = attributeHolder({
             leaseRuntimeId: String(lease?.runtime_id || ''),
-            // eslint-disable-next-line no-undef -- SEE-1334 baseline: KOL_RUNTIME_ID is not in scope here (suspected rename miss for RUNTIME_ID at L4509); flagged for drift triage
-            ourRuntimeId: String(KOL_RUNTIME_ID || ''),
+            ourRuntimeId: String(RUNTIME_ID || ''),
             registryWorktree: holderWorktree || '',
             holderWorktree: String(lease?.worktree || ''),
             ourWorktree,
@@ -57,8 +56,7 @@ async function runRecoveryRound(trigger) {
             portOpen,
             holderProxyAlive: holderPidAlive,
             holderRuntimeId: attr.holderRuntimeId,
-            // eslint-disable-next-line no-undef -- SEE-1334 baseline: KOL_RUNTIME_ID is not in scope here (suspected rename miss for RUNTIME_ID at L4509); flagged for drift triage
-            ourRuntimeId: String(KOL_RUNTIME_ID || ''),
+            ourRuntimeId: String(RUNTIME_ID || ''),
             leaseState: String(lease?.state || ''),
             releasedAt: lease?.released_at || null,
             holderIdentityReadable: attr.holderIdentityReadable,
