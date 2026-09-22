@@ -491,16 +491,15 @@ async function ensureEditor(t0) {
 }
 
 // Map a SpawnError to the warmupDiagnostic-style data object attached to the
-// spawn_failed error response. retryable is always true for non-terminal (the
-// failure is usually transient: port clash, transient binary miss); false for
-// FAILED_CLEAN (streak exhausted — but the state is REENTRANT, the next
-// tools/call retries cold start, so retryable stays true there too). See
-// design §7 + SEE-1338 spec v2.1 §6.
-function spawnFailedDiagnostic(bucket, err, terminal) {
+// spawn_failed error response. `failedClean` switches the state name only —
+// both variants are retryable (FAILED_CLEAN is reentrant per spec §6: the
+// next tools/call retries the cold start after the backoff window — never a
+// dead end). See design §7 + SEE-1338 spec v2.1 §6.
+function spawnFailedDiagnostic(bucket, err, failedClean = false) {
     const now = Date.now();
     const e = err || {};
     return {
-        state: terminal ? 'FAILED_CLEAN' : 'spawn_failed',
+        state: failedClean ? 'FAILED_CLEAN' : 'spawn_failed',
         bucket,
         host: GODOT_HOST,
         port: GODOT_PORT,
@@ -510,8 +509,6 @@ function spawnFailedDiagnostic(bucket, err, terminal) {
         spawnStderr: e.startStderr || e.configureStderr || (e.message ? String(e.message) : ''),
         worktree: e.worktree !== undefined ? e.worktree : null,
         elapsedMs: now - S.startedAt,
-        // FAILED_CLEAN is reentrant (spec §6): the next tools/call retries the
-        // cold start after the backoff window — never a dead end.
         retryable: true,
         spawnBackoffUntilMs: S.spawnBackoffUntil > 0 ? S.spawnBackoffUntil : null,
     };
@@ -663,6 +660,13 @@ function giveUpAndRearm(bucket, message) {
     S.recoveryWindowStart = null;
     S.forceRestartCount = 0;   // FAILED_CLEAN reentry = fresh hard-cap budget
     S.spawnBackoffUntil = 0;
+    // SEE-1338 review MEDIUM-1: the re-armed round also gets a FRESH warmup
+    // clock. The give-up cooldown consumed the old window — keeping the
+    // original spawnStartedAt meant the next round's attempts raced a
+    // long-expired warmup timer, instantly dropping into RECOVERING before
+    // their pipeline finished (the give-up #2 never landed). A NEW episode
+    // measures its warmup window from re-entry, same as forceColdRestart.
+    S.spawnStartedAt = 0;
     // The re-armed round continues INSIDE the current warmupLoop invocation (the
     // T4 sites break the probe loop, not the function), so the render-stable
     // monitor must be restarted here — its interval was cleared at WARM/exit and
