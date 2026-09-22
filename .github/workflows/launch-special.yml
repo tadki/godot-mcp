@@ -217,6 +217,14 @@ jobs:
           sudo chmod +x /usr/local/bin/godot
       - name: Install root dev tooling
         run: npm ci --no-audit --no-fund
+      # The audited suites include fork-CLI-path harnesses → the server CLI
+      # must be built first (first nightly run failed exactly here: rc=1 with
+      # vitest output swallowed — see speed-audit.sh log-tail fix).
+      - name: Build server CLI (fork-CLI path)
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
       - name: Fast-tier speed audit (per-entry >60s / job >8min flags)
         run: bash launch/tests/runner/speed-audit.sh
 
