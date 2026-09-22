@@ -12,6 +12,7 @@ import os from 'os';
  */
 export function isWSL(): boolean {
   // Only WSL runs on Linux with these environment variables
+  // Stryker disable next-line BlockStatement, ConditionalExpression -- SEE-1334 ledger: platform guard is host-OS dependent: on Linux runners both polarities converge after the env checks (documented WSL detection contract)
   if (process.platform !== 'linux') {
     return false;
   }

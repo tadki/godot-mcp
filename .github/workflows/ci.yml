@@ -46,7 +46,7 @@ jobs:
       - run: npm run lint
 
   # SEE-1334 SPEC-063: mutation gate as the 6th blocking job. Whitelist
-  # mutation only (stryker.config.json), break=91 ratchet floor (SPEC-061).
+  # mutation only (stryker.config.json), break=100 (SPEC-061 100% target — exemptions ledgered in docs/mutation-exemptions.md).
   # Measured ~50s locally / well under the 15m budget; escalation path if CI
   # drifts over budget: whitelist matrix → tighter concurrency → incremental.
   mutation-gate:

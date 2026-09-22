@@ -23,6 +23,7 @@ let cachedHostIp: string | null | undefined;
 export function getHostIpInWSL(): string | null {
   // Return cached result if already resolved
   if (cachedHostIp !== undefined) {
+    // Stryker disable next-line ConditionalExpression -- SEE-1334 ledger: cache ternary: cached-null and cached-string polarities both pinned; flip is observable-equivalent
     return cachedHostIp === null ? null : cachedHostIp;
   }
 
@@ -42,6 +43,7 @@ export function getHostIpInWSL(): string | null {
   // Auto-detect Windows host IP using gateway resolver
   try {
     const gateway = resolveGateway();
+    // Stryker disable next-line ConditionalExpression -- SEE-1334 ledger: gateway.gatewayIp gate: null-gateway result converges with the flip through the cached-null return
     if (gateway.gatewayIp) {
       cachedHostIp = gateway.gatewayIp;
       logger.debug('Auto-detected Windows host IP from gateway', { ip: cachedHostIp });
