@@ -21,7 +21,8 @@
   "reporters": [
     "html",
     "clear-text",
-    "progress"
+    "progress",
+    "json"
   ],
   "coverageAnalysis": "perTest",
   "incremental": false,
@@ -39,11 +40,11 @@
     "configFile": "server/vitest.config.ts"
   },
   "thresholds": {
-    "high": 76,
-    "low": 74,
-    "break": 70
+    "high": 94,
+    "low": 92,
+    "break": 91
   },
   "timeoutMS": 10000,
   "concurrency": 4,
-  "//thresholds": "First measured baseline 72.25 (run 1, 591 mutants) — break pinned 2.25 points BELOW it for headroom; ratchet ONLY-UP (plan §8 / SPEC-040)."
+  "//thresholds": "SEE-1334 SPEC-061 ratchet: 72.25 (P4 baseline) → 91.54 after the killer-test sprint (140→44 survivors). Remaining 44 are equivalence-class mutants (defense-in-depth double gates whose removal is masked by later gates, host-OS-dependent platform guards, raw-JSON internals unreachable via the public Zod API) — not killable by tests alone with production code frozen (rework constraint 6). break pinned just under the measured ceiling; ratchet ONLY-UP. Owner decision needed for the 95 target: either allow minimal production-code gate-simplification or accept the equivalence wall. Ledger: reports/mutation/mutation.json."
 }
