@@ -188,3 +188,37 @@ test('AMEND-1 R2 busy_foreign/reuse 判定保持「活 holder 不杀」原语义
     assert.ok(/verdict === 'busy_foreign'[\s\S]*?editor_busy[\s\S]*?AMEND-1/.test(src));
     assert.ok(/AMEND-1 \(spec v2\.1 §4\.2\)/.test(src));
 });
+
+// ---- SEE-1338 QA defect #1 (HIGH): warm-gate + HANDOFF regressions ---------------
+
+test('QA#1 R1 warm-gate：fork CLI 已连接时旁路 wsProbe（gate 判定可达）', () => {
+    const src = readSrc('proxy/warmup.mjs');
+    assert.ok(/cliConnectSignalExpected\(\) && S\.npxCliConnected\)\s*\?\s*true\s*:\s*await wsProbe\(\)/.test(src),
+        'probe bypass must gate on the FORK CLI connection signal');
+    // SEE-1111 defect-6 contract: the raw wsProbe stays the default path.
+    assert.ok(/await wsProbe\(\)/.test(src));
+});
+
+test('QA#1 R2 evict/respawn 判定：worktree 匹配的 holder editor 降级为 HANDOFF 复用', () => {
+    const src = readSrc('proxy/spawn.mjs');
+    assert.ok(/verdict === 'evict' \|\| verdict === 'respawn'[\s\S]*?decideSidecarGuard\(holderWorktree, ourWorktree\) === 'reuse'[\s\S]*?HANDOFF reuse/.test(src),
+        'dead-proxy verdicts must check the SEE-1129 worktree-match reuse before killing');
+    assert.ok(/HANDOFF reuse/.test(src));
+});
+
+test('QA#1 R3 evict 后等待端口释放（异步 stop 竞态防线）', () => {
+    const src = readSrc('proxy/spawn.mjs');
+    const evictLane = src.slice(src.indexOf("verdict === 'evict' || verdict === 'respawn'"),
+        src.indexOf("} else if (verdict === 'reuse')"));
+    const waits = (evictLane.match(/waitForPortRelease\('respawn'\)/g) || []).length;
+    assert.ok(waits >= 2, `both evict exits must wait for port release, got ${waits}`);
+});
+
+// ---- SEE-1338 QA defect #2 (LOW): reaper authoritative-reason quarantine ---------
+
+test('QA#2 R1 reap 隔离必须携带权威理由（node 探测失败 ≠ 内容损坏）', () => {
+    const src = readSrc('reap-stale-leases.sh');
+    assert.ok(/case "\$err_msg" in/.test(src));
+    assert.ok(/unparseable:\*\|missing:\*\|schema_version_unexpected:\*/.test(src));
+    assert.ok(/NODE-FAILED sidecar probe/.test(src));
+});

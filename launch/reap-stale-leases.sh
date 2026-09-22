@@ -315,11 +315,29 @@ while IFS= read -r lease; do
         #        rename. The next sweep re-reads whatever is at the path then.
         #   rc=4/5/6 (real parse failure / missing fields / unknown schema) →
         #        the CONTENT is provably bad → quarantine as before.
+        #
+        # SEE-1338 QA defect #2 (LOW): the qa machine STILL quarantined valid
+        # leases with complete parseable JSON. Root cause: ANY other node
+        # failure (exec/env startup failure, resource pressure) also exits
+        # non-zero with an EMPTY err_msg — and fell straight into the
+        # quarantine rename. Quarantine now requires an AUTHORITATIVE reason:
+        # the node probe itself must name the content defect (unparseable: /
+        # missing: / schema_version_unexpected:). Any other failure (empty or
+        # foreign stderr) is treated like rc=3 — a transient environment
+        # failure is not evidence about the file's content.
         if [[ "$err_msg" == unreadable:* ]]; then
             echo "[reap-stale-leases] READ-FAILED sidecar ($err_msg): $lease — NOT quarantining (D1: read failure ≠ corruption; re-read next sweep)"
             SKIPPED=$((SKIPPED+1))
             continue
         fi
+        case "$err_msg" in
+            unparseable:*|missing:*|schema_version_unexpected:*) ;;
+            *)
+                echo "[reap-stale-leases] NODE-FAILED sidecar probe (rc=$rc, err='${err_msg:0:120}'): $lease — NOT quarantining (transient exec failure ≠ corruption; re-read next sweep)"
+                SKIPPED=$((SKIPPED+1))
+                continue
+                ;;
+        esac
         echo "[reap-stale-leases] CORRUPT sidecar ($err_msg): $lease"
         if (( DRY_RUN )); then echo "  -> (dry-run) would quarantine"; SKIPPED=$((SKIPPED+1)); continue; fi
         ts="$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || echo stale)"

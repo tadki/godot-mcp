@@ -240,7 +240,28 @@ async function warmupLoop() {
                 }
                 continue;
             }
-            const probeOk = await wsProbe();
+            // SEE-1338 QA defect #1 (Revy real-machine FAIL, HIGH): the fork CLI
+            // connects to the editor at CLI BOOT — it does not wait for warm.
+            // Once our OWN CLI owns the addon's single WS slot, every wsProbe is
+            // rejected with 4001 ("another client is already connected") and the
+            // probe loop never sees probeOk — so the gate below (whose milestone
+            // conditions were ALL satisfied: SERVER_LISTENING + WS_HANDSHAKE in
+            // the editor log, renderStable passed) is never even EVALUATED. The
+            // session grinds to the full warmup timeout → RECOVERING grind while
+            // a perfectly warm editor serves our CLI (s3x: CLI connected +141s,
+            // every gate milestone present, still timed out at +300s). SEE-1111's
+            // own contract resolves it: "once the CLI is connected it owns the
+            // slot and IS the liveness signal" — a successful CLI connection
+            // proves the editor's WS stack handshakes, which is exactly what
+            // probeOk exists to prove. So bypass the probe while the FORK CLI
+            // (the one that holds the slot — cliConnectSignalExpected gates out
+            // mock seams that emit the line without holding anything, keeping
+            // the SEE-1111 defect-6 probe contract untouched) is connected;
+            // npx.mjs clears the flag on 'Disconnected from Godot', so a dead
+            // editor can't keep the bypass alive beyond the CLI's own detection.
+            const probeOk = (cliConnectSignalExpected() && S.npxCliConnected)
+                ? true
+                : await wsProbe();
             const now = Date.now();
 
             if (probeOk) {
