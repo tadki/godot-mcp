@@ -118,7 +118,18 @@ function isValidPort(p) {
 
 const GIVEUP_REARM_ENABLED = !['off', '0', 'false'].includes((process.env.GODOT_MCP_GIVEUP_REARM || process.env.KOL_GIVEUP_REARM || 'on').toLowerCase());
 const GIVEUP_BASE_COOLDOWN_MS = parseInt(process.env.GODOT_MCP_GIVEUP_COOLDOWN_MS || process.env.KOL_GIVEUP_COOLDOWN_MS || '30000', 10);
-const GIVEUP_MAX_COOLDOWN_MS = parseInt(process.env.GODOT_MCP_GIVEUP_MAX_COOLDOWN_MS || process.env.KOL_GIVEUP_MAX_COOLDOWN_MS || '480000', 10);
+// SEE-1338 spec v2.1 §6: spawn failure backoff caps at 60s — FAILED_CLEAN is a
+// REENTRANT state (the next tools/call retries cold start), so a longer cap
+// only pads the retry loop without protecting anything.
+const GIVEUP_MAX_COOLDOWN_MS = parseInt(process.env.GODOT_MCP_GIVEUP_MAX_COOLDOWN_MS || process.env.KOL_GIVEUP_MAX_COOLDOWN_MS || '60000', 10);
+// SEE-1338 spec v2.1 §6 (R2 hard-cap backstop): once RECOVERING has lasted
+// 2× the cold timeout ABSOLUTELY (measured from RECOVERING entry, regardless
+// of any self-heal blip in between), the proxy FORCES a cold restart — evict
+// its own editor, respawn against a clean slate. Kills the 形态-B "stuck in
+// RECOVERING fake-retry forever" dead end. Derived from the cold window (not
+// from FAILED_EXIT_MS) so an env-tuned FAILED_EXIT cannot push the cap past
+// the spec bound; env-overridable for test seams.
+const RECOVERING_HARD_CAP_MS = parseInt(process.env.GODOT_MCP_RECOVERING_HARD_CAP_MS || process.env.KOL_RECOVERING_HARD_CAP_MS || String(2 * COLD_WARMUP_TIMEOUT_MS), 10);
 // SEE-1240 WS-7 (目标2): grace-race guard. The vendored addon arms its 300s
 // initial lease grace at plugin init, BEFORE the port is bound; a first boot
 // with a cold import cache can burn most of that grace before any client can
@@ -129,7 +140,10 @@ const GRACE_RACE_GUARD_ENABLED = !['off', '0', 'false'].includes((process.env.GO
 const GRACE_RACE_BIND_MS = parseInt(process.env.GODOT_MCP_GRACE_RACE_BIND_S || process.env.KOL_GRACE_RACE_BIND_S || '150', 10) * 1000;
 
 const SPAWN_MAX_ATTEMPTS = 3;
-const SPAWN_RETRY_BACKOFF_MS = 10000; // avoids agent hot-loop on persistent failure
+// SEE-1338 spec v2.1 §6: the per-attempt backoff base — attempt N waits
+// base × 2^(N-1) (capped at GIVEUP_MAX_COOLDOWN_MS). env-overridable for
+// fast test seams (the retry harness drives attempt 2 immediately).
+const SPAWN_RETRY_BACKOFF_MS = parseInt(process.env.GODOT_MCP_SPAWN_RETRY_BACKOFF_MS || process.env.KOL_SPAWN_RETRY_BACKOFF_MS || '10000', 10);
 const DIAGNOSTIC_STDERR_TAIL = 500;   // chars of child stderr kept for diagnostics
 
 class SpawnError extends Error {
@@ -259,6 +273,7 @@ export {
     GIVEUP_REARM_ENABLED,
     GIVEUP_BASE_COOLDOWN_MS,
     GIVEUP_MAX_COOLDOWN_MS,
+    RECOVERING_HARD_CAP_MS,
     GRACE_RACE_GUARD_ENABLED,
     GRACE_RACE_BIND_MS,
     SPAWN_MAX_ATTEMPTS,

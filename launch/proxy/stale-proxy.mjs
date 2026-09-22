@@ -1,20 +1,16 @@
-// proxy/stale-proxy.mjs — SEE-1338 §SPEC-GM1b stale-proxy takeover IO.
-// Detects a leftover godot-mcp proxy from a previous session holding our
-// port's arbitration slot (the held dir ~/.multica/godot-mcp-held/<port>/),
-// verifies its identity via /proc (cmdline = the proxy script, environ port
-// = our port), and kills its process tree so the editor's single WS slot
-// frees WITHOUT touching the editor or any unverified process.
-import { readdirSync, readFileSync } from 'node:fs';
+// proxy/stale-proxy.mjs — SEE-1338 spec v2.1 §4.2 takeover prototype: read the
+// port's held record and classify it via the pure decision fn
+// (see1338-stale-takeover.mjs). AMEND-1: classification NEVER kills a live
+// proxy or its editor — a live holder is always 'busy' (clean editor_busy);
+// only a DEAD holder's orphaned editor is evictable.
 import { readFile } from 'node:fs/promises';
+import { readlinkSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { S } from './state.mjs';
-import { GODOT_MCP_HOME, GODOT_PORT, RUNTIME_ID } from './config.mjs';
+import { GODOT_MCP_HOME, GODOT_PORT } from './config.mjs';
 import { log } from './log.mjs';
 import { pidAlive } from './worktree.mjs';
-import { decideStaleProxyTakeover } from '../see1338-stale-takeover.mjs';
-
-const STALE_KILL_GRACE_MS = 5000;
+import { decideStaleProxyAction } from '../see1338-stale-takeover.mjs';
 
 function heldDirFor(port) {
     const base = process.env.KOL_PORT_HELD_DIR || path.join(GODOT_MCP_HOME, 'godot-mcp-held');
@@ -37,114 +33,49 @@ async function readHeldProxy(port) {
     return { pid, runtimeId: rid };
 }
 
-async function readProcCmdline(pid) {
+// AMEND-1 三重校验（P0 雏形）: kill -0 + /proc/<pid>/exe node（仲裁器既有的
+// anti-PID-reuse 标准，port-arbiter.lib.sh 同源）; started_at 比对随 P1 .state
+// 落盘到位后并入。校验失败一律判 DEAD——宁可保守接管，不冒误杀活 holder。
+function proxyAliveCheck(pid) {
+    if (!pidAlive(pid)) return false;
     try {
-        const raw = await readFile(`/proc/${pid}/cmdline`, 'utf-8');
-        return raw.replace(/\0/g, ' ');
+        return String(readlinkSync(`/proc/${pid}/exe`)).includes('node');
     } catch {
-        return '';
+        return false;
     }
 }
 
-async function readProcPort(pid) {
-    try {
-        const raw = await readFile(`/proc/${pid}/environ`, 'utf-8');
-        for (const kv of raw.split('\0')) {
-            const m = kv.match(/^(?:GODOT_MCP_PORT|GODOT_PORT|KOL_MCP_PORT)=(\d+)$/);
-            if (m) return Number(m[1]);
-        }
-    } catch { /* environ unreadable */ }
-    return null;
+async function classifyHeldProxy(port = GODOT_PORT) {
+    const held = await readHeldProxy(port);
+    if (!held) return decideStaleProxyAction({ holderPid: null });
+    const holderAlive = held.pid === process.pid ? null : proxyAliveCheck(held.pid);
+    const d = decideStaleProxyAction({ holderPid: held.pid, ourPid: process.pid, holderAlive });
+    d.runtimeId = held.runtimeId;
+    return d;
 }
 
-function scanProcParents() {
-    const parentOf = new Map();
-    let entries = [];
-    try { entries = readdirSync('/proc'); } catch { return parentOf; }
-    for (const e of entries) {
-        if (!/^\d+$/.test(e)) continue;
-        try {
-            const statRaw = readStatSync(Number(e));
-            const m = statRaw.match(/\) \w+ (\d+) /);
-            if (m) parentOf.set(Number(e), Number(m[1]));
-        } catch { /* process vanished mid-sweep */ }
+// Evict the held editor ONLY when the classification proves the holder is a
+// dead residue (takeover) or our own wedged editor (own). A live foreign
+// holder ('busy') is never touched — the caller keeps the clean editor_busy
+// diagnostic. `evict` is the caller-provided eviction fn (injected to keep
+// this module free of spawn.mjs cycles).
+async function maybeEvictStaleHeld(evict, port = GODOT_PORT) {
+    const cls = await classifyHeldProxy(port);
+    if (cls.action === 'busy') {
+        log(`stale-holder guard (AMEND-1): held pid=${cls.pid} alive (runtime '${cls.runtimeId || '?'}') — 前任在管，不清理不接管; clean editor_busy stays.`);
+        return { evicted: false, ...cls };
     }
-    return parentOf;
-}
-
-function readStatSync(pid) {
-    return readFileSync(`/proc/${pid}/stat`, 'utf-8');
-}
-
-function descendantsOf(parentOf, pid) {
-    const out = [];
-    for (const [child, parent] of parentOf) {
-        if (parent === pid) {
-            out.push(child, ...descendantsOf(parentOf, child));
-        }
+    if (cls.action === 'free') {
+        return { evicted: false, ...cls };
     }
-    return out;
-}
-
-async function killProxyTree(pid) {
-    const parentOf = scanProcParents();
-    const targets = [pid, ...collectDescendants(parentOf, pid)];
-    for (const t of targets) {
-        try { process.kill(t, 'SIGTERM'); } catch { /* already gone */ }
-    }
-    const deadline = Date.now() + STALE_KILL_GRACE_MS;
-    while (Date.now() < deadline && targets.some((t) => pidAlive(t))) {
-        await new Promise((r) => setTimeout(r, 200));
-    }
-    for (const t of targets) {
-        if (pidAlive(t)) {
-            try { process.kill(t, 'SIGKILL'); } catch { /* already gone */ }
-        }
-    }
-    return true;
-}
-
-// Take over the stale proxy holding our port's held dir, if and only if it
-// is verifiably a leftover godot-mcp proxy for OUR port (see
-// see1338-stale-takeover.mjs). allowSameRuntime may be passed ONLY after a
-// proven non-release (e.g. the takeover wait expired with the slot held).
-async function attemptStaleProxyTakeover({ allowSameRuntime = false } = {}) {
-    const held = await readHeldProxy(GODOT_PORT);
-    if (!held) return { tookOver: false, reason: 'NO_HELD_PROXY' };
-    if (!pidAlive(held.pid)) return { tookOver: false, reason: 'HOLDER_PID_DEAD' };
-    const holderCmdline = await readProcCmdline(held.pid);
-    const holderPort = await readProcPort(held.pid);
-    const decision = decideStaleProxyTakeover({
-        holderPid: held.pid,
-        holderRuntimeId: held.runtimeId,
-        ourRuntimeId: RUNTIME_ID,
-        holderCmdline,
-        holderPort,
-        ourPort: GODOT_PORT,
-        allowSameRuntime,
-    });
-    if (!decision.takeover) {
-        log(`stale-proxy takeover declined (${decision.reason}) for held pid=${held.pid} on port ${GODOT_PORT}.`);
-        return { tookOver: false, reason: decision.reason, pid: held.pid };
-    }
-    log(`WARNING: stale proxy takeover (SEE-1338 §GM1b): held pid=${held.pid} (runtime '${held.runtimeId || '?'}') verified as a godot-mcp proxy for port ${GODOT_PORT} (${decision.reason}); killing its tree to free the editor's WS slot.`);
-    await killProxyTree(held.pid);
-    S.staleProxyTakeovers += 1;
-    log(`stale proxy tree killed (pid=${held.pid}); its shutdown path releases the held dir and its CLI's WS slot.`);
-    return { tookOver: true, reason: decision.reason, pid: held.pid };
-}
-
-function collectDescendants(parentOf, pid) {
-    return descendantsOf(parentOf, pid);
+    log(`stale-holder guard: held pid=${cls.pid} classified ${cls.action} (${cls.reason}) — evicting orphaned editor for a clean cold start.`);
+    await evict();
+    return { evicted: true, ...cls };
 }
 
 export {
     readHeldProxy,
-    readProcCmdline,
-    readProcPort,
-    collectDescendants,
-    scanProcParents,
-    descendantsOf,
-    killProxyTree,
-    attemptStaleProxyTakeover,
+    proxyAliveCheck,
+    classifyHeldProxy,
+    maybeEvictStaleHeld,
 };

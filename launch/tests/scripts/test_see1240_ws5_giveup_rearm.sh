@@ -3,7 +3,7 @@
 #
 # Exercises the REAL godot-mcp-proxy.mjs through the T-series coproc harness:
 #   R1  give-up terminal → 3rd consecutive spawn failure arms the cooldown; the
-#       next call is answered with state=give_up_cooldown carrying the ORIGINAL
+#       next call is answered with state=FAILED_CLEAN carrying the ORIGINAL
 #       first-report evidence (bucket/spawnStderr) — 首报保留, never a warming hint.
 #   R2  cooldown expiry → next tools/call RE-ARMS the warmup machine (give-up→
 #       重武装→成功): the rearming call is HELD then flushed when a FIXED start
@@ -66,6 +66,7 @@ start_proxy \
     "KOL_START_COUNTER=$START_COUNTER" \
     "KOL_WARMUP_TIMEOUT_MS=15000" \
     "KOL_PROBE_INTERVAL_MS=200" \
+    "KOL_SPAWN_RETRY_BACKOFF_MS=200" \
     "KOL_GIVEUP_COOLDOWN_MS=$COOL" \
     "MOCK_NPX_LOG=$TMPDIR/npx.log"
 
@@ -88,7 +89,7 @@ else
     ko "R1.1: give-up not recorded within 20s"
 fi
 
-# The NEXT call (id=5) lands inside the cooldown → give_up_cooldown with 首报.
+# The NEXT call (id=5) lands inside the cooldown → FAILED_CLEAN with 首报.
 send_line "$(call_line 5)"
 if wait_for "$PROXY_OUT" '"id":5' 8000; then
     ok "R1.2: cooldown-era call id=5 answered"
@@ -96,10 +97,10 @@ else
     ko "R1.2: no id=5 response during cooldown"
 fi
 SNAP_R1="$TMPDIR/r1.out"; cp "$PROXY_OUT" "$SNAP_R1"
-if grep -q '"state": *"give_up_cooldown"' "$SNAP_R1"; then
-    ok "R1.3: id=5 carries state=give_up_cooldown"
+if grep -q '"state": *"FAILED_CLEAN"' "$SNAP_R1"; then
+    ok "R1.3: id=5 carries state=FAILED_CLEAN"
 else
-    ko "R1.3: state=give_up_cooldown missing from id=5 response"
+    ko "R1.3: state=FAILED_CLEAN missing from id=5 response"
 fi
 if grep -q '"bucket": *"spawn_failed_start"' "$SNAP_R1"; then
     ok "R1.4: first-report evidence retained (bucket=spawn_failed_start, 首报保留)"
@@ -179,6 +180,7 @@ CFG_SH2=$(make_configure_mock "$CFG2" 0)
 START_SH2=$(make_start_mock "$START2" 1 0)
 start_proxy \
     "GODOT_PORT=$PORT2" \
+    "GODOT_MCP_HOME=$TMPDIR/home/.multica" \
     "KOL_AGENT_NAME=BachiWs5" \
     "KOL_WORKTREE=$MOCK_WORKTREE" \
     "KOL_CONFIGURE_SH=$CFG_SH2" \
@@ -187,6 +189,7 @@ start_proxy \
     "KOL_START_COUNTER=$START2" \
     "KOL_WARMUP_TIMEOUT_MS=15000" \
     "KOL_PROBE_INTERVAL_MS=200" \
+    "KOL_SPAWN_RETRY_BACKOFF_MS=200" \
     "KOL_GIVEUP_COOLDOWN_MS=$COOL" \
     "MOCK_NPX_LOG=$TMPDIR/npx2.log"
 send_line "$INIT_LINE"
@@ -220,7 +223,7 @@ fi
 # The giveup status file is where WS-4's foundation reads the counters. In this
 # sandbox HOME is the real one — read whatever the proxy wrote (best-effort
 # assertion on the FILE SHAPE, not the path).
-GU_FILE="$HOME/.multica/godot-editor/godot-editor-bachiws5.giveup.json"
+GU_FILE="$TMPDIR/home/.multica/godot-editor/godot-editor-bachiws5.giveup.json"
 echo "  [note] GU_FILE content: $(cat "$GU_FILE" 2>/dev/null | tr '\n' ' ' | head -c 400)"
 if [[ -n "$GU_FILE" ]] && jq -e '.giveup_count >= 2 and .backoff_ms > 0 and .cooldown_until != null' "$GU_FILE" >/dev/null 2>&1; then
     ok "R3.5: giveup status file carries count>=2/backoff/cooldown_until (WS-4 对接面)"
@@ -245,6 +248,7 @@ start_proxy \
     "KOL_START_COUNTER=$START3" \
     "KOL_WARMUP_TIMEOUT_MS=15000" \
     "KOL_PROBE_INTERVAL_MS=200" \
+    "KOL_SPAWN_RETRY_BACKOFF_MS=200" \
     "KOL_GIVEUP_REARM=0" \
     "MOCK_NPX_LOG=$TMPDIR/npx3.log"
 send_line "$INIT_LINE"
@@ -263,8 +267,10 @@ else
     ko "R5.1: legacy terminal contract broken"
 fi
 # And the next call is ALSO rejected (permanent terminal, no cooldown rearm).
+# SEE-1338: the rearm-era response carries state=FAILED_CLEAN + giveup_count;
+# the LEGACY terminal path carries neither — distinguish via giveup_count.
 send_line "$(call_line 5)"
-if wait_for "$PROXY_OUT" '"id":5' 8000 && ! grep -q 'give_up_cooldown' "$PROXY_OUT"; then
+if wait_for "$PROXY_OUT" '"id":5' 8000 && ! grep -q 'giveup_count' "$PROXY_OUT"; then
     ok "R5.2: post-terminal call permanently rejected (no in-band rearm without the flag)"
 else
     ko "R5.2: expected permanent rejection, got rearm/cooldown behavior"

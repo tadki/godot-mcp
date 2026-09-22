@@ -1,49 +1,30 @@
-// SEE-1338 §SPEC-GM1b — stale-proxy takeover decision (pure, no IO).
+// SEE-1338 spec v2.1 — stale-holder classification (pure, no IO).
 //
-// The 150-machine incident (SEE-1338): a previous session's godot-mcp proxy
-// kept holding the editor's single WS client slot after its session died.
-// The new session's proxy could never recover from it:
-//   * arbiter 'busy_foreign' → retryable editor_busy forever (form A);
-//   * arbiter 'reuse' → a full PORT_TAKEOVER_TIMEOUT_MS (300s) wait per call,
-//     then the same editor_busy loop (form C);
-// because every lane refuses to touch a LIVE holder.
+// Classification precedes any takeover/cleanup action. AMEND-1 (Atlas,
+// frozen): a WARM/stale record must NEVER be cleaned up while its owning
+// proxy is verifiably ALIVE — "前任在管" wins over staleness, and a live
+// foreign editor is never touched (T10 mirror: 物理活不盲杀, §4.2). Only a
+// DEAD holder's residue is takeoverable: its orphaned editor is evicted so
+// the next spawn can run against a clean slate.
 //
-// A live holder is only takeable when it is PROVABLY a leftover godot-mcp
-// proxy bound to OUR port: /proc cmdline must match the proxy script and the
-// proxy's own environ must carry our port. Anything less (unreadable cmdline,
-// port mismatch, no pid) is a NO — a foreign editor or an unrelated process
-// is never killed. Same-runtime holders are only takeable in the escalated
-// mode (allowSameRuntime), which callers may pass ONLY after a proven
-// non-release (e.g. the takeover window expired with the slot still held) —
-// a same-runtime holder that is alive and serving is a legitimate concurrent
-// slot, not residue.
-
-import process from 'node:process';
-
-export function decideStaleProxyTakeover({
-    holderPid = null,
-    holderRuntimeId = '',
-    ourRuntimeId = '',
-    holderCmdline = '',
-    holderPort = null,
-    ourPort = null,
-    allowSameRuntime = false,
-}) {
+//   free     — no held record; nothing to classify (port may still be bound
+//              by an unregistered stray — callers treat as foreign, no kill)
+//   own      — the held pid IS this proxy (our own editor/round):
+//              cleanup allowed and expected (R2 force restart, eviction)
+//   busy     — holder proxy ALIVE (foreign or same-runtime）：never cleaned,
+//              never killed; callers must surface a clean retryable
+//              editor_busy instead (spec §4.2 AMEND-1 branch)
+//   takeover — holder proxy DEAD (pid dead / exe mismatch = PID-reuse
+//              treated as dead): its editor may linger as an orphan →
+//              caller evicts (stop editor + reap) and cold-starts.
+export function decideStaleProxyAction({ holderPid = null, ourPid = null, holderAlive = null }) {
     if (!Number.isInteger(holderPid) || holderPid <= 0) {
-        return { takeover: false, reason: 'NO_HOLDER_PID' };
+        return { action: 'free', reason: 'NO_HELD_PROXY', pid: holderPid };
     }
-    if (holderPid === process.pid) {
-        return { takeover: false, reason: 'SELF' };
+    if (ourPid !== null && holderPid === ourPid) {
+        return { action: 'own', reason: 'SELF_RUNTIME_PROXY', pid: holderPid };
     }
-    if (!holderCmdline || !/godot-mcp-proxy/.test(holderCmdline)) {
-        return { takeover: false, reason: 'CMDLINE_NOT_PROXY' };
-    }
-    if (!Number.isInteger(holderPort) || !Number.isInteger(ourPort) || holderPort !== ourPort) {
-        return { takeover: false, reason: 'PORT_MISMATCH' };
-    }
-    if (ourRuntimeId && holderRuntimeId === ourRuntimeId) {
-        if (!allowSameRuntime) return { takeover: false, reason: 'SAME_RUNTIME_LIVE' };
-        return { takeover: true, reason: 'SAME_RUNTIME_NONRELEASE_STALE' };
-    }
-    return { takeover: true, reason: holderRuntimeId ? 'FOREIGN_RUNTIME_STALE' : 'UNMARKED_STALE_PROXY' };
+    return holderAlive === true
+        ? { action: 'busy', reason: 'HOLDER_PROXY_ALIVE_AMEND1', pid: holderPid }
+        : { action: 'takeover', reason: 'HOLDER_PROXY_DEAD_RESIDUE', pid: holderPid };
 }

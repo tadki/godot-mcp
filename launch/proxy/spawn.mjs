@@ -11,7 +11,8 @@ import {
     GODOT_HOST, GODOT_MCP_HOME, GODOT_PORT, GIVEUP_BASE_COOLDOWN_MS, GIVEUP_MAX_COOLDOWN_MS,
     GIVEUP_REARM_ENABLED, PORT_ARBITER_ENABLED, PORT_ARBITER_LIB,
     PORT_PROBE_INTERVAL_MS, PORT_RESPAWN_WINDOW_MS, PORT_TAKEOVER_TIMEOUT_MS,
-    RUNTIME_ID, SPAWN_MAX_ATTEMPTS, SpawnError, isSharedMasterWorktree, resolveHelper,
+    RUNTIME_ID, SPAWN_MAX_ATTEMPTS, SPAWN_RETRY_BACKOFF_MS, SpawnError,
+    isSharedMasterWorktree, resolveHelper,
 } from './config.mjs';
 import { STAGE_ENUM } from '../warmup-stage-parser.mjs';
 import { log, stageLog } from './log.mjs';
@@ -24,7 +25,7 @@ import {
 } from './worktree.mjs';
 import { decideReuse } from '../see1129-reuse-predicate.mjs';
 import { decideSidecarGuard } from '../see1129-sidecar-guard-predicate.mjs';
-import { attemptStaleProxyTakeover } from './stale-proxy.mjs';
+import { maybeEvictStaleHeld } from './stale-proxy.mjs';
 
 // Trigger the editor spawn at most once; concurrent callers share the promise.
 // The trigger fires on the first tools/call after COLD_EMPTY. Spawn success/
@@ -292,50 +293,29 @@ async function ensureEditor(t0) {
         } else if (verdict === 'reuse') {
             // PID alive + SAME runtime: hot takeover. Wait for the holder to
             // release (ESTABLISHED change / QUIT_DELAY), bounded by the 300s
-            // takeover timeout, then spawn if freed.
+            // takeover timeout, then spawn if freed. SEE-1338 spec v2.1 AMEND-1:
+            // the holder proxy is verifiably ALIVE — 前任在管，never killed; a
+            // non-release past the window keeps the clean retryable
+            // editor_busy (the R2 RECOVERING hard cap + FAILED_CLEAN backstop
+            // own the recovery if the holder is wedged).
             log(`port ${GODOT_PORT} held by a LIVE proxy of THIS runtime; hot takeover — waiting up to ${PORT_TAKEOVER_TIMEOUT_MS}ms for release.`);
             const freed = await waitForPortRelease('reuse');
             if (freed) {
                 log(`port ${GODOT_PORT} released by holder; spawning fresh editor.`);
                 // fall through to spawn below.
             } else {
-                // SEE-1338 §GM1b form C: a same-runtime holder that survived the
-                // FULL takeover window without releasing is stale residue (a
-                // previous session's wedged proxy keeping the editor's WS slot).
-                // The window expiry IS the non-release proof required for a
-                // same-runtime takeover; the editor itself survives its proxy's
-                // death and is re-used with a fresh CLI slot.
-                log(`port ${GODOT_PORT} held by a live same-runtime proxy that did not release within ${PORT_TAKEOVER_TIMEOUT_MS}ms — stale leftover, attempting verified takeover.`);
-                const tookOver = await attemptStaleProxyTakeover({ allowSameRuntime: true });
-                if (tookOver.tookOver) {
-                    S.lastSpawnReused = true;
-                    S.spawnLastFailed = false;
-                    const reused = await ensureReusedWorktreeConfigured(t0);
-                    log(`stale same-runtime proxy taken over (pid=${tookOver.pid}); reusing the live editor (worktree=${reused.worktree}).`);
-                    return { spawned: false, reused: true, staleTakeover: true, worktree: reused.worktree, reuseStatus: reused.status, configureRc: reused.configureRc, configureError: reused.configureError };
-                }
                 throw new SpawnError('editor_busy',
-                    `port ${GODOT_PORT} is held by a live same-runtime proxy that did not release within ${PORT_TAKEOVER_TIMEOUT_MS}ms (hot takeover timeout; verified takeover declined: ${tookOver.reason}). Retry shortly.`,
+                    `port ${GODOT_PORT} is held by a live same-runtime proxy that did not release within ${PORT_TAKEOVER_TIMEOUT_MS}ms (hot takeover timeout). Retry shortly.`,
                     { worktree: null });
             }
         } else if (verdict === 'busy_foreign') {
-            // PID alive + DIFFERENT runtime: normally editor_busy retryable — the
-            // other runtime legitimately owns the port; do NOT evict a live holder.
-            // SEE-1338 §GM1b: FIRST verify the holder is a leftover godot-mcp
-            // proxy for OUR port (previous session's residue — form A). Such a
-            // holder is provably dead weight: kill its tree and fall through to
-            // spawn instead of retryable-blocking forever. A holder that fails
-            // the verification (unrelated process, unreadable identity, port
-            // mismatch) keeps the conservative editor_busy diagnostic.
-            const tookOver = await attemptStaleProxyTakeover({ allowSameRuntime: false });
-            if (tookOver.tookOver) {
-                log(`busy_foreign holder was a verified stale proxy (pid=${tookOver.pid}); proceeding to spawn our own editor.`);
-                // fall through to spawn below.
-            } else {
-                throw new SpawnError('editor_busy',
-                    `port ${GODOT_PORT} is held by a live proxy of a DIFFERENT runtime (editor_busy). The holder owns the slot; retry after it releases (its proxy disconnects, or the editor's lease self-exits).`,
-                    { worktree: null });
-            }
+            // PID alive + DIFFERENT runtime: editor_busy retryable — the other
+            // runtime legitimately owns the port; AMEND-1 (spec v2.1 §4.2):
+            // a live holder is NEVER evicted or killed (前任在管). Its release
+            // path is its own proxy disconnect / lease self-exit / the R1 reaper.
+            throw new SpawnError('editor_busy',
+                `port ${GODOT_PORT} is held by a live proxy of a DIFFERENT runtime (editor_busy). The holder owns the slot; retry after it releases (its proxy disconnects, or the editor's lease self-exits).`,
+                { worktree: null });
         } else if (verdict === 'legacy') {
         // Legacy SEE-1129 path (arbiter disabled/unavailable): sidecar guard.
         // SEE-1129 (instance selection layer): ports are allocated per agent
@@ -513,12 +493,14 @@ async function ensureEditor(t0) {
 // Map a SpawnError to the warmupDiagnostic-style data object attached to the
 // spawn_failed error response. retryable is always true for non-terminal (the
 // failure is usually transient: port clash, transient binary miss); false for
-// terminal (streak exhausted). See design §7.
+// FAILED_CLEAN (streak exhausted — but the state is REENTRANT, the next
+// tools/call retries cold start, so retryable stays true there too). See
+// design §7 + SEE-1338 spec v2.1 §6.
 function spawnFailedDiagnostic(bucket, err, terminal) {
     const now = Date.now();
     const e = err || {};
     return {
-        state: terminal ? 'spawn_failed_terminal' : 'spawn_failed',
+        state: terminal ? 'FAILED_CLEAN' : 'spawn_failed',
         bucket,
         host: GODOT_HOST,
         port: GODOT_PORT,
@@ -528,15 +510,21 @@ function spawnFailedDiagnostic(bucket, err, terminal) {
         spawnStderr: e.startStderr || e.configureStderr || (e.message ? String(e.message) : ''),
         worktree: e.worktree !== undefined ? e.worktree : null,
         elapsedMs: now - S.startedAt,
-        retryable: !terminal,
+        // FAILED_CLEAN is reentrant (spec §6): the next tools/call retries the
+        // cold start after the backoff window — never a dead end.
+        retryable: true,
+        spawnBackoffUntilMs: S.spawnBackoffUntil > 0 ? S.spawnBackoffUntil : null,
     };
 }
 
-// Handle a spawn failure: count the bucket streak; on terminal streak reject
-// all buffered calls and lock the proxy into SPAWN_FAILED_TERMINAL; otherwise
-// reject the calls buffered during this attempt with a spawn_failed diagnostic
-// and reset spawnTriggered so the next tools/call re-triggers. warmupLoop's
-// main loop sees spawnTriggered flip false and returns to COLD_EMPTY idle.
+// Handle a spawn failure: count the bucket streak, arm the exponential
+// backoff (spec §6: capped at 60s); at the streak limit enter FAILED_CLEAN —
+// a REENTRANT state that answers the current call with a clean structured
+// error and lets the NEXT tools/call (after the cooldown) retry the cold
+// start in-band. Otherwise reject the calls buffered during this attempt
+// with the spawn_failed diagnostic and reset spawnTriggered so the next
+// tools/call re-triggers after the backoff window. warmupLoop's main loop
+// sees spawnTriggered flip false and returns to COLD_EMPTY idle.
 function handleSpawnFailure(err) {
     const bucket = (err && err.bucket) || 'spawn_failed_exception';
     S.spawnFailedStreak = (bucket === S.spawnFailedBucket)
@@ -545,12 +533,12 @@ function handleSpawnFailure(err) {
     S.spawnFailedBucket = bucket;
     log(`ERROR: editor spawn failed (bucket=${bucket}, attempt=${S.spawnAttempts}, streak=${S.spawnFailedStreak}): ${err.message}`);
     S.spawnLastError = err;
-    maybeEscalateStaleProxyTakeover(bucket, S.spawnFailedStreak);
+    maybeEscalateDeadHolderEvict(bucket, S.spawnFailedStreak);
     if (S.spawnFailedStreak >= SPAWN_MAX_ATTEMPTS) {
-        // Give-up (terminal streak). The fail-fast first-report: held calls are
-        // answered with the terminal diagnostic (shape unchanged from B1).
+        // spec §6: streak limit → FAILED_CLEAN (reentrant). The fail-fast
+        // first-report: held calls are answered with the structured diagnostic.
         rejectQueue(
-            `editor spawn kept failing (${bucket}); giving up this run — restart the MCP server to retry`,
+            `editor spawn kept failing (${bucket}); state=FAILED_CLEAN — the next tools/call retries the cold start automatically (no MCP restart needed)`,
             spawnFailedDiagnostic(bucket, err, true),
         );
         // SEE-1240 WS-5 (C9): the terminal no longer ends the road — record the
@@ -566,39 +554,82 @@ function handleSpawnFailure(err) {
         }
         return;
     }
+    // spec §6: spawn failures are NEVER terminal — arm the exponential
+    // backoff window (base × 2^(streak-1), capped at 60s). A tools/call
+    // arriving inside the window is answered with the real diagnostic +
+    // retry-after instead of hot-looping the spawn.
+    S.spawnBackoffUntil = Date.now()
+        + Math.min(SPAWN_RETRY_BACKOFF_MS * 2 ** (S.spawnFailedStreak - 1), GIVEUP_MAX_COOLDOWN_MS);
     // SEE-1111 预热提示: non-terminal failure. Latched so the next tools/call
     // surfaces the real spawn_failed diagnostic (误报防护) instead of a friendly
     // "warming" hint — the agent must learn the spawn broke, not that the editor
     // is merely booting. Cleared on the next successful spawn attempt.
     S.spawnLastFailed = true;
     rejectQueue(
-        `editor spawn failed: ${bucket}; will retry on next call`,
+        `editor spawn failed: ${bucket}; will retry after backoff on the next call`,
         spawnFailedDiagnostic(bucket, err, false),
     );
     S.spawnTriggered = false;
     S.spawnInFlight = null;
 }
 
-// SEE-1338 §GM1b: a spawn that KEEPS failing against a live holder
-// (editor_busy / spawn_failed_start with the port still bound after retries)
-// is stale-residue evidence. On streak ≥ 2, try a VERIFIED stale-proxy
-// takeover in the background so the NEXT retry walks a free port instead of
-// looping the same editor_busy forever. The decision fn refuses anything not
-// provably a leftover godot-mcp proxy for our port.
-function maybeEscalateStaleProxyTakeover(bucket, streak) {
+// SEE-1338 spec v2.1 §4.2 (AMEND-1): repeated spawn failures against a busy
+// port may mean a DEAD holder's orphaned editor. On streak ≥ 2, classify the
+// held record; ONLY a dead holder is evictable — a live holder is 前任在管
+// (AMEND-1: never cleaned, never killed) and keeps the clean editor_busy.
+function maybeEscalateDeadHolderEvict(bucket, streak) {
     if (streak < 2 || S.staleTakeoverInFlight) return;
     if (bucket !== 'editor_busy' && bucket !== 'instance_busy_foreign' && bucket !== 'spawn_failed_start') return;
     S.staleTakeoverInFlight = true;
-    log(`WARNING: spawn bucket ${bucket} streak=${streak} — holder is likely a stale session's proxy; attempting verified takeover in background (SEE-1338 §GM1b).`);
-    attemptStaleProxyTakeover({ allowSameRuntime: false })
-        .then((r) => {
-            if (r.tookOver) {
-                log(`escalated stale proxy taken over (pid=${r.pid}); the next tools/call re-runs the spawn path against the freed port.`);
-                evictStaleHolder(null).catch(() => {});
-            }
-        })
-        .catch((err) => log(`escalated stale proxy takeover failed (non-fatal): ${err && err.message}`))
+    log(`WARNING: spawn bucket ${bucket} streak=${streak} — classifying held record; only a DEAD holder is evictable (AMEND-1).`);
+    maybeEvictStaleHeld(() => evictStaleHolder(null))
+        .catch((err) => log(`stale-holder evict escalation failed (non-fatal): ${err && err.message}`))
         .finally(() => { S.staleTakeoverInFlight = false; });
+}
+
+// SEE-1338 spec v2.1 §6 (R2 hard-cap backstop): the RECOVERING absolute cap
+// (2× cold timeout, measured from RECOVERING entry) expired — FORCE a cold
+// restart regardless of any self-heal blips inside the window: evict OUR OWN
+// editor clue (pinned to our own worktree, never a foreign holder), wait for
+// the port to release, reset the round clock, and re-spawn. The respawn's own
+// outcome flows into the normal spawn-failure streak channel (→ FAILED_CLEAN
+// after K attempts), so this can never loop an infinite RECOVERING fake-retry
+// (形态 B 根治点). Caller-bounded by forceRestartCount: after K forced
+// restarts the caller falls back to the FAILED_CLEAN path instead.
+async function forceColdRestart(trigger) {
+    if (S.warmRespawnInFlight) return false;
+    S.warmRespawnInFlight = true;
+    try {
+        S.forceRestartCount += 1;
+        stageLog('FORCE_COLD_RESTART', `trigger=${trigger} n=${S.forceRestartCount}/${SPAWN_MAX_ATTEMPTS}`);
+        log(`RECOVERING hard cap (2× cold timeout) reached; forcing cold restart #${S.forceRestartCount}/${SPAWN_MAX_ATTEMPTS} — evicting our editor and respawning (R2, spec §6).`);
+        // The editor being restarted is by construction OUR OWN spawn (we are
+        // inside our own spawn round's RECOVERING) — pin the eviction to our
+        // own worktree, exactly like the WS-7 grace-race respawn path. A
+        // foreign holder is never the target; a port it squats on surfaces as
+        // spawn_failed_start → streak → FAILED_CLEAN instead.
+        const ourWorktree = await resolveWorktreeForSpawn();
+        if (ourWorktree) await evictStaleHolder(ourWorktree);
+        await waitForPortRelease('respawn');
+        S.warm = false;
+        S.recovering = false;
+        S.warmEditorDead = false;
+        S.renderStable = false;
+        startRenderStableMonitor();
+        S.warmupTimeoutMs = null;
+        S.lastSpawnReused = false;
+        S.tcpReceivedCount = 0;
+        S.firstProbeOkAt = 0;
+        for (const s of STAGE_ENUM) S.stageTimestamps[s] = null;
+        S.stageTimestamps.LAUNCHER_EXEC = S.startedAt;
+        S.stage = 'EDITOR_SPAWNED';
+        S.spawnStartedAt = Date.now();
+        S.spawnAttempts = 0;
+        triggerEnsureEditor();  // failure → handleSpawnFailure → streak → FAILED_CLEAN
+        return true;
+    } finally {
+        S.warmRespawnInFlight = false;
+    }
 }
 
 // SEE-1240 WS-5 (C9 目标1/2): record one give-up event, arm the exponential-
@@ -630,6 +661,8 @@ function giveUpAndRearm(bucket, message) {
     // degrades to "budget exhausted → give up" with no respawn attempt.
     S.recoveryRound = 0;
     S.recoveryWindowStart = null;
+    S.forceRestartCount = 0;   // FAILED_CLEAN reentry = fresh hard-cap budget
+    S.spawnBackoffUntil = 0;
     // The re-armed round continues INSIDE the current warmupLoop invocation (the
     // T4 sites break the probe loop, not the function), so the render-stable
     // monitor must be restarted here — its interval was cleared at WARM/exit and
@@ -655,6 +688,7 @@ function persistGiveUpStatus(event, bucket, message) {
             : path.join(dir, `godot-editor-${legacyLabel || 'unknown'}.giveup.json`);
         const doc = {
             schema: 'see1240-ws5-giveup/1',
+            state: 'FAILED_CLEAN',
             updated_at: new Date().toISOString(),
             giveup_count: S.giveUpCount,
             last_event: event,
@@ -681,6 +715,7 @@ export {
     ensureEditor,
     spawnFailedDiagnostic,
     handleSpawnFailure,
+    forceColdRestart,
     giveUpAndRearm,
     persistGiveUpStatus,
     ensureReusedWorktreeConfigured,

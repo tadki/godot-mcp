@@ -11,7 +11,7 @@ import { log } from './log.mjs';
 import { forwardToNpx, makeErrorResponse, sendToClaude } from './protocol.mjs';
 import { readHolderWorktree } from './worktree.mjs';
 import { evictStaleHolder } from './spawn.mjs';
-import { attemptStaleProxyTakeover } from './stale-proxy.mjs';
+import { maybeEvictStaleHeld } from './stale-proxy.mjs';
 
 // ---- SEE-1085 §1 (Revy §4.3): editor_busy wait/retry takeover ----------------
 // When a tools/call comes back as editor_busy (a concurrent same-agent session
@@ -132,19 +132,17 @@ function failTakeover() {
             { warmupDiagnostic: editorBusyTakeoverDiagnostic() },
         ));
     }
-    // SEE-1338 §GM1b: every timed-out takeover against a holder that never
-    // releases is stale-residue evidence — try a VERIFIED stale-proxy takeover
-    // in the background so the next tools/call lands on a free slot instead of
-    // re-competing with the same ghost for another 30s cycle. The decision fn
-    // refuses anything that is not provably a leftover godot-mcp proxy for our
-    // port, so a legitimate concurrent slot is never touched here.
+    // SEE-1338 spec v2.1 §4.2 (AMEND-1): a timed-out takeover means the slot
+    // holder is NOT releasing — classify the held record. A LIVE holder stays
+    // untouchable (前任在管; clean editor_busy already went out above); ONLY a
+    // DEAD holder's orphaned editor is evictable below.
     if (!S.staleTakeoverInFlight) {
         S.staleTakeoverInFlight = true;
-        attemptStaleProxyTakeover({ allowSameRuntime: false })
+        maybeEvictStaleHeld(() => evictStaleHolder(null))
             .then((r) => {
-                if (r.tookOver) log(`post-timeout stale proxy taken over (pid=${r.pid}); next tools/call re-runs against the freed slot.`);
+                if (r.evicted) log(`post-timeout stale holder evicted (pid=${r.pid}); next tools/call re-runs against the freed slot.`);
             })
-            .catch((err) => log(`stale proxy takeover after timeout failed (non-fatal): ${err && err.message}`))
+            .catch((err) => log(`stale-holder classification after takeover timeout failed (non-fatal): ${err && err.message}`))
             .finally(() => { S.staleTakeoverInFlight = false; });
     }
     // SEE-1316 (hardener) — bounded self-heal for a stuck-holder 4001 loop:
