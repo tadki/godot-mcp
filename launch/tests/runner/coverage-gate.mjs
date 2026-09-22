@@ -53,7 +53,12 @@ rmSync(MERGED_DIR, { recursive: true, force: true });
 //    a clean CI runner — a pre-existing harness property (reported, not
 //    fixed here: 用例语义不动).
 console.log('[coverage-gate] 1/3 running launch vitest fast tier (children dump raw v8)...');
-const vitest = spawnSync('npx', ['vitest', 'run', 'launch/tests/.vitest-gen/fast'], {
+// retry 1 at the RUNNER level: the coverage job's serial marathon + NODE_V8
+// dump I/O makes timing-sensitive reaper/lease suites (T4, C9 matrix) flaky
+// at ~30-50% per run — the dedicated shell-harnesses job is the flake
+// arbiter for case semantics; this gate only judges coverage numbers. One
+// retry keeps the gate signal without weakening any assertion.
+const vitest = spawnSync('npx', ['vitest', 'run', 'launch/tests/.vitest-gen/fast', '--retry', '1'], {
     cwd: path.join(REPO, 'launch'),
     stdio: 'inherit',
     env: { ...process.env, LAUNCH_COVERAGE_DIR: DUMP_DIR },
