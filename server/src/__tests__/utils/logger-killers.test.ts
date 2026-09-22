@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { logger, _resetForTesting } from '../../utils/logger.js';
 
 // Mutation killers for utils/logger.ts (SEE-1334 SPEC-061) — verbose gate,
 // rate limit window, and level-routing contracts. Production code untouched.
 
 describe('logger: verbose gate + rate limit contracts', () => {
-  let errSpy: ReturnType<typeof vi.spyOn>;
+  let errSpy: MockInstance;
 
   beforeEach(() => {
     _resetForTesting();
@@ -68,7 +68,7 @@ describe('logger: verbose gate + rate limit contracts', () => {
 });
 
 describe('logger: exact stderr text contracts (mutation killers)', () => {
-  let errSpy: ReturnType<typeof vi.spyOn>;
+  let errSpy: MockInstance;
   beforeEach(() => {
     _resetForTesting();
     delete process.env.GODOT_MCP_VERBOSE;

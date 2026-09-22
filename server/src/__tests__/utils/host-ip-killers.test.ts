@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { _clearHostIpCache, getHostIpInWSL } from '../../utils/host-ip-resolver.js';
 import { _resetForTesting } from '../../utils/logger.js';
 
@@ -10,7 +10,7 @@ import { resolveGateway } from '../../utils/gateway-resolver.js';
 const mockedResolve = vi.mocked(resolveGateway);
 
 describe('host-ip-resolver: gateway-path contracts (mocked resolver)', () => {
-  let errSpy: ReturnType<typeof vi.spyOn>;
+  let errSpy: MockInstance;
 
   beforeEach(() => {
     _clearHostIpCache();
