@@ -62,6 +62,8 @@ Consumer-side hooks (stop-hook sanitize, push guard) live in the consumer repo u
 | `e2e/` | Live-editor and real-machine suites (see1240 real-machine client, KOL game-system e2e — require a real editor) |
 | `abtest/` | A/B behavioral comparisons |
 
+**CI gates & test-timing plan** (6 PR-gate jobs incl. the mutation gate at break=100, nightly buckets, 15m budget, 100% target route, mutation-exemption ledger): see [docs/ci-test-plan.md](docs/ci-test-plan.md) and [docs/mutation-exemptions.md](docs/mutation-exemptions.md) (SEE-1334 SPEC-064).
+
 Run a suite from the repo root:
 
 ```bash

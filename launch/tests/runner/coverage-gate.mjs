@@ -112,7 +112,7 @@ console.log('[coverage-gate] 3/3 judging thresholds:',
 // global floors (no backlog refills). Mechanism: c8 per-file summary vs the
 // diff name set — chosen over vitest thresholds because the provider cannot
 // see child processes at all (see header).
-const NEW_FILE_FLOOR = 95;
+const NEW_FILE_FLOOR = 100;
 // Grandfather anchor = the pre-hardening tip (6123f88): files ADDED BY THE
 // P0a SPLIT are moved existing code (Owner: 存量不回填不重测) — the ≥95
 // new-code ratchet applies only to files added AFTER this anchor.
@@ -130,7 +130,7 @@ for (const [file, data] of Object.entries(summary)) {
     if (file === 'total') continue;
     const rel = path.relative(REPO, file);
     if (addedFiles.has(rel) && data.lines.pct < NEW_FILE_FLOOR) {
-        perFileBreaches.push(`${rel} lines ${data.lines.pct} < ${NEW_FILE_FLOOR} (new-code ratchet)`);
+        perFileBreaches.push(`${rel} lines ${data.lines.pct} < ${NEW_FILE_FLOOR} (new-code 100% ratchet)`);
     }
 }
 const breaches = Object.entries(THRESHOLDS)

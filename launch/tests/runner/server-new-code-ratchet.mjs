@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const GRANDFATHER_ANCHOR = '6123f882ff54a2969a0b0b017d18df35984f38ae';
-const NEW_FILE_FLOOR = 95;
+const NEW_FILE_FLOOR = 100;
 
 const fail = (msg) => { console.error(`[server-ratchet] ERROR: ${msg}`); process.exit(1); };
 
