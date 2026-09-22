@@ -270,25 +270,55 @@ async function ensureEditor(t0) {
         const arbT0 = Date.now();
         const verdict = await arbiterDecide(GODOT_PORT);
         stageLog('ARBITER_VERDICT', `verdict=${verdict} dt_ms=${Date.now() - arbT0}`);
-        if (verdict === 'evict') {
-            // PID dead + runtime id mismatch/missing: cross-runtime stale
-            // holder. Immediate evict (kill editor, cold-start), NO wait.
-            log(`port ${GODOT_PORT} held by a DEAD cross-runtime proxy (runtime id mismatch); immediate evict then cold-start (no 300s wait).`);
-            await evictStaleHolder(await readHolderWorktree());
-            // fall through to spawn below.
-        } else if (verdict === 'respawn') {
-            // PID dead + SAME runtime id: our own editor is mid-respawn. Wait
-            // for release within the respawn window; evict ONLY if the window
-            // expires without the new proxy re-binding (never mis-kill).
-            log(`port ${GODOT_PORT} busy but holder is THIS runtime (dead proxy, respawn in progress); waiting up to ${PORT_RESPAWN_WINDOW_MS}ms for release.`);
-            const freed = await waitForPortRelease('respawn');
-            if (freed) {
-                log(`port ${GODOT_PORT} freed within respawn window; spawning fresh editor.`);
+        if (verdict === 'evict' || verdict === 'respawn') {
+            // SEE-1338 QA defect #1 (real-machine s3y, HIGH): the arbiter
+            // verdicts are PROXY-pid based — but the EDITOR outlives its proxy,
+            // and the fork CLI connects to it at CLI boot. In the QA topology
+            // (old session's proxy dead, same worktree) verdict=evict killed
+            // the very editor OUR OWN CLI had already connected to, and the
+            // follow-up spawn hit the async-stop "port already in use" → the
+            // whole session ground down (162s evict + 600s RECOVERING). Spec
+            // §4.2: 连上 = 接管，不拉新 editor. So before ANY kill: when the
+            // holder editor provably serves THIS slot's worktree (SEE-1129
+            // sidecar match — the same reuse standard the legacy lane uses),
+            // ADOPT it (hot reuse) instead of evicting.
+            const holderWorktree = await readHolderWorktree();
+            const ourWorktree = await resolveWorktreeForSpawn();
+            if (holderWorktree && ourWorktree
+                && decideSidecarGuard(holderWorktree, ourWorktree) === 'reuse') {
+                S.lastSpawnReused = true;
+                S.spawnLastFailed = false;
+                const reused = await ensureReusedWorktreeConfigured(t0);
+                log(`arbiter verdict ${verdict} downgraded to HANDOFF reuse: the holder editor provably serves this slot (worktree=${holderWorktree}); adopting the live editor (our CLI may already be connected to it).`);
+                return { spawned: false, reused: true, staleHandoff: true, worktree: reused.worktree, reuseStatus: reused.status, configureRc: reused.configureRc, configureError: reused.configureError };
+            }
+            if (verdict === 'evict') {
+                // PID dead + runtime id mismatch/missing: cross-runtime stale
+                // holder (different worktree — not ours to adopt). Immediate
+                // evict (kill editor, cold-start), NO wait.
+                log(`port ${GODOT_PORT} held by a DEAD cross-runtime proxy (runtime id mismatch); immediate evict then cold-start (no 300s wait).`);
+                await evictStaleHolder(holderWorktree);
+                // SEE-1338 QA (s3y root cause C): stop-godot-editor.sh rc=0 is
+                // ASYNC on the Windows side — the dying editor held the port
+                // for seconds after rc=0 and the follow-up spawn failed
+                // "port already in use". Wait (bounded) before spawning.
+                await waitForPortRelease('respawn');
                 // fall through to spawn below.
             } else {
-                log(`respawn window expired (${PORT_RESPAWN_WINDOW_MS}ms) with port still held; evicting stale holder then spawning.`);
-                await evictStaleHolder(await readHolderWorktree());
-                // fall through to spawn below.
+                // PID dead + SAME runtime id: our own editor is mid-respawn. Wait
+                // for release within the respawn window; evict ONLY if the window
+                // expires without the new proxy re-binding (never mis-kill).
+                log(`port ${GODOT_PORT} busy but holder is THIS runtime (dead proxy, respawn in progress); waiting up to ${PORT_RESPAWN_WINDOW_MS}ms for release.`);
+                const freed = await waitForPortRelease('respawn');
+                if (freed) {
+                    log(`port ${GODOT_PORT} freed within respawn window; spawning fresh editor.`);
+                    // fall through to spawn below.
+                } else {
+                    log(`respawn window expired (${PORT_RESPAWN_WINDOW_MS}ms) with port still held; evicting stale holder then spawning.`);
+                    await evictStaleHolder(holderWorktree);
+                    await waitForPortRelease('respawn');
+                    // fall through to spawn below.
+                }
             }
         } else if (verdict === 'reuse') {
             // PID alive + SAME runtime: hot takeover. Wait for the holder to
