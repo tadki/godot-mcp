@@ -40,6 +40,15 @@ START_SH=$(make_start_mock "$START_COUNTER" 1 0)
 # Fast cooldowns so the suite stays seconds-scale.
 COOL=3000   # first give-up cooldown: 3s
 
+# SEE-1338 review MEDIUM-1: stub the prepare step so every spawn attempt's
+# pipeline (prepare → configure → start) is fully mocked and near-instant.
+# The REAL prepare-worktree.sh costs 2-10s under load — enough to blow the
+# 15s warmup window mid-round, dropping the proxy into RECOVERING between
+# attempts (router then rejects the next call instead of spawning attempt 3).
+PREP_SH="$TMPDIR/prepare-stub.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$PREP_SH"
+chmod +x "$PREP_SH"
+
 # wait_attempt <counter> <n> — wait until the start-mock counter reaches n lines.
 # Deterministic pacing: a call arriving while an attempt is in flight gets HELD
 # and drained by rejectQueue (never triggering its own attempt), so serial sends
@@ -54,12 +63,23 @@ wait_attempt() {
     return 1
 }
 
+# wait_backoff_expired — SEE-1338 §6: after a non-terminal spawn failure the
+# proxy arms spawnBackoffUntil (KOL_SPAWN_RETRY_BACKOFF_MS × 2^(streak-1)); a
+# hot retry inside the window is answered with retry-after and does NOT count
+# an attempt. With the 200ms seam the worst in-round window is 200×2^2=800ms;
+# fixed sleeps race under load (Atlas review MEDIUM-1), so wait out the FULL
+# worst window after every counter bump before sending the next call.
+wait_backoff_expired() {
+    sleep 1
+}
+
 sep "R1: give-up terminal → cooldown rejection with first-report evidence"
 start_proxy \
     "GODOT_PORT=$PORT" \
     "GODOT_MCP_HOME=$TMPDIR/home/.multica" \
     "KOL_AGENT_NAME=BachiWs5" \
     "KOL_WORKTREE=$MOCK_WORKTREE" \
+    "KOL_PREPARE_SH=$PREP_SH" \
     "KOL_CONFIGURE_SH=$CFG_SH" \
     "KOL_START_SH=$START_SH" \
     "KOL_CONFIGURE_COUNTER=$CFG_COUNTER" \
@@ -71,7 +91,7 @@ start_proxy \
     "MOCK_NPX_LOG=$TMPDIR/npx.log"
 
 send_line "$INIT_LINE"
-wait_for "$PROXY_OUT" '"id":1' 1500 || ko "R1.pre: initialize not answered"
+wait_for "$PROXY_OUT" '"id":1' 8000 || ko "R1.pre: initialize not answered"
 
 # id=2 triggers spawn attempt 1 (held → rejected with spawn_failed).
 # id=3 and id=4 must be sent SERIALLY: a call arriving while a spawn attempt is
@@ -80,8 +100,10 @@ wait_for "$PROXY_OUT" '"id":1' 1500 || ko "R1.pre: initialize not answered"
 # distinct attempts so the streak reaches SPAWN_MAX_ATTEMPTS.
 send_line "$(call_line 2)"
 wait_attempt "$START_COUNTER" 1 || true
+wait_backoff_expired
 send_line "$(call_line 3)"
 wait_attempt "$START_COUNTER" 2 || true
+wait_backoff_expired
 send_line "$(call_line 4)"
 if wait_for "$PROXY_ERR" 'give-up #1 recorded' 20000; then
     ok "R1.1: give-up #1 recorded (terminal streak fired, proxy survived)"
@@ -183,6 +205,7 @@ start_proxy \
     "GODOT_MCP_HOME=$TMPDIR/home/.multica" \
     "KOL_AGENT_NAME=BachiWs5" \
     "KOL_WORKTREE=$MOCK_WORKTREE" \
+    "KOL_PREPARE_SH=$PREP_SH" \
     "KOL_CONFIGURE_SH=$CFG_SH2" \
     "KOL_START_SH=$START_SH2" \
     "KOL_CONFIGURE_COUNTER=$CFG2" \
@@ -193,24 +216,29 @@ start_proxy \
     "KOL_GIVEUP_COOLDOWN_MS=$COOL" \
     "MOCK_NPX_LOG=$TMPDIR/npx2.log"
 send_line "$INIT_LINE"
-wait_for "$PROXY_OUT" '"id":1' 1500 || ko "R3.pre: initialize not answered"
+wait_for "$PROXY_OUT" '"id":1' 8000 || ko "R3.pre: initialize not answered"
 # Round 1 → give-up #1 (cooldown 3s). Attempt-paced serial sends.
 send_line "$(call_line 2)"
 wait_attempt "$START2" 1 || true
+wait_backoff_expired
 send_line "$(call_line 3)"
 wait_attempt "$START2" 2 || true
+wait_backoff_expired
 send_line "$(call_line 4)"
 wait_for "$PROXY_ERR" 'give-up #1 recorded' 20000 || ko "R3.1: first give-up not recorded"
 # Wait out cooldown; rearm fires on id=5 (attempt 4), then id=6/7 are attempts
-# 5 and 6 — streak 3 hits at attempt 6 → give-up #2.
+# 5 and 6 — streak 3 hits at attempt 6 → give-up #2. Each send waits out the
+# §6 spawn backoff window first (MEDIUM-1: retry-after swallows hot retries).
 sleep 3.5
 send_line "$(call_line 5)"
 wait_for "$PROXY_ERR" 'warmup re-armed' 8000 || ko "R3.2: rearm after cooldown did not fire"
 wait_attempt "$START2" 4 || true
+wait_backoff_expired
 send_line "$(call_line 6)"
 wait_attempt "$START2" 5 || true
+wait_backoff_expired
 send_line "$(call_line 7)"
-if wait_for "$PROXY_ERR" 'give-up #2 recorded' 20000; then
+if wait_for "$PROXY_ERR" 'give-up #2 recorded' 90000; then
     ok "R3.3: give-up #2 recorded after rearm round failed again"
 else
     ko "R3.3: second give-up not recorded"
@@ -242,6 +270,7 @@ start_proxy \
     "GODOT_PORT=$PORT3" \
     "KOL_AGENT_NAME=BachiWs5" \
     "KOL_WORKTREE=$MOCK_WORKTREE" \
+    "KOL_PREPARE_SH=$PREP_SH" \
     "KOL_CONFIGURE_SH=$CFG_SH3" \
     "KOL_START_SH=$START_SH3" \
     "KOL_CONFIGURE_COUNTER=$CFG3" \
@@ -252,11 +281,13 @@ start_proxy \
     "KOL_GIVEUP_REARM=0" \
     "MOCK_NPX_LOG=$TMPDIR/npx3.log"
 send_line "$INIT_LINE"
-wait_for "$PROXY_OUT" '"id":1' 1500 || ko "R5.pre: initialize not answered"
+wait_for "$PROXY_OUT" '"id":1' 8000 || ko "R5.pre: initialize not answered"
 send_line "$(call_line 2)"
 wait_attempt "$START3" 1 || true
+wait_backoff_expired
 send_line "$(call_line 3)"
 wait_attempt "$START3" 2 || true
+wait_backoff_expired
 send_line "$(call_line 4)"
 # Legacy terminal semantics (B1): the proxy STAYS ALIVE locked in
 # SPAWN_FAILED_TERMINAL and permanently rejects tools/call — it never exits by
