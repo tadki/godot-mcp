@@ -73,6 +73,8 @@ export const S = {
     toolsCacheWaiters: new Map(),
     takeoverFailStreak: 0,
     takeoverSelfHealInFlight: false,
+    staleTakeoverInFlight: false,
+    staleProxyTakeovers: 0,
     takeover: null,
     renderStableTimer: null,
     leaseTimer: null,

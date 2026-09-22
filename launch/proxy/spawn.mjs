@@ -24,6 +24,7 @@ import {
 } from './worktree.mjs';
 import { decideReuse } from '../see1129-reuse-predicate.mjs';
 import { decideSidecarGuard } from '../see1129-sidecar-guard-predicate.mjs';
+import { attemptStaleProxyTakeover } from './stale-proxy.mjs';
 
 // Trigger the editor spawn at most once; concurrent callers share the promise.
 // The trigger fires on the first tools/call after COLD_EMPTY. Spawn success/
@@ -70,6 +71,10 @@ function beginWarmEditorRespawn() {
     S.renderStable = false;
     S.spawnTriggered = false;
     S.warmupTimeoutMs = null;
+    // SEE-1338 §GM1a: a post-warm respawn is a NEW recovery episode — fresh
+    // recovery budget (same reasoning as the give-up re-arm reset).
+    S.recoveryRound = 0;
+    S.recoveryWindowStart = null;
     // NOTE: spawnStartedAt is NOT reset — the FAILED_EXIT window in the
     // RECOVERING path is seeded from lastTcpOkAt, and buildWarmupTimeline keeps
     // the original t0 for continuity. The respawn round re-enters the outer loop
@@ -294,16 +299,43 @@ async function ensureEditor(t0) {
                 log(`port ${GODOT_PORT} released by holder; spawning fresh editor.`);
                 // fall through to spawn below.
             } else {
+                // SEE-1338 §GM1b form C: a same-runtime holder that survived the
+                // FULL takeover window without releasing is stale residue (a
+                // previous session's wedged proxy keeping the editor's WS slot).
+                // The window expiry IS the non-release proof required for a
+                // same-runtime takeover; the editor itself survives its proxy's
+                // death and is re-used with a fresh CLI slot.
+                log(`port ${GODOT_PORT} held by a live same-runtime proxy that did not release within ${PORT_TAKEOVER_TIMEOUT_MS}ms — stale leftover, attempting verified takeover.`);
+                const tookOver = await attemptStaleProxyTakeover({ allowSameRuntime: true });
+                if (tookOver.tookOver) {
+                    S.lastSpawnReused = true;
+                    S.spawnLastFailed = false;
+                    const reused = await ensureReusedWorktreeConfigured(t0);
+                    log(`stale same-runtime proxy taken over (pid=${tookOver.pid}); reusing the live editor (worktree=${reused.worktree}).`);
+                    return { spawned: false, reused: true, staleTakeover: true, worktree: reused.worktree, reuseStatus: reused.status, configureRc: reused.configureRc, configureError: reused.configureError };
+                }
                 throw new SpawnError('editor_busy',
-                    `port ${GODOT_PORT} is held by a live same-runtime proxy that did not release within ${PORT_TAKEOVER_TIMEOUT_MS}ms (hot takeover timeout). Retry shortly.`,
+                    `port ${GODOT_PORT} is held by a live same-runtime proxy that did not release within ${PORT_TAKEOVER_TIMEOUT_MS}ms (hot takeover timeout; verified takeover declined: ${tookOver.reason}). Retry shortly.`,
                     { worktree: null });
             }
         } else if (verdict === 'busy_foreign') {
-            // PID alive + DIFFERENT runtime: editor_busy retryable — the other
-            // runtime legitimately owns the port; do NOT evict a live holder.
-            throw new SpawnError('editor_busy',
-                `port ${GODOT_PORT} is held by a live proxy of a DIFFERENT runtime (editor_busy). The holder owns the slot; retry after it releases (its proxy disconnects, or the editor's lease self-exits).`,
-                { worktree: null });
+            // PID alive + DIFFERENT runtime: normally editor_busy retryable — the
+            // other runtime legitimately owns the port; do NOT evict a live holder.
+            // SEE-1338 §GM1b: FIRST verify the holder is a leftover godot-mcp
+            // proxy for OUR port (previous session's residue — form A). Such a
+            // holder is provably dead weight: kill its tree and fall through to
+            // spawn instead of retryable-blocking forever. A holder that fails
+            // the verification (unrelated process, unreadable identity, port
+            // mismatch) keeps the conservative editor_busy diagnostic.
+            const tookOver = await attemptStaleProxyTakeover({ allowSameRuntime: false });
+            if (tookOver.tookOver) {
+                log(`busy_foreign holder was a verified stale proxy (pid=${tookOver.pid}); proceeding to spawn our own editor.`);
+                // fall through to spawn below.
+            } else {
+                throw new SpawnError('editor_busy',
+                    `port ${GODOT_PORT} is held by a live proxy of a DIFFERENT runtime (editor_busy). The holder owns the slot; retry after it releases (its proxy disconnects, or the editor's lease self-exits).`,
+                    { worktree: null });
+            }
         } else if (verdict === 'legacy') {
         // Legacy SEE-1129 path (arbiter disabled/unavailable): sidecar guard.
         // SEE-1129 (instance selection layer): ports are allocated per agent
@@ -513,6 +545,7 @@ function handleSpawnFailure(err) {
     S.spawnFailedBucket = bucket;
     log(`ERROR: editor spawn failed (bucket=${bucket}, attempt=${S.spawnAttempts}, streak=${S.spawnFailedStreak}): ${err.message}`);
     S.spawnLastError = err;
+    maybeEscalateStaleProxyTakeover(bucket, S.spawnFailedStreak);
     if (S.spawnFailedStreak >= SPAWN_MAX_ATTEMPTS) {
         // Give-up (terminal streak). The fail-fast first-report: held calls are
         // answered with the terminal diagnostic (shape unchanged from B1).
@@ -546,6 +579,28 @@ function handleSpawnFailure(err) {
     S.spawnInFlight = null;
 }
 
+// SEE-1338 §GM1b: a spawn that KEEPS failing against a live holder
+// (editor_busy / spawn_failed_start with the port still bound after retries)
+// is stale-residue evidence. On streak ≥ 2, try a VERIFIED stale-proxy
+// takeover in the background so the NEXT retry walks a free port instead of
+// looping the same editor_busy forever. The decision fn refuses anything not
+// provably a leftover godot-mcp proxy for our port.
+function maybeEscalateStaleProxyTakeover(bucket, streak) {
+    if (streak < 2 || S.staleTakeoverInFlight) return;
+    if (bucket !== 'editor_busy' && bucket !== 'instance_busy_foreign' && bucket !== 'spawn_failed_start') return;
+    S.staleTakeoverInFlight = true;
+    log(`WARNING: spawn bucket ${bucket} streak=${streak} — holder is likely a stale session's proxy; attempting verified takeover in background (SEE-1338 §GM1b).`);
+    attemptStaleProxyTakeover({ allowSameRuntime: false })
+        .then((r) => {
+            if (r.tookOver) {
+                log(`escalated stale proxy taken over (pid=${r.pid}); the next tools/call re-runs the spawn path against the freed port.`);
+                evictStaleHolder(null).catch(() => {});
+            }
+        })
+        .catch((err) => log(`escalated stale proxy takeover failed (non-fatal): ${err && err.message}`))
+        .finally(() => { S.staleTakeoverInFlight = false; });
+}
+
 // SEE-1240 WS-5 (C9 目标1/2): record one give-up event, arm the exponential-
 // backoff cooldown, and RE-ARM the warmup state machine in-band. The proxy
 // stays alive (no process.exit), so a post-cooldown tools/call re-triggers the
@@ -569,6 +624,12 @@ function giveUpAndRearm(bucket, message) {
     S.recovering = false;        // T4 callers enter from RECOVERING; the re-armed round must not inherit it
     S.warmupTimedOut = false;    // ditto — the FAILED_EXIT latch must not block the re-armed round's tools/call
     S.warmupTimeoutMs = null;    // fresh spawn round re-classifies cold/hot
+    // SEE-1338 §GM1a: the re-armed round is a NEW recovery episode — reset the
+    // recovery-round budget (window + counter) or planRecoveryBudget measures
+    // elapsed from the stale proxy-start anchor and every future recovery round
+    // degrades to "budget exhausted → give up" with no respawn attempt.
+    S.recoveryRound = 0;
+    S.recoveryWindowStart = null;
     // The re-armed round continues INSIDE the current warmupLoop invocation (the
     // T4 sites break the probe loop, not the function), so the render-stable
     // monitor must be restarted here — its interval was cleared at WARM/exit and
