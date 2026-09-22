@@ -2,7 +2,7 @@
 // server new-code coverage ratchet — SEE-1334 SPEC-062.
 //
 // Global floors (75/68/79/75) stay in server/vitest.config.ts. This adds the
-// NEW-CODE ≥95 per-file rule: source files added to server/src AFTER the
+// NEW-CODE 100% per-file rule: source files added to server/src AFTER the
 // grandfather anchor (the pre-hardening tip) must each reach 95% lines.
 // Grandfathered files are governed only by the global floors — the ~25%
 // legacy gap is not backfilled (Owner ruling, 2026-09-22).

@@ -8,7 +8,7 @@
 ## 总账
 
 - Ignored 总数：**262**（= Stryker 实测）
-- 有效 kill rate：**100%**（killed 224 / non-ignored 224；0 survived、0 noCov、0 timeout 逃逸）
+- 有效 kill rate：**100%**（killed 303 / non-ignored 303（565-262）；0 survived、0 noCov、0 timeout 逃逸）——以 Revy 独立实测为准（FR 二轮 LOW-2 订正：Bachi 早前汇报 331/331 为中间运行态数字，本文件以终态 `ec27d59` 实测 303/303 为准）
 - 覆盖区域：20 个（下表全覆盖，无未映射位点）
 
 ## 逐区域台账
