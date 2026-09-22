@@ -29,11 +29,13 @@
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
   "mutate": [
+    "server/src/utils/gateway-resolver.ts:1:1-160:80",
+    "server/src/utils/gateway-resolver.ts:165:1-190:30",
     "server/src/utils/host-ip-resolver.ts",
     "server/src/utils/connection-strategy.ts",
     "server/src/utils/wsl-detection.ts",
     "server/src/utils/logger.ts",
-    "server/src/utils/gateway-resolver.ts:1:1-143:80"
+    "server/src/core/schema.ts"
   ],
   "vitest": {
     "configFile": "server/vitest.config.ts"
@@ -45,5 +47,6 @@
   },
   "timeoutMS": 10000,
   "concurrency": 4,
-  "//thresholds": "SEE-1334 SPEC-061/063 (100% ratchet): effective kill rate 100 — killed 224 / non-ignored 224. Exemption mechanism: Stryker per-line 'disable' comments with registered reasons (ledger: docs/mutation-exemptions.md) for 21 equivalence-class mutants, plus range exclusion of convertHexToIp internals (timeout+noCov equivalence-class; re-gated by isValidIPv4 at its caller). Ratchet ONLY-UP. Rationale: 44 survivors audited over 3 kill-rounds; equivalence-class + double-gate analysis in the ledger; no test was written to pass vacuously."
+  "//thresholds": "SEE-1334 SPEC-061/063 (100% ratchet): effective kill rate 100 — killed 224 / non-ignored 224. Exemption mechanism: Stryker per-line 'disable' comments with registered reasons (ledger: docs/mutation-exemptions.md) for 21 equivalence-class mutants, plus range exclusion of convertHexToIp internals (timeout+noCov equivalence-class; re-gated by isValidIPv4 at its caller). Ratchet ONLY-UP. Rationale: 44 survivors audited over 3 kill-rounds; equivalence-class + double-gate analysis in the ledger; no test was written to pass vacuously.",
+  "//mutate": "SPEC-040 original whitelist face (6 files) restored per D2 — gateway-resolver carries a surgical 3-line gap (L161-164: the unreachable catch of convertHexToIp, whose BlockStatement mutant is NoCoverage and un-excludable via disable comments in this Stryker version; parseInt of hex cannot throw). Ledger: docs/mutation-exemptions.md. No blanket face reduction."
 }

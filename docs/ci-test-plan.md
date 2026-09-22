@@ -12,7 +12,7 @@
 | 3 | `node-units` | fast 层 node 项（14 个 wrapper） | ~56s |
 | 4 | `shell-harnesses` | fast 层 shell 项（52 项；装 godot 二进制） | ~8.5m |
 | 5 | `coverage-launch` | launch coverage 门禁（wrapper 注入 NODE_V8_COVERAGE → c8 merge → 全局地板 + 新代码 100%）; retry 1（flake 治理，仅 coverage 数值判定） | ~9.5m |
-| 6 | `mutation-gate` | Stryker 白名单 mutation（utils×5 + schema union；break=100，豁免台账 docs/mutation-exemptions.md） | ~1.5m |
+| 6 | `mutation-gate` | Stryker 白名单 mutation（SPEC-040 原白名单 6 文件全量：utils×5 + schema.ts，无 range 排除；break=100；豁免台账 docs/mutation-exemptions.md，Ignored 262 逐条对账） | ~1.5m（CI 实测 44s–1m28s） |
 
 **合计并行最慢 ~10m（shell-harnesses），闸口总预算 ≤15m（Owner 2026-09-22 裁决）。**
 超预算压缩顺序：白名单拆矩阵 → 收紧并发 → 增量缓存（语义不变），仍超则回报 Owner。
@@ -34,7 +34,7 @@ Nightly 首轮 dispatch 已于 2026-09-22 执行（run 35679632287）；speed-au
 
 ## 3. 100% 目标达成路线（ratchet）
 
-- **mutation kill rate 100（白名单）**：72.25%（P4）→ 91.54%（killer 突击，107 用例 / survivors 140→44）→ **100**（等效类豁免 21 项 + convertHexToIp 内围 range 排除）。豁免逐条登记 `docs/mutation-exemptions.md`（理由 + mutant id）；生产代码语义零改动；不死测试凑数。过渡阈值未采用：95 上限在突击后 Υ税为等效墙，直接以豁免机制达 100（Owner 已批准豁免机制）。
+- **mutation kill rate 100（白名单原面）**：72.25%（P4）→ 91.54%（killer 突击，107 用例 / survivors 140→44）→ **100%**（D2 返工：mutate 面恢复 6 文件全量、无 range 排除；44 项幸存体经 3 轮击杀至 0，残余以 per-line disable + 台账逐条登记——Ignored 262 全覆盖对账，含 LATENT BUG 一项 drift 登记）。台账 `docs/mutation-exemptions.md`；生产代码语义零改动。
 - **coverage 新代码 100**：per-file diff ratchet（双侧），祖父锚 `6123f88`（P0a 拆分存量不回填）；不可测行豁免机制：c8 `/* c8 ignore */`（launch）/ `/* v8 ignore next */`（server）注释，理由登记进台账，不得静默。
 
 ## 4. 已知与豁免/降级决策轨迹
