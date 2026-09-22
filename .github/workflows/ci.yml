@@ -44,3 +44,20 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm run lint
+
+  # SEE-1334 SPEC-063: mutation gate as the 6th blocking job. Whitelist
+  # mutation only (stryker.config.json), break=91 ratchet floor (SPEC-061).
+  # Measured ~50s locally / well under the 15m budget; escalation path if CI
+  # drifts over budget: whitelist matrix → tighter concurrency → incremental.
+  mutation-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run mutation

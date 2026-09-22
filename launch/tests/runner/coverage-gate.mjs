@@ -102,9 +102,39 @@ console.log('[coverage-gate] 3/3 judging thresholds:',
     `statements=${pct.statements} (≥${THRESHOLDS.statements})`,
     `functions=${pct.functions} (≥${THRESHOLDS.functions})`);
 
+// SPEC-062: new-code ≥95 ratchet. Files added by the diff against main must
+// each hit 95% lines (per-file); grandfathered files are governed only by the
+// global floors (no backlog refills). Mechanism: c8 per-file summary vs the
+// diff name set — chosen over vitest thresholds because the provider cannot
+// see child processes at all (see header).
+const NEW_FILE_FLOOR = 95;
+// Grandfather anchor = the pre-hardening tip (6123f88): files ADDED BY THE
+// P0a SPLIT are moved existing code (Owner: 存量不回填不重测) — the ≥95
+// new-code ratchet applies only to files added AFTER this anchor.
+const GRANDFATHER_ANCHOR = '6123f882ff54a2969a0b0b017d18df35984f38ae';
+function diffAddedFiles() {
+    const after = spawnSync('git', ['diff', '--name-only', '--diff-filter=A', `${GRANDFATHER_ANCHOR}`, '--cached', '--', ':(exclude)server/src/__tests__/**'], {
+        cwd: REPO, encoding: 'utf8', timeout: 30_000,
+    });
+    if (after.status !== 0) return new Set(); // no git context (e.g. sandbox) → skip ratchet
+    return new Set(after.stdout.split('\n').filter(Boolean));
+}
+const addedFiles = diffAddedFiles();
+const perFileBreaches = [];
+for (const [file, data] of Object.entries(summary)) {
+    if (file === 'total') continue;
+    const rel = path.relative(REPO, file);
+    if (addedFiles.has(rel) && data.lines.pct < NEW_FILE_FLOOR) {
+        perFileBreaches.push(`${rel} lines ${data.lines.pct} < ${NEW_FILE_FLOOR} (new-code ratchet)`);
+    }
+}
 const breaches = Object.entries(THRESHOLDS)
     .filter(([k, floor]) => pct[k] < floor)
     .map(([k, floor]) => `${k} ${pct[k]} < ${floor}`);
+if (perFileBreaches.length > 0) {
+    console.error(`[coverage-gate] FAIL: new-code ratchet breach(es): ${perFileBreaches.join('; ')}`);
+    process.exit(1);
+}
 if (breaches.length > 0) {
     console.error(`[coverage-gate] FAIL: threshold breach(es): ${breaches.join('; ')} — ratchet ONLY-UP, fix coverage before lowering`);
     process.exit(1);
