@@ -20,10 +20,12 @@ OUT_JSON="$(mktemp /tmp/speed-audit-XXXXXX.json)"
 trap 'rm -f "$OUT_JSON"' EXIT
 
 # Per-child-process coverage is NOT needed here — plain run, JSON durations.
-npx vitest run --reporter=json --outputFile="$OUT_JSON" >/dev/null 2>&1
+npx vitest run --reporter=json --outputFile="$OUT_JSON" > /tmp/speed-audit-vitest.log 2>&1
 RC=$?
 if [ "$RC" -ne 0 ]; then
     echo "[speed-audit] ERROR: vitest run failed rc=$RC — audit aborted"
+    echo "[speed-audit] vitest log tail:"
+    tail -30 /tmp/speed-audit-vitest.log | sed 's/^/    | /'
     exit 1
 fi
 
