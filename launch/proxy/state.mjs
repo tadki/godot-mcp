@@ -36,6 +36,8 @@ export const S = {
     spawnAttempts: 0,
     spawnFailedBucket: null,
     spawnFailedStreak: 0,
+    spawnBackoffUntil: 0,
+    forceRestartCount: 0,
     spawnStartedAt: 0,
     spawnTerminal: false,
     giveUpCount: 0,

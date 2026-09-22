@@ -398,7 +398,7 @@ function handleClaudeMessage(line) {
                             `editor spawn kept failing (give-up #${S.giveUpCount}): ${S.giveUpLastReason}; in-band recovery armed — retry after ${Math.ceil(cooldownLeft / 1000)}s cooldown (retryable, no MCP restart needed)`,
                             -32000,
                             Object.assign(spawnFailedDiagnostic(S.spawnFailedBucket, S.spawnLastError, true), {
-                                state: 'give_up_cooldown',
+                                state: 'FAILED_CLEAN',
                                 giveup_count: S.giveUpCount,
                                 cooldown_until_ms: S.giveUpArmedAt + S.giveUpBackoffMs,
                                 backoff_ms: S.giveUpBackoffMs,
@@ -418,6 +418,30 @@ function handleClaudeMessage(line) {
         // diagnostics below (误报防护 — those are real failures, never a
         // "warming" hint).
         if (!S.spawnTriggered && !S.recovering && !S.warmupTimedOut) {
+            // SEE-1338 spec v2.1 §6: spawn failures carry an exponential
+            // backoff (capped 60s). The FIRST post-failure call keeps its
+            // priority — the spawnLastFailed one-shot latch matches it, it
+            // gets the real diagnostic AND re-triggers the fresh spawn (误报
+            // 防护 + attempt 2 walks immediately). The backoff window only
+            // gates HOT retries: a later call while the window is still open
+            // AND the latch already consumed is answered with retry-after
+            // instead of re-spawning.
+            const backoffLeft = S.spawnBackoffUntil - Date.now();
+            if (backoffLeft > 0 && !S.spawnLastFailed) {
+                if (id !== undefined) {
+                    dropToolsCallId(id);
+                    sendToClaude(makeErrorResponse(
+                        id,
+                        `editor spawn failed: ${S.spawnFailedBucket}; backoff window active — retry after ${Math.ceil(backoffLeft / 1000)}s (streak ${S.spawnFailedStreak})`,
+                        -32000,
+                        Object.assign(spawnFailedDiagnostic(S.spawnFailedBucket, S.spawnLastError, false), {
+                            retry_after_ms: backoffLeft,
+                        }),
+                    ));
+                }
+                return;
+            }
+            S.spawnBackoffUntil = 0;   // an honored retry clears the window
             if (S.firstCallProgressToken == null) {
                 const meta = msg.params && msg.params._meta;
                 if (meta && Object.prototype.hasOwnProperty.call(meta, 'progressToken')) {

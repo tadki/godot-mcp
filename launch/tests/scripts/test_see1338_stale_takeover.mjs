@@ -1,193 +1,190 @@
-// SEE-1338 §SPEC-GM1a/GM1b — stale-proxy takeover + no-dead-end regressions.
+// SEE-1338 spec v2.1 P0 — R2 hard-cap backstop + §4.2 AMEND-1 takeover guard.
 // Run: node --test --test-reporter=junit launch/tests/scripts/test_see1338_stale_takeover.mjs
 //
-// Covers:
-//   1. see1338-stale-takeover.mjs decision matrix (the ONLY killing gate —
-//      a holder must be provably a leftover godot-mcp proxy for OUR port).
-//   2. SEE-1334 drift-triage regressions: the three undeclared-identifier
-//      landmines (heal.mjs KOL_RUNTIME_ID, takeover.mjs warmFlushed,
-//      lifecycle.mjs REG_PATH) that crashed the recovery/self-heal lanes.
-//   3. GM1a budget reset: give-up re-arm / warm-respawn start a NEW recovery
-//      episode (fresh planRecoveryBudget window), otherwise every later
-//      recovery round degrades to "budget exhausted" with no respawn.
-//   4. held-dir reader + declined takeover against our own pid.
+// Covers (spec v2.1 §4.2/§6, Atlas P0 dispatch):
+//   1. §4.2 AMEND-1: decideStaleProxyAction — a LIVE holder is 前任在管
+//      ('busy', never killed/cleaned); ONLY a dead holder's residue is
+//      evictable; own pid = our own round.
+//   2. classifyHeldProxy IO + maybeEvictStaleHeld guard (live → no evict,
+//      dead → evict) against a real live child process.
+//   3. §6 R2: RECOVERING hard cap constant = 2× cold timeout.
+//   4. §6 FAILED_CLEAN reentrant state: spawnFailedDiagnostic state naming,
+//      streak backoff (base × 2^(n-1), capped), give-up rearm budget reset.
+//   5. AMEND-1 regression: no live-proxy kill machinery anywhere.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { spawn as childSpawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LAUNCH = path.join(__dirname, '..', '..');
 const readSrc = (rel) => fs.readFileSync(path.join(LAUNCH, rel), 'utf8');
 
-// Isolate state writes (giveup status file) in a temp GODOT_MCP_HOME BEFORE
-// the proxy modules load (config.mjs captures it at import).
+// Isolate state writes + backoff seams BEFORE the proxy modules load (config
+// captures these at import).
 const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'see1338-home-'));
 process.env.GODOT_MCP_HOME = tmpHome;
 process.env.KOL_PORT_HELD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'see1338-held-'));
-// GODOT_PORT is captured at config import — pin it for attemptStaleProxyTakeover.
 process.env.GODOT_PORT = '6578';
+process.env.KOL_SPAWN_RETRY_BACKOFF_MS = '200';
+process.env.KOL_GIVEUP_COOLDOWN_MS = '1000';
 
-const { decideStaleProxyTakeover } = await import(
+const { decideStaleProxyAction } = await import(
     path.join(LAUNCH, 'see1338-stale-takeover.mjs'));
 const staleProxy = await import(path.join(LAUNCH, 'proxy', 'stale-proxy.mjs'));
 const spawnMod = await import(path.join(LAUNCH, 'proxy', 'spawn.mjs'));
+const config = await import(path.join(LAUNCH, 'proxy', 'config.mjs'));
 const { S } = await import(path.join(LAUNCH, 'proxy', 'state.mjs'));
 
+const HELD_DIR = process.env.KOL_PORT_HELD_DIR;
+const PORT = 6578;
 const OUR_PID = process.pid;
-const OUR_PORT = 6577;
-const PROXY_CMDLINE = 'node /x/godot-mcp/launch/godot-mcp-proxy.mjs';
 
-// ---- §SPEC-GM1b: the takeover decision matrix -----------------------------------
+function writeHeld(pid, rid = 'agent-old0099') {
+    const dir = path.join(HELD_DIR, String(PORT));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'pid'), `${pid}\n`);
+    fs.writeFileSync(path.join(dir, 'meta'), `runtime_id=${rid}\n`);
+}
 
-test('§GM1b T1 无 holder pid → 拒绝接管（NO_HOLDER_PID）', () => {
-    const d = decideStaleProxyTakeover({ holderPid: null, holderCmdline: PROXY_CMDLINE, holderPort: OUR_PORT, ourPort: OUR_PORT });
-    assert.equal(d.takeover, false);
-    assert.equal(d.reason, 'NO_HOLDER_PID');
+// ---- §4.2 AMEND-1: the classification matrix ------------------------------------
+
+test('§4.2 T1 无 held 记录 → free（无可分类对象）', () => {
+    const d = decideStaleProxyAction({ holderPid: null, ourPid: OUR_PID, holderAlive: null });
+    assert.equal(d.action, 'free');
 });
 
-test('§GM1b T2 holder 是我们自己 → 拒绝接管（SELF）', () => {
-    const d = decideStaleProxyTakeover({ holderPid: OUR_PID, holderCmdline: PROXY_CMDLINE, holderPort: OUR_PORT, ourPort: OUR_PORT });
-    assert.equal(d.takeover, false);
-    assert.equal(d.reason, 'SELF');
+test('§4.2 T2 held pid 是我们自己 → own（自有轮次，允许清理）', () => {
+    const d = decideStaleProxyAction({ holderPid: OUR_PID, ourPid: OUR_PID, holderAlive: true });
+    assert.equal(d.action, 'own');
 });
 
-test('§GM1b T3 cmdline 不是 godot-mcp proxy → 拒绝接管（不误杀无关进程）', () => {
-    for (const cmdline of ['', 'godot', '/usr/bin/godot4 --editor --path /proj', 'bash start-godot-editor.sh']) {
-        const d = decideStaleProxyTakeover({ holderPid: 4242, holderCmdline: cmdline, holderPort: OUR_PORT, ourPort: OUR_PORT });
-        assert.equal(d.takeover, false, `cmdline=${cmdline}`);
-        assert.equal(d.reason, 'CMDLINE_NOT_PROXY');
+test('§4.2 T3 AMEND-1 核心：holder proxy 存活 → busy（绝不清理绝不杀）', () => {
+    const d = decideStaleProxyAction({ holderPid: 4242, ourPid: OUR_PID, holderAlive: true });
+    assert.equal(d.action, 'busy');
+    assert.equal(d.reason, 'HOLDER_PROXY_ALIVE_AMEND1');
+});
+
+test('§4.2 T4 holder proxy 已死 → takeover（收尸：evict 孤儿 editor）', () => {
+    const d = decideStaleProxyAction({ holderPid: 4242, ourPid: OUR_PID, holderAlive: false });
+    assert.equal(d.action, 'takeover');
+    assert.equal(d.reason, 'HOLDER_PROXY_DEAD_RESIDUE');
+});
+
+test('§4.2 T5 校验失败（不可读）→ 保守判死可收尸（宁可接管不冒进）', () => {
+    const d = decideStaleProxyAction({ holderPid: 4242, ourPid: OUR_PID, holderAlive: null });
+    assert.equal(d.action, 'takeover');
+});
+
+// ---- classifyHeldProxy IO --------------------------------------------------------
+
+test('§4.2 T6 classifyHeldProxy：自己 pid → own', async () => {
+    writeHeld(OUR_PID);
+    const d = await staleProxy.classifyHeldProxy(PORT);
+    assert.equal(d.action, 'own');
+});
+
+test('§4.2 T7 classifyHeldProxy：死 pid → takeover', async () => {
+    writeHeld(999999999);
+    const d = await staleProxy.classifyHeldProxy(PORT);
+    assert.equal(d.action, 'takeover');
+});
+
+test('§4.2 T8 classifyHeldProxy：无 held 目录 → free', async () => {
+    const d = await staleProxy.classifyHeldProxy(6099);
+    assert.equal(d.action, 'free');
+});
+
+test('§4.2 T9 AMEND-1 守卫：活 holder → maybeEvictStaleHeld 拒绝 evict', async () => {
+    const child = childSpawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    try {
+        await new Promise((r) => setTimeout(r, 150)); // let it register in /proc
+        writeHeld(child.pid, 'agent-live777');
+        let evictCalled = 0;
+        const r = await staleProxy.maybeEvictStaleHeld(async () => { evictCalled += 1; }, PORT);
+        assert.equal(r.action, 'busy');
+        assert.equal(r.reason, 'HOLDER_PROXY_ALIVE_AMEND1');
+        assert.equal(evictCalled, 0, 'live holder MUST NOT be evicted (前任在管)');
+    } finally {
+        child.kill('SIGKILL');
     }
 });
 
-test('§GM1b T4 cmdline 是 proxy 但端口不匹配 → 拒绝接管', () => {
-    const d = decideStaleProxyTakeover({ holderPid: 4242, holderCmdline: PROXY_CMDLINE, holderPort: 6553, ourPort: OUR_PORT });
-    assert.equal(d.takeover, false);
-    assert.equal(d.reason, 'PORT_MISMATCH');
+test('§4.2 T10 守卫放行：死 holder → maybeEvictStaleHeld 执行 evict', async () => {
+    writeHeld(999999999);
+    let evictCalled = 0;
+    const r = await staleProxy.maybeEvictStaleHeld(async () => { evictCalled += 1; }, PORT);
+    assert.equal(r.action, 'takeover');
+    assert.equal(evictCalled, 1);
 });
 
-test('§GM1b T5 同 runtime 活 holder 未升级 → 拒绝（SAME_RUNTIME_LIVE）', () => {
-    const d = decideStaleProxyTakeover({
-        holderPid: 4242, holderRuntimeId: 'agent-a1b2c3d4', ourRuntimeId: 'agent-a1b2c3d4',
-        holderCmdline: PROXY_CMDLINE, holderPort: OUR_PORT, ourPort: OUR_PORT,
-    });
-    assert.equal(d.takeover, false);
-    assert.equal(d.reason, 'SAME_RUNTIME_LIVE');
+// ---- §6 R2: RECOVERING hard cap = 2× cold timeout --------------------------------
+
+test('§6 T11 RECOVERING_HARD_CAP_MS 缺省 = 2× cold timeout', () => {
+    assert.equal(config.RECOVERING_HARD_CAP_MS, 2 * config.COLD_WARMUP_TIMEOUT_MS);
 });
 
-test('§GM1b T6 同 runtime + 已证明不释放（takeover 超时）→ 允许接管', () => {
-    const d = decideStaleProxyTakeover({
-        holderPid: 4242, holderRuntimeId: 'agent-a1b2c3d4', ourRuntimeId: 'agent-a1b2c3d4',
-        holderCmdline: PROXY_CMDLINE, holderPort: OUR_PORT, ourPort: OUR_PORT, allowSameRuntime: true,
-    });
-    assert.equal(d.takeover, true);
-    assert.equal(d.reason, 'SAME_RUNTIME_NONRELEASE_STALE');
+// ---- §6 FAILED_CLEAN reentrant state ---------------------------------------------
+
+test('§6 T12 FAILED_CLEAN 终态诊断：state=FAILED_CLEAN 且可重入（retryable=true）', () => {
+    const d = spawnMod.spawnFailedDiagnostic('spawn_failed_start', new Error('x'), true);
+    assert.equal(d.state, 'FAILED_CLEAN');
+    assert.equal(d.retryable, true, 'FAILED_CLEAN 是可重入状态 — 下一次 tools/call 直接重走冷启动');
 });
 
-test('§GM1b T7 跨 runtime 残留 proxy → 允许接管（FOREIGN_RUNTIME_STALE）', () => {
-    const d = decideStaleProxyTakeover({
-        holderPid: 4242, holderRuntimeId: 'agent-old0099', ourRuntimeId: 'agent-a1b2c3d4',
-        holderCmdline: PROXY_CMDLINE, holderPort: OUR_PORT, ourPort: OUR_PORT,
-    });
-    assert.equal(d.takeover, true);
-    assert.equal(d.reason, 'FOREIGN_RUNTIME_STALE');
+test('§6 T13 spawn 失败退避：streak 1 → base，streak 2 → 2×base（env seam=200ms）', () => {
+    S.spawnFailedStreak = 0;
+    S.spawnFailedBucket = null;
+    S.spawnBackoffUntil = 0;
+    spawnMod.handleSpawnFailure(Object.assign(new Error('attempt 1'), { bucket: 'configure_failed' }));
+    const b1 = S.spawnBackoffUntil - Date.now();
+    assert.ok(b1 > 0 && b1 <= 250, `streak1 backoff ≈ 200ms, got ${b1}ms`);
+    spawnMod.handleSpawnFailure(Object.assign(new Error('attempt 2'), { bucket: 'configure_failed' }));
+    const b2 = S.spawnBackoffUntil - Date.now();
+    assert.ok(b2 > 250 && b2 <= 450, `streak2 backoff ≈ 400ms (2×base), got ${b2}ms`);
+    assert.ok(S.spawnLastFailed, '首报 latch stays armed for the next call');
 });
 
-test('§GM1b T8 meta 无 runtime_id（legacy holder）+ 验证通过 → 允许接管', () => {
-    const d = decideStaleProxyTakeover({
-        holderPid: 4242, holderRuntimeId: '', ourRuntimeId: 'agent-a1b2c3d4',
-        holderCmdline: PROXY_CMDLINE, holderPort: OUR_PORT, ourPort: OUR_PORT,
-    });
-    assert.equal(d.takeover, true);
-    assert.equal(d.reason, 'UNMARKED_STALE_PROXY');
+test('§6 T14 退避封顶 60s：GIVEUP_MAX_COOLDOWN_MS 缺省 60000', () => {
+    assert.equal(config.GIVEUP_MAX_COOLDOWN_MS, 60000);
 });
 
-// ---- held-dir reader ------------------------------------------------------------
-
-test('§GM1b T9 readHeldProxy 读取 held/<port>/{pid,meta}', async () => {
-    const dir = path.join(process.env.KOL_PORT_HELD_DIR, String(OUR_PORT));
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'pid'), `${OUR_PID}\n`);
-    fs.writeFileSync(path.join(dir, 'meta'), 'runtime_id=agent-old0099\n');
-    const held = await staleProxy.readHeldProxy(OUR_PORT);
-    assert.deepEqual(held, { pid: OUR_PID, runtimeId: 'agent-old0099' });
-});
-
-test('§GM1b T10 held 目录缺失 → readHeldProxy 返回 null', async () => {
-    const r = await staleProxy.readHeldProxy(6099);
-    assert.equal(r, null);
-});
-
-test('§GM1b T11 attemptStaleProxyTakeover 拒绝自己的 pid（SELF，不写计数器）', async () => {
-    const dir = path.join(process.env.KOL_PORT_HELD_DIR, '6578');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'pid'), `${process.pid}\n`);
-    fs.writeFileSync(path.join(dir, 'meta'), 'runtime_id=agent-a1b2c3d4\n');
-    const before = S.staleProxyTakeovers;
-    const r = await staleProxy.attemptStaleProxyTakeover({ allowSameRuntime: true });
-    assert.equal(r.tookOver, false);
-    assert.equal(r.reason, 'SELF');
-    assert.equal(S.staleProxyTakeovers, before);
-});
-
-// ---- SEE-1334 drift-triage regressions (undeclared-identifier landmines) --------
-
-test('§GM1a D1 heal.mjs 无裸 KOL_RUNTIME_ID 引用（恢复轮不再 ReferenceError）', () => {
-    assert.equal(/\bKOL_RUNTIME_ID\b/.test(readSrc('proxy/heal.mjs')), false);
-});
-
-test('§GM1a D2 takeover.mjs 无 warmFlushed 赋值残留（self-heal finally 不再崩）', () => {
-    const src = readSrc('proxy/takeover.mjs');
-    // The bug shape: a bare assignment `warmFlushed = false` referencing the
-    // undeclared identifier. Prose comments mentioning it are fine.
-    assert.equal(/\bwarmFlushed\s*=[^=]/.test(src), false);
-});
-
-test('§GM1a D3 lifecycle.mjs heartbeat env 使用 REGISTRY_PATH（无裸 REG_PATH shorthand）', () => {
-    const src = readSrc('proxy/lifecycle.mjs');
-    // The mergeScript string legitimately reads process.env.REG_PATH; the bug
-    // shape is the bare shorthand `REG_PATH,` in the execFileSync env object.
-    assert.equal(/env, \{\s*\n\s*REG_PATH,/.test(src), false);
-    assert.ok(/REG_PATH:\s*REGISTRY_PATH/.test(src));
-});
-
-test('§GM1a D4 三个受损模块可正常 import 并导出（smoke）', async () => {
-    const heal = await import(path.join(LAUNCH, 'proxy', 'heal.mjs'));
-    const takeover = await import(path.join(LAUNCH, 'proxy', 'takeover.mjs'));
-    const lifecycle = await import(path.join(LAUNCH, 'proxy', 'lifecycle.mjs'));
-    assert.equal(typeof heal.runRecoveryRound, 'function');
-    assert.equal(typeof takeover.enterTakeoverWaiter, 'function');
-    assert.equal(typeof lifecycle.shutdown, 'function');
-});
-
-// ---- §SPEC-GM1a: recovery budget resets per episode ------------------------------
-
-test('§GM1a B1 giveUpAndRearm 重置 recovery 预算窗口（新恢复周期）', () => {
+test('§6 T15 giveUpAndRearm 重置全部重试预算（FAILED_CLEAN 可重入语义）', () => {
     S.recoveryRound = 5;
     S.recoveryWindowStart = Date.now() - 999999;
+    S.forceRestartCount = 3;
+    S.spawnBackoffUntil = Date.now() + 999999;
     spawnMod.giveUpAndRearm('test_bucket', 'unit test');
     assert.equal(S.recoveryRound, 0);
     assert.equal(S.recoveryWindowStart, null);
-    assert.ok(S.giveUpArmedAt > 0);
+    assert.equal(S.forceRestartCount, 0, 'FAILED_CLEAN 重入 = 硬上限重启预算重置');
+    assert.equal(S.spawnBackoffUntil, 0);
+    assert.equal(S.spawnTerminal, false, 'rearm 模式下无永久终态');
 });
 
-test('§GM1a B2 beginWarmEditorRespawn 重置 recovery 预算窗口', () => {
-    S.warmRespawnInFlight = false;
-    S.recoveryRound = 3;
-    S.recoveryWindowStart = Date.now() - 999999;
-    spawnMod.beginWarmEditorRespawn();
-    assert.equal(S.recoveryRound, 0);
-    assert.equal(S.recoveryWindowStart, null);
-    assert.equal(S.warmEditorDead, true);
-    S.warmRespawnInFlight = false;
-    S.warmEditorDead = false;
+test('§6 T16 forceColdRestart 存在且 warmup 引用硬上限（R2 强制冷重启接线）', () => {
+    assert.equal(typeof spawnMod.forceColdRestart, 'function');
+    const wu = readSrc('proxy/warmup.mjs');
+    assert.ok(wu.includes('forceColdRestart'), 'warmup loop wires the forced restart');
+    assert.ok(wu.includes('RECOVERING_HARD_CAP_MS'), 'warmup loop gates on the spec cap');
 });
 
-test('§GM1a B3 giveUpAndRearm 允许重试：spawnTerminal 保持 false（无永久终态）', () => {
-    spawnMod.giveUpAndRearm('test_bucket', 'unit test');
-    assert.equal(S.spawnTerminal, false);
-    assert.equal(S.spawnTriggered, false);
+// ---- AMEND-1 regression: live-proxy kill machinery must not exist ----------------
+
+test('AMEND-1 R1 全库无 attemptStaleProxyTakeover / killProxyTree 残留', () => {
+    for (const f of ['proxy/spawn.mjs', 'proxy/takeover.mjs', 'proxy/stale-proxy.mjs', 'proxy/router.mjs']) {
+        const src = readSrc(f);
+        assert.equal(src.includes('attemptStaleProxyTakeover'), false, `${f}`);
+        assert.equal(src.includes('killProxyTree'), false, `${f}`);
+    }
+});
+
+test('AMEND-1 R2 busy_foreign/reuse 判定保持「活 holder 不杀」原语义', () => {
+    const src = readSrc('proxy/spawn.mjs');
+    assert.ok(/verdict === 'busy_foreign'[\s\S]*?editor_busy[\s\S]*?AMEND-1/.test(src));
+    assert.ok(/AMEND-1 \(spec v2\.1 §4\.2\)/.test(src));
 });

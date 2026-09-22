@@ -7,7 +7,7 @@ import {
     COLD_WARMUP_TIMEOUT_MS, FAILED_EXIT_MS, GIVEUP_REARM_ENABLED, GODOT_HOST, GODOT_PORT,
     GRACE_RACE_BIND_MS,
     GRACE_RACE_GUARD_ENABLED, HOT_WARMUP_TIMEOUT_MS, KOL_PROGRESS_PROTOCOL,
-    PROBE_INTERVAL_MS, SPAWN_MAX_ATTEMPTS, WARM_LIVENESS_ENABLED,
+    PROBE_INTERVAL_MS, RECOVERING_HARD_CAP_MS, SPAWN_MAX_ATTEMPTS, WARM_LIVENESS_ENABLED,
     WARM_LIVENESS_FAILURES, WARM_RECOVERING_CLI_TIMEOUT_MS,
 } from './config.mjs';
 import { STAGE_ENUM } from '../warmup-stage-parser.mjs';
@@ -17,7 +17,8 @@ import {
 } from './diagnostics.mjs';
 import { flushQueue, maybeProgressLog, maybeRejectUnreadyHeld, rejectQueue } from './router.mjs';
 import {
-    beginWarmEditorRespawn, evictStaleHolder, giveUpAndRearm, resetForRespawn,
+    beginWarmEditorRespawn, evictStaleHolder, forceColdRestart, giveUpAndRearm,
+    resetForRespawn,
     triggerEnsureEditor, waitForPortRelease,
 } from './spawn.mjs';
 import { runRecoveryRound } from './heal.mjs';
@@ -144,6 +145,23 @@ async function warmupLoop() {
                 // but the warm branch had NO equivalent — a CLI that died during
                 // recovery spun forever. Symmetric exit so Claude restarts us
                 // against a genuinely dead editor.
+                // SEE-1338 spec v2.1 §6 (R2 hard-cap backstop): the RECOVERING
+                // ABSOLUTE cap (2× cold timeout from entry) overrides every
+                // self-heal window inside the state — whichever expires first
+                // forces the cold restart. form-B 根治点.
+                if (S.recovering && (nowWait - S.recoveringEnteredAt) >= RECOVERING_HARD_CAP_MS) {
+                    log(`ERROR: RECOVERING absolute hard cap ${Math.floor(RECOVERING_HARD_CAP_MS / 1000)}s reached (2× cold timeout); forcing cold restart (R2).`);
+                    rejectQueue(
+                        `RECOVERING hard cap (${Math.floor(RECOVERING_HARD_CAP_MS / 1000)}s) reached; forcing cold restart — please retry`,
+                        warmupDiagnostic('failed_exit'),
+                    );
+                    if (S.forceRestartCount < SPAWN_MAX_ATTEMPTS) {
+                        await forceColdRestart('recovering_hard_cap');
+                    } else {
+                        giveUpAndRearm('recovering_hard_cap', 'RECOVERING hard cap; forced restarts exhausted');
+                    }
+                    break;   // exit the warmFlushed loop; outer loop re-arms
+                }
                 if (S.recovering && (nowWait - S.recoveringEnteredAt) >= FAILED_EXIT_MS) {
                     log(`ERROR: warm+recovering did not recover within ${Math.floor(FAILED_EXIT_MS / 1000)}s (FAILED_EXIT); rejecting ${S.pendingCalls.length} buffered call(s).`);
                     rejectQueue(
@@ -397,6 +415,25 @@ async function warmupLoop() {
                     startRenderStableMonitor();
                     if (KOL_PROGRESS_PROTOCOL !== 'off') maybeNotifyStageChange();
                     log(`WARNING: warmup timed out after ${Math.floor(currentWarmupTimeout() / 1000)}s; entering RECOVERING (held call(s) answered with retryable timeout; will retry for ${Math.floor(FAILED_EXIT_MS / 1000)}s before FAILED_EXIT).`);
+                } else if (S.recovering && (now - S.recoveringEnteredAt) >= RECOVERING_HARD_CAP_MS) {
+                    // SEE-1338 spec v2.1 §6 (R2 hard-cap backstop): the
+                    // RECOVERING ABSOLUTE cap (2× cold timeout from entry) —
+                    // regardless of any probe blips ("自愈迹象") inside the
+                    // window, expiry forces a COLD RESTART: kill our editor
+                    // clue, clear the round, respawn. Bounded by
+                    // forceRestartCount; after K restarts FAILED_CLEAN owns
+                    // the retry loop (form-B 根治点).
+                    log(`ERROR: RECOVERING absolute hard cap ${Math.floor(RECOVERING_HARD_CAP_MS / 1000)}s reached (2× cold timeout); forcing cold restart (R2).`);
+                    rejectQueue(
+                        `RECOVERING hard cap (${Math.floor(RECOVERING_HARD_CAP_MS / 1000)}s) reached; forcing cold restart — please retry`,
+                        warmupDiagnostic('failed_exit'),
+                    );
+                    if (S.forceRestartCount < SPAWN_MAX_ATTEMPTS) {
+                        await forceColdRestart('recovering_hard_cap');
+                    } else {
+                        giveUpAndRearm('recovering_hard_cap', 'RECOVERING hard cap; forced restarts exhausted');
+                    }
+                    break;   // exit the probe loop; the layer above re-arms
                 } else if (S.recovering && (now - lastTcpOkAt) >= FAILED_EXIT_MS) {
                     // T4: sustained probe failure. SEE-1325 H1（§SPEC-002）：先跑
                     // 内嵌恢复轮（预算口径 (a)，剩余不足单轮最坏耗时即终态），
