@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import { resolveGateway } from '../../utils/gateway-resolver.js';
 import { _clearHostIpCache, getHostIpInWSL } from '../../utils/host-ip-resolver.js';
 import { getConnectionStrategy, getTargetHost } from '../../utils/connection-strategy.js';
@@ -256,7 +256,7 @@ wlp3s0\t00000000\t010011AC\t0003`;
 });
 
 describe('connection-strategy + host-ip-resolver: exact log/message contracts', () => {
-  let errSpy: ReturnType<typeof vi.spyOn>;
+  let errSpy: MockInstance;
   beforeEach(() => {
     _clearHostIpCache();
     _resetForTesting();
@@ -321,7 +321,7 @@ describe('connection-strategy + host-ip-resolver: exact log/message contracts', 
 });
 
 describe('gateway-resolver: verbose-path log contracts (catch/debug killers)', () => {
-  let errSpy: ReturnType<typeof vi.spyOn>;
+  let errSpy: MockInstance;
   beforeEach(() => {
     vi.mocked(os.release).mockReturnValue('5.15.0-generic');
     vi.mocked(os.platform).mockReturnValue('linux');
@@ -412,7 +412,7 @@ eth1\t00000000\t0101A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0`;
 });
 
 describe('wsl-detection + connection-strategy: remaining exact-text contracts', () => {
-  let errSpy: ReturnType<typeof vi.spyOn>;
+  let errSpy: MockInstance;
   beforeEach(() => {
     _clearHostIpCache();
     _resetForTesting();
@@ -715,7 +715,7 @@ describe('gateway-resolver: isValidIPv4 corner arithmetic', () => {
 });
 
 describe('wsl-detection platform guard + logger reset/critical contracts', () => {
-  let errSpy: ReturnType<typeof vi.spyOn>;
+  let errSpy: MockInstance;
   beforeEach(() => {
     _clearHostIpCache();
     _resetForTesting();
