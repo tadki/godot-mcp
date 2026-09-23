@@ -42,6 +42,7 @@ drive_shim() {
         export "$extraenv"
         export KOL_SEE1244_ALLOW_TEST_OVERRIDE=1
     fi
+    # 竞态窗口语义（CLAUDE.md 边界）：stdin 流内 sleep pacing 构造降级时序，即被测场景
     env HOME="$TMP/home-$label" GODOT_MCP_HOME="$TMP/home-$label/.multica" timeout 10 bash -c \
         "sleep 0.3; cat '$infile'; sleep 2" | env HOME="$TMP/home-$label" GODOT_MCP_HOME="$TMP/home-$label/.multica" node "$SHIM" "$label" \
         >"$outfile" 2>"$errfile"

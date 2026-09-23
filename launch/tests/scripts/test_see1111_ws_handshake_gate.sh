@@ -76,7 +76,7 @@ fi
 # The editor log carries neither milestone yet (Server listening / WS handshake),
 # so the WARM gate cannot open; id=2 must stay HELD — not answered early, not
 # hinted. The 15s warmup timeout is far beyond this short window.
-sleep 2
+sleep 2   # 竞态窗口语义（CLAUDE.md 边界）：负向断言"id=2 冷窗内被 HELD"，须窗已过；窗长 = hold-to-warm 冷窗，即被测行为（SEE-1111 目标1）
 if grep -q '"id":2' "$PROXY_OUT"; then
     ko "F1.2: id=2 answered early while the editor is still cold (hold-to-warm must hold, no early answer)"
 else
@@ -141,7 +141,7 @@ fi
 # F4 — MCP_INITIALIZED proof: with WS_HANDSHAKE observed, §2.2 backfills
 # MCP_INITIALIZED at warm, so the post-warm timeline echo shows `init→Ns`
 # (a real number, not `?`).
-sleep 0.3
+wait_for_stable "$TMPDIR/cfg.count" 2000   # SEE-1342 D4
 TL=$(grep -o '\[godot-mcp warmup [^]]*\]' "$PROXY_OUT" | tail -1)
 if [[ -n "$TL" ]]; then
     note "timeline: $TL"

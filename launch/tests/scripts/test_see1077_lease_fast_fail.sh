@@ -314,7 +314,7 @@ wait_for "$PROXY_OUT" '"id":1' 3000 || ko "L1.pre: initialize not answered"
 # Write ONLY the 'scheduled' variant (grace window start, may still cancel).
 echo "$LEASE_SCHEDULED" >> "$L1_LOG"
 # Observe for 3s — the proxy must NOT exit on this line.
-sleep 3
+sleep 3   # 竞态窗口语义（CLAUDE.md 边界）：scheduled 线不触发 fast-fail 的存活窗，窗长 = proxy 快败判定窗，即被测行为
 if proxy_alive; then
     ok "L1.1: proxy alive 3s after 'scheduled' line (did not fast-fail)"
 else
@@ -361,7 +361,7 @@ send_line "$INIT_LINE"
 send_line "$CALL_LINE"
 wait_for "$PROXY_OUT" '"id":1' 3000 || ko "L2.pre: initialize not answered"
 echo "$LEASE_SCHEDULED" >> "$L2_LOG"
-sleep 0.5
+sleep 0.5   # 竞态窗口语义（CLAUDE.md 边界）：scheduled→exiting 间隔是 dt 度量的被测量
 T_SEND=$(date +%s%3N)
 echo "$LEASE_EXITING" >> "$L2_LOG"
 if wait_for_death 5000; then
@@ -412,9 +412,9 @@ send_line "$INIT_LINE"
 send_line "$CALL_LINE"
 wait_for "$PROXY_OUT" '"id":1' 3000 || ko "L3.pre: initialize not answered"
 echo "$LEASE_SCHEDULED" >> "$L3_LOG"
-sleep 0.4
+sleep 0.4   # 竞态窗口语义（CLAUDE.md 边界）：cancel 须落在 scheduled 判定窗内，窗时序即被测行为
 echo "$LEASE_CANCELLED" >> "$L3_LOG"
-sleep 2
+sleep 2   # 竞态窗口语义（CLAUDE.md 边界）：断言 cancel 制胜后 proxy 存活
 if proxy_alive; then
     ok "L3.1: proxy alive after scheduled+cancelled (cancel beats scheduled; no fast-fail)"
 else
@@ -450,7 +450,7 @@ start_proxy "GODOT_PORT=$L4_PORT" "KOL_WARMUP_TIMEOUT_MS=8000" "KOL_FAILED_EXIT_
 send_line "$INIT_LINE"
 send_line "$CALL_LINE"
 wait_for "$PROXY_OUT" '"id":1' 3000 || ko "L4.pre: initialize not answered"
-sleep 3
+sleep 3   # 竞态窗口语义（CLAUDE.md 边界）：offset 机制存活窗，即被测行为
 if proxy_alive; then
     ok "L4.1: proxy alive despite pre-existing 'exiting editor' line (offset mechanism)"
 else
@@ -501,7 +501,7 @@ send_line '{"jsonrpc":"2.0","id":999,"method":"tools/call","params":{"name":"get
 # Give the seed a deterministic completion window before emitting the
 # milestones: the seed is one async stat() (sub-100ms even under load), so 1s
 # is a safe floor, and it is a TEST timing requirement, not an assertion change.
-sleep 1
+sleep 1   # 竞态窗口语义（CLAUDE.md 边界）：proxy 内部 async stat() seed 无外部完成信号可订阅（L5_LOG 为空文件，mtime 不反映 seed 状态），1s = 原判定的安全下限，保留
 echo "[godot-mcp] Server listening on 127.0.0.1:$L5_PORT [test]" >> "$L5_LOG"
 echo "[godot-mcp] WebSocket handshake complete" >> "$L5_LOG"
 wait_for "$PROXY_ERR" 'warm detected' 20000 || ko "L5.pre: proxy did not reach WARM with listener up"

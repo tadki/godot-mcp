@@ -170,7 +170,7 @@ if wait_for "$PROXY_OUT" '"id":4' 10000; then
 else
     ko "T3.5a: no id=4 response"
 fi
-sleep 0.3
+wait_for_stable "$PROXY_OUT" 2000   # SEE-1342 D4
 SNAP2="$TMPDIR/t3_snap2.out"; cp "$PROXY_OUT" "$SNAP2"
 if grep -q '"state": *"spawn_failed"' "$SNAP2"; then
     ok "T3.5b: id=4 carried the re-armed spawn_failed diagnostic (no stale warmup hint after a real failure)"

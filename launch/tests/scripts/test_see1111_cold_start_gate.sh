@@ -75,7 +75,7 @@ if wait_for "$PROXY_ERR" 'editor spawn launched' 3000; then
 else
     ko "A.0: editor spawn never launched"
 fi
-sleep 1.5
+sleep 1.5   # 竞态窗口语义（CLAUDE.md 边界）：负向断言"id=2 冷窗内绝不提前应答"，须窗已过；窗长 = hold-to-warm 触发窗，即被测行为
 if grep -q '"id":2' "$PROXY_OUT"; then
     ko "A.1a: id=2 answered BEFORE warm (premature — must be held until the gate opens)"
 else
@@ -123,7 +123,7 @@ fi
 # A.3 — MCP_INITIALIZED proof: with WS_HANDSHAKE observed, §2.2 backfills
 # MCP_INITIALIZED at warm, so the first post-warm response's timeline echo
 # (which rides id=2's result) shows `init→Ns` (a real number, not `?`).
-sleep 0.3
+wait_for_stable "$TMPDIR/cfg.count" 2000   # SEE-1342 D4
 TL=$(grep -o '\[godot-mcp warmup [^]]*\]' "$PROXY_OUT" | tail -1)
 if [[ -n "$TL" ]]; then
     note "timeline: $TL"

@@ -111,7 +111,7 @@ make_lease /tmp/d1-scope-outside <<'EOF'
 EOF
 KOL_PORT_REGISTRY_PATH_OVERRIDE="$HOME/.multica/godot-port-registry.json" \
     bash "$CONFIGURE" --port 6570 --project-godot "$SBOX/we/project.godot" >/dev/null 2>&1 || true
-sleep 3   # async reaper window
+sleep 3   # 竞态窗口语义（CLAUDE.md 边界）：configure 的 async reaper 无外部完成信号可订阅，3s = 其窗口上限（同原语义），负向断言"外部 lease 不被触碰"须窗已过
 if has_corrupt /tmp/d1-scope-outside; then bad "E: outside-registry lease touched by scoped sweep"; else ok "E: outside-registry lease untouched by configure's scoped sweep"; fi
 
 echo

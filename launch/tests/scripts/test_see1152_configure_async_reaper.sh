@@ -92,7 +92,7 @@ else
     ko "T1.2: sidecar lease missing or not active"
 fi
 # Wait for the background reaper to land, then prove it still ran.
-sleep 4
+for _ in $(seq 1 40); do [[ -s "$REAPER_LOG" ]] && break; sleep 0.1; done   # SEE-1342 D4: evented — wait for the log line itself (≤4s, same ceiling)
 if [[ -s "$REAPER_LOG" ]]; then
     ok "T1.3: reaper still invoked asynchronously (log non-empty after wait)"
 else
