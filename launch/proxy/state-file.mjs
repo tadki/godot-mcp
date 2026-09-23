@@ -52,8 +52,16 @@ function heldRuntimeDirFor(runtimeId) {
 // Arbitrates "who manages THIS runtime's editor" — separate layer from the
 // per-port PHYSICAL lock (held-port). mkdir is the atomic primitive (B-6).
 // staleness: a lock older than staleMs whose owner pid is dead is stealable.
+//
+// SEE-1338 P1 QA 缺陷 #1 (HIGH, Revy 复测): this was `async` with no await —
+// the startup handoff call site read `lock.locked` off the raw Promise
+// (always undefined) and every start degraded to read-only, silently
+// bypassing the whole D2/D3 handoff. Real-machine-only failure: the mock
+// suite awaited the same fn, masking the missed await at the production call
+// site. Fixed by making it SYNCHRONOUS (all IO below is sync fs) — an async
+// signature can no longer lie to future call sites.
 
-export async function acquireRuntimeLock(runtimeId, { staleMs = 10 * 60 * 1000, ownerPid = process.pid } = {}) {
+export function acquireRuntimeLock(runtimeId, { staleMs = 10 * 60 * 1000, ownerPid = process.pid } = {}) {
     const dir = heldRuntimeDirFor(runtimeId);
     // mkdir {recursive:true} never throws EEXIST — the contention probe is an
     // explicit existsSync + owner check (recursive mkdir succeeded silently
