@@ -28,7 +28,8 @@ process.env.GODOT_PORT = '6579';
 delete process.env.KOL_ISSUE_ID;
 
 const sf = await import(path.join(LAUNCH, 'proxy', 'state-file.mjs'));
-const { decideHandoffAction } = await import(path.join(LAUNCH, 'see1338-handoff.mjs'));
+const handoffMod = await import(path.join(LAUNCH, 'see1338-handoff.mjs'));
+const { decideHandoffAction, decideReuseSingleSource } = handoffMod;
 
 const RID = 'Bachi-i1338';
 const NOW = Date.now();
@@ -229,4 +230,65 @@ test('§2 D1 T20 v2 键推导：KOL_ISSUE_ID pin → <agent>-i<num>；无 issue 
     assert.equal(out1, 'Atlas-solo', 'no KOL_ISSUE_ID env in this shell → solo');
     const out2 = runtimeV2('kol_derive_runtime_id_v2', 'Atlas', '/tmp/wt');
     assert.equal(out2, out1, 'legacy alias parity');
+});
+
+// ---- P1 线性单源追加 (Atlas 2026-09-23 裁决): reuse-lane single source -----------
+
+test('§4.2+ T21 复用单源：WARM+活 proxy → editor_busy（前任在管）', () => {
+    const d = decideReuseSingleSource({ state: 'WARM', holderProxyAlive: true, holderWorktree: '/tmp/wt', ourWorktree: '/tmp/wt', samePort: true });
+    assert.equal(d.action, 'editor_busy');
+    assert.equal(d.reason, 'HOLDER_PROXY_ALIVE_AMEND1');
+});
+
+test('§4.2+ T22 复用单源：WARM+死 proxy+worktree 匹配 → handoff_reuse', () => {
+    const d = decideReuseSingleSource({ state: 'WARM', holderProxyAlive: false, holderWorktree: '/tmp/wt', ourWorktree: '/tmp/wt', samePort: true });
+    assert.equal(d.action, 'handoff_reuse');
+    assert.equal(d.reason, 'WARM_DEAD_HOLDER_WORKTREE_MATCH');
+});
+
+test('§4.2+ T23 复用单源：WARMING+死 proxy+匹配 → handoff_reuse（形态 B 尸体收编）', () => {
+    for (const st of ['WARMING', 'RECOVERING']) {
+        const d = decideReuseSingleSource({ state: st, holderProxyAlive: false, holderWorktree: '/tmp/wt', ourWorktree: '/tmp/wt/sub', samePort: true });
+        assert.equal(d.action, 'handoff_reuse', st);
+    }
+});
+
+test('§4.2+ T24 复用单源：worktree 不匹配 → cold_start（legacy lane 收尾）', () => {
+    const d = decideReuseSingleSource({ state: 'WARM', holderProxyAlive: false, holderWorktree: '/other/wt', ourWorktree: '/tmp/wt', samePort: true });
+    assert.equal(d.action, 'cold_start');
+    assert.equal(d.reason, 'WARM_DEAD_HOLDER_WORKTREE_MISMATCH');
+});
+
+test('§4.2+ T25 复用单源：端口不匹配 / FAILED_CLEAN → cold_start', () => {
+    assert.equal(decideReuseSingleSource({ state: 'WARM', holderProxyAlive: false, holderWorktree: '/tmp/wt', ourWorktree: '/tmp/wt', samePort: false }).action, 'cold_start');
+    assert.equal(decideReuseSingleSource({ state: 'FAILED_CLEAN', holderProxyAlive: false, holderWorktree: '/tmp/wt', ourWorktree: '/tmp/wt', samePort: true }).action, 'cold_start');
+});
+
+test('§4.2+ T26 spawn.mjs 单源接线：有 .state 记录时先走单源分支（盘外招收编）', () => {
+    const src = readSrc('proxy/spawn.mjs');
+    assert.ok(/SINGLE_SOURCE_REUSE/.test(src));
+    assert.ok(/decideReuseSingleSource/.test(src));
+    assert.ok(/decideReuseSingleSource[\s\S]*?verdict === 'evict' \|\| verdict === 'respawn'/.test(src.replace(/\n/g, '\n')),
+        'single-source branch must run BEFORE the legacy verdict stack');
+});
+
+test('§4.2+ T27 reaper executor 模式：--from-state 只执行 REAP_PENDING（裁决权在 proxy）', () => {
+    const src = readSrc('reap-stale-leases.sh');
+    assert.ok(/--from-state/.test(src));
+    assert.ok(/REAP_PENDING/.test(src));
+    assert.ok(/exit 0/.test(src.split('--from-state EXECUTOR mode')[1]?.split('REAPED=0')[0] || ''), 'executor mode exits before legacy scan');
+});
+
+test('§4.2+ T28 内存计数器落盘：FAILED_CLEAN 写入携带 backoff/restart/round 全量预算', () => {
+    const src = readSrc('proxy/spawn.mjs');
+    for (const f of ['spawn_failed_streak', 'spawn_backoff_until', 'give_up_count', 'give_up_backoff_ms', 'force_restart_count', 'recovery_round']) {
+        assert.ok(new RegExp(`${f}:`).test(src), f);
+    }
+});
+
+test('§4.2+ T29 EDITOR_GONE 落盘：post-warm 死亡将 .state 归 COLD（不留误导性 WARM）', () => {
+    const src = readSrc('proxy/spawn.mjs');
+    const block = src.slice(src.indexOf('function beginWarmEditorRespawn'), src.indexOf('function resetForRespawn'));
+    assert.ok(/event: 'EDITOR_GONE'/.test(block));
+    assert.ok(/state: 'COLD'/.test(block));
 });
