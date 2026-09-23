@@ -292,3 +292,38 @@ test('§4.2+ T29 EDITOR_GONE 落盘：post-warm 死亡将 .state 归 COLD（不�
     assert.ok(/event: 'EDITOR_GONE'/.test(block));
     assert.ok(/state: 'COLD'/.test(block));
 });
+
+// ---- P1 QA 缺陷 #1 (HIGH, Revy 复测): startupHandoff 调用形态回归 ---------------
+
+test('QA#1 R1 acquireRuntimeLock 为同步签名（杜绝调用点漏 await 再犯）', () => {
+    const src = readSrc('proxy/state-file.mjs');
+    assert.ok(!/export async function acquireRuntimeLock/.test(src),
+        'acquireRuntimeLock MUST be sync — an async signature lies to sync call sites');
+    assert.ok(/export function acquireRuntimeLock/.test(src));
+});
+
+test('QA#1 R2 startupHandoff 调用点形态：锁调用不再依赖 await（同步后直接判 lock.locked）', () => {
+    const src = readSrc('godot-mcp-proxy.mjs');
+    // The bug shape: `const lock = acquireRuntimeLock(...)` read off a Promise.
+    // Now that the lock is sync this call shape is correct; the regression is
+    // any future re-introduction of an async lock API.
+    const m = src.match(/const lock = acquireRuntimeLock\(([^)]*)\)/);
+    assert.ok(m, 'startupHandoff must call acquireRuntimeLock');
+    assert.ok(!/const lock = await acquireRuntimeLock/.test(src) || /export function acquireRuntimeLock/.test(readSrc('proxy/state-file.mjs')),
+        'if the lock ever becomes async again, the call site MUST await it');
+    // And the branch actually consumes the result:
+    assert.ok(/lock\.locked/.test(src), 'startupHandoff must branch on lock.locked');
+});
+
+test('QA#1 R3 startupHandoff 实机行为：持锁 → 读盘 → 决策写盘（不再误走 read-only）', () => {
+    const rid = 'Bachi-i1338-handoff-smoke';
+    const sfHome = sf.statePathFor(rid);
+    // Seed a WARM record with a dead holder proxy (reclaim path).
+    sf.writeRuntimeState(rid, baseState({ proxy_pid: 999999999, proxy_pid_started_at: new Date(NOW - 60000).toISOString() }));
+    const lock = sf.acquireRuntimeLock(rid, { ownerPid: process.pid });
+    assert.equal(lock.locked, true, 'sync acquire returns a real object — the QA#1 bug shape (Promise.locked===undefined) is impossible');
+    const disk = sf.readRuntimeState(rid);
+    const d = decideHandoffAction({ disk, holderProxy: { pid: 999999999, startedAt: NOW - 60000, verified: false } });
+    assert.equal(d.action, 'reclaim_dead');
+    sf.releaseRuntimeLock(rid, process.pid);
+});
