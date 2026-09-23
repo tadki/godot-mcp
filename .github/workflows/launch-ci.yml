@@ -80,12 +80,23 @@ jobs:
 
   node-units:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # SEE-1342 §SPEC-101: bumped 5→8 — the D1 build gate in
+    # launch/vitest.config.ts builds server/dist before any tier run; the
+    # explicit build step below keeps that one-time cost outside the test
+    # step's own timeout window.
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Build server CLI (D1 gate warm-up; vitest.config.ts would otherwise build it at config load)
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
       - name: Install root dev tooling
         run: npm ci --no-audit --no-fund
       # NODE_V8_COVERAGE propagates to the harness child processes (vitest's
