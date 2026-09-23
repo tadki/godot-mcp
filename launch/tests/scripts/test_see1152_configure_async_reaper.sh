@@ -61,7 +61,7 @@ REAPER_LOG="$SBOX/reaper.invocations"
 cat > "$FAKE_LAUNCH/reap-stale-leases.sh" <<EOF
 #!/usr/bin/env bash
 echo "\$(date +%s%3N)" >> "$REAPER_LOG"
-sleep 3
+sleep 3   # 竞态窗口语义（CLAUDE.md 边界）：T2.1 以 dt 计量 sync-reaper 阻塞时长（≥2800ms 判定），sleep 3 即被测量
 exit 0
 EOF
 chmod +x "$FAKE_LAUNCH/reap-stale-leases.sh"

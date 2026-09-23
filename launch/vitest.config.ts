@@ -73,16 +73,10 @@ try {
 // FAST_SERIAL — shared-machine-state bucket, runs strictly one at a time.
 // Per-item binning evidence (§SPEC-102 高风险通道 requirement):
 //
-//   see1273 五件（Owner 指令明确留串行桶 = Phase B D2 后修对象，本 issue 不动其
-//   语义与归属）：每轮 `git ls-remote` + clone GitHub fork main（网络依赖，期望
-//   锚定 fork main tip，与基线 sha 脱钩）；t1_import 另含真实
-//   `godot --headless --import`（全量 addon import，机器级 CPU/IO）。
-//     - test_see1273_t1_import.sh            网络 clone + 真实 godot import
-//     - test_see1273_t1_tree_consistency.sh  网络 clone（fork main 期望锚）
-//     - test_see1273_t2_chain.sh             网络 clone（fork main 期望锚）
-//     - test_see1273_t3_chain.sh             网络 clone（fork main 期望锚）
-//     - test_see1273_t4_chain.sh             网络 clone（fork main 期望锚）
-//
+//   see1273 五件已按 §SPEC-106（D2，Owner 2026-09-23 指令）迁出 fast tier，
+//   归入 launch-special.yml drift 桶（evidence runs，非阻塞）；红修复已落地
+//   （hermetic HOME fixture 化 + t1 cleanup trap）。毕业回 fast 走 SEE-1291
+//   graduation flow。
 //   test_see1137_reaper_headless_orphan_sweep.sh — 以 KOL_REAP_HEADLESS_GRACE_M=0
 //   调用真实 reap-stale-leases.sh：grace=0 的 headless 扫描按 /proc cmdline
 //   匹配并击杀【全机】所有 godot --headless 进程（reap-stale-leases.sh
@@ -115,11 +109,6 @@ try {
 //   排序颠倒）、D3 断言 SHIM_CHAIN_EXIT 落日志观测窗。对调度延迟零容忍，
 //   串行基线稳定绿 → 留串行桶。
 const FAST_SERIAL = `
-launch/tests/hooks/see1273/test_see1273_t1_import.sh
-launch/tests/hooks/see1273/test_see1273_t1_tree_consistency.sh
-launch/tests/hooks/see1273/test_see1273_t2_chain.sh
-launch/tests/hooks/see1273/test_see1273_t3_chain.sh
-launch/tests/hooks/see1273/test_see1273_t4_chain.sh
 launch/tests/scripts/see1137/test_reaper_headless_orphan_sweep.sh
 launch/tests/scripts/see1129/test_lease_lifecycle_boundary_matrix.sh
 launch/tests/scripts/test_see1070_proxy_default_port_guard.sh
@@ -239,11 +228,11 @@ const serialEntries = parse(FAST_SERIAL);
 const fastEntries = [...parse(FAST_PARALLEL_SHELL), ...parse(FAST_NODE)];
 const longEntries = parse(LONG);
 
-if (serialEntries.length !== 13) {
-  throw new Error(`fast serial bucket expects 13 entries, resolved ${serialEntries.length} — update the bucket in sync with the SEE-1291 graduation flow`);
+if (serialEntries.length !== 8) {
+  throw new Error(`fast serial bucket expects 8 entries (see1273 five graduated OUT to the launch-special drift bucket, SEE-1342 §SPEC-106), resolved ${serialEntries.length} — update the bucket in sync with the SEE-1291 graduation flow`);
 }
-if (serialEntries.length + fastEntries.length !== 68) {
-  throw new Error(`fast tier expects 68 entries (serial + parallel), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
+if (serialEntries.length + fastEntries.length !== 63) {
+  throw new Error(`fast tier expects 63 entries (serial + parallel; see1273 five migrated to the drift bucket per SEE-1342 §SPEC-106), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
 }
 if (longEntries.length !== 2) {
   throw new Error(`long tier expects 2 entries, resolved ${longEntries.length}`);
