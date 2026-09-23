@@ -14,6 +14,7 @@ import {
 import { log } from './log.mjs';
 import { maybeProgressLog, rejectQueue } from './router.mjs';
 import { finishRestartHold } from './restart.mjs';
+import { writeRuntimeState, releaseRuntimeLock } from './state-file.mjs';
 
 function shutdown() {
     S.shutdownRequested = true;
@@ -29,6 +30,19 @@ function shutdown() {
     // Do not kill the editor; the godot_mcp addon uses a lease and exits when
     // the WS client disconnects.
     rejectQueue('proxy shutting down');
+    // SEE-1338 spec v2.1 §3.3 PROXY_EXIT: release ONLY the proxy ownership —
+    // the editor state stays on disk (the editor outlives the proxy; the
+    // successor's startup handoff reads WARM + 无 proxy 所有者 → HANDOFF).
+    if (RUNTIME_ID) {
+        try {
+            writeRuntimeState(RUNTIME_ID, {
+                proxy_pid: null,
+                proxy_pid_started_at: null,
+                heartbeat_at: new Date().toISOString(),
+            }, { event: 'PROXY_EXIT', detail: 'clean shutdown; editor state preserved' });
+        } catch { /* best-effort */ }
+        releaseRuntimeLock(RUNTIME_ID);
+    }
     markIntentionalRelease();
     releaseArbiterPort();
     setTimeout(() => process.exit(0), 500);

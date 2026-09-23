@@ -26,6 +26,7 @@ import {
 import { decideReuse } from '../see1129-reuse-predicate.mjs';
 import { decideSidecarGuard } from '../see1129-sidecar-guard-predicate.mjs';
 import { maybeEvictStaleHeld } from './stale-proxy.mjs';
+import { writeRuntimeState } from './state-file.mjs';
 
 // Trigger the editor spawn at most once; concurrent callers share the promise.
 // The trigger fires on the first tools/call after COLD_EMPTY. Spawn success/
@@ -517,6 +518,18 @@ async function ensureEditor(t0) {
     stageLog('SPAWN_RETURNED', `dt_ms=${Date.now() - t0}`);
     S.lastSpawnReused = false;
     S.spawnLastFailed = false; // a successful spawn clears the failure latch (预热提示 误报防护)
+    // SEE-1338 spec v2.1 §3.3: SPAWN_ISSUED — the editor process is coming
+    // up; record COLD + the spawn attempt count so a successor reads a
+    // WARMING-shaped record (state transitions land at the probe loop).
+    if (RUNTIME_ID) {
+        writeRuntimeState(RUNTIME_ID, {
+            state: 'WARMING',
+            port: GODOT_PORT,
+            spawn_attempts: S.spawnAttempts,
+            last_error: null,
+            heartbeat_at: new Date().toISOString(),
+        }, { event: 'SPAWN_ISSUED', fromState: 'COLD', detail: `start rc=${startRes.rc}` });
+    }
     return { spawned: true, worktree, configureRc: configureRes.rc, startRc: startRes.rc };
 }
 
@@ -690,6 +703,19 @@ function giveUpAndRearm(bucket, message) {
     S.recoveryWindowStart = null;
     S.forceRestartCount = 0;   // FAILED_CLEAN reentry = fresh hard-cap budget
     S.spawnBackoffUntil = 0;
+    if (RUNTIME_ID) {
+        // SEE-1338 spec v2.1 §3.3 STATE_TRANSITION → FAILED_CLEAN: the
+        // re-entrant failure state lands on disk so the NEXT proxy's startup
+        // handoff reads it and cold-starts immediately (spec §4.2:
+        // FAILED_CLEAN / 陈旧 / 无文件 → 清理 → 冷启动).
+        writeRuntimeState(RUNTIME_ID, {
+            state: 'FAILED_CLEAN',
+            port: GODOT_PORT,
+            spawn_attempts: S.spawnAttempts,
+            last_error: `${bucket}: ${message}`,
+            heartbeat_at: new Date().toISOString(),
+        }, { event: 'STATE_TRANSITION', detail: 'streak exhausted; FAILED_CLEAN armed' });
+    }
     // SEE-1338 review MEDIUM-1: the re-armed round also gets a FRESH warmup
     // clock. The give-up cooldown consumed the old window — keeping the
     // original spawnStartedAt meant the next round's attempts raced a

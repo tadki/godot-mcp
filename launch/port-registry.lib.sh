@@ -5,7 +5,7 @@
 # by runtime_id. No dynamic port allocation yet (Atlas gate). P2 will read
 # the same file to drive allocation, so the schema is shaped for that:
 #   {
-#     "schema_version": 1,
+#     "schema_version": 2,
 #     "updated_at": "<ISO8601>",
 #     "entries": {
 #       "<runtime_id>": {
@@ -106,7 +106,7 @@ port_registry_upsert() {
         const path = process.env.REG_PATH;
         const rid = process.env.REG_RID;
         const pairs = process.env.REG_PAIRS || "";
-        const out = { schema_version: 1, updated_at: new Date().toISOString(), entries: {} };
+        const out = { schema_version: 2, updated_at: new Date().toISOString(), entries: {} };
         // Read existing.
         try {
             const raw = fs.readFileSync(path, "utf8");

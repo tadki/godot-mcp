@@ -29,7 +29,7 @@
 // thin-shim, `node godot-mcp-proxy.mjs`) is unchanged; pure local ESM imports
 // keep the zero-npm-install direct-run property.
 import {
-    GODOT_HOST, GODOT_PORT, EDITOR_LOG_FILE, isValidPort,
+    GODOT_HOST, GODOT_PORT, EDITOR_LOG_FILE, isValidPort, RUNTIME_ID,
 } from './proxy/config.mjs';
 import { log } from './proxy/log.mjs';
 import { startNpx } from './proxy/npx.mjs';
@@ -37,10 +37,18 @@ import { startClaudeReader } from './proxy/router.mjs';
 import { shutdown, startHeartbeat } from './proxy/lifecycle.mjs';
 import { startLeaseMonitor } from './proxy/lease.mjs';
 import { runWarmupLoop } from './proxy/warmup.mjs';
+import {
+    readRuntimeState, writeRuntimeState, acquireRuntimeLock, releaseRuntimeLock,
+    proxyAlive,
+} from './proxy/state-file.mjs';
+import { decideHandoffAction } from './see1338-handoff.mjs';
 
 // Public test seam (SEE-1240 WS-3): re-exported from its new home so existing
 // importers of launch/godot-mcp-proxy.mjs keep working unchanged.
 export { patchToolsListForTest } from './proxy/tools-cache.mjs';
+
+// SEE-1338 spec v2.1: expose the startup handoff for unit tests.
+export { startupHandoff };
 
 if (!isValidPort(GODOT_PORT)) {
     log(`ERROR: GODOT_PORT must be set to a valid port (6000-65535), got: ${GODOT_PORT}`);
@@ -69,8 +77,90 @@ if (GODOT_PORT === DEFAULT_PORT && !ALLOW_DEFAULT_PORT) {
 process.on('SIGINT', () => { shutdown(); });
 process.on('SIGTERM', () => { shutdown(); });
 
+// SEE-1338 spec v2.1 §4.2 (D3): the startup handoff — acquire the held-runtime
+// logical lock, READ the .state file, and run the decision tree. The disk is
+// the ONLY decision input; the connection is the action receipt layered by the
+// warmup loop (warm-gate 教训: no component may hold private judgments that
+// nobody else can read). HANDOFF adoption marks lastSpawnReused so the
+// warm-gate milestone conditions bypass (hot-reuse provably bound long ago).
+// The current proxy's pid+startedAt are recorded so the NEXT successor can run
+// the AMEND-1 triple liveness check (kill-0 + exe + started_at).
+function startupHandoff() {
+    if (!RUNTIME_ID) {
+        log('handoff: no runtime id (solo/manual) — skipping .state handoff (cold start).');
+        return;
+    }
+    try {
+        const lock = acquireRuntimeLock(RUNTIME_ID);
+        if (!lock.locked) {
+            log(`handoff: held-runtime lock busy (holder=${lock.holder}) — another proxy of this runtime is managing the editor; this proxy will proceed read-only.`);
+            return;
+        }
+        const disk = readRuntimeState(RUNTIME_ID);
+        const holderProxy = holderProxyFromDisk(disk);
+        const d = decideHandoffAction({ disk, holderProxy });
+        log(`handoff decision: ${d.action} (${d.reason}) from disk state=${disk.ok ? disk.state.state : disk.reason}.`);
+        if (handleHandoffAction(d)) return;
+    } catch (e) {
+        // The handoff must never wedge the allocation path (spec §3.4).
+        log(`WARNING: startup handoff failed (non-fatal, cold start): ${e && e.message}`);
+    }
+}
+
+function holderProxyFromDisk(disk) {
+    if (!disk.ok || !disk.state.proxy_pid) return null;
+    const holder = {
+        pid: Number(disk.state.proxy_pid),
+        startedAt: disk.state.proxy_pid_started_at
+            ? Date.parse(disk.state.proxy_pid_started_at) : null,
+    };
+    holder.verified = proxyAlive(holder.pid, holder.startedAt);
+    return holder;
+}
+
+// Returns true when the action ends startup (busy-exit / read-only join).
+function handleHandoffAction(d) {
+    if (d.action === 'editor_busy') {
+        // AMEND-1: 前任在管 — do not touch the editor or the record. The
+        // successor exits cleanly; Claude's MCP restart retries later.
+        releaseRuntimeLock(RUNTIME_ID);
+        log(`ERROR: previous session's proxy still manages this runtime (AMEND-1 guard) — refusing to double-manage. Retry later.`);
+        process.exit(1);
+    }
+    if (d.action === 'join_wait') {
+        // Predecessor mid-flight (WARMING/RECOVERING, live proxy): it is
+        // bounded by the R2 hard cap; log-and-continue as read-only so we
+        // never double-spawn. Full join queues are a P2 refinement.
+        log(`handoff: predecessor is mid-flight (${d.reason}) — proceeding read-only; R2 hard cap bounds its outcome.`);
+        return true;
+    }
+    // cold_start / reclaim_dead / handoff_warm: this proxy takes OWNERSHIP
+    // of the record now — HANDOFF atomically replaces proxy ownership
+    // (spec §3.3 修改阶段). The warmup loop drives the actual connection
+    // receipt; the editor is never touched here (no probe, no kill).
+    writeRuntimeState(RUNTIME_ID, {
+        state: 'COLD',
+        port: GODOT_PORT,
+        proxy_pid: process.pid,
+        proxy_pid_started_at: new Date().toISOString(),
+        agent: process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || '',
+        issue_id: process.env.KOL_ISSUE_ID || '',
+        worktree: process.env.GODOT_MCP_WORKTREE || process.env.KOL_WORKTREE || '',
+        editor_pid: null,
+        editor_pid_started_at: null,
+        last_error: null,
+    }, { event: 'PROXY_START', detail: `action=${d.action} reason=${d.reason}` });
+    // HANDOFF adoption: a prior WARM record we're taking over means the
+    // editor provably bound long ago — bypass the warm-gate milestones.
+    if (d.action === 'handoff_warm' || d.action === 'reclaim_dead') {
+        process.env.GODOT_MCP_HANDOFF_WARM = '1';
+    }
+    return false;
+}
+
 function main() {
     log(`starting; GODOT_HOST=${GODOT_HOST} GODOT_PORT=${GODOT_PORT} log=${EDITOR_LOG_FILE || '<none>'}`);
+    startupHandoff();
     startNpx();
     startClaudeReader();
     startHeartbeat();

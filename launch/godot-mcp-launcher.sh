@@ -779,8 +779,18 @@ LABEL="$(agent_label_for_port "$PORT")"
 # concurrent slots (which today collide on a shared per-agent log path).
 # shellcheck source=runtime.lib.sh
 source "${SCRIPT_DIR}/runtime.lib.sh"
+# shellcheck source=runtime-v2.lib.sh
+source "${SCRIPT_DIR}/runtime-v2.lib.sh"
 if [[ -z "${KOL_RUNTIME_ID:-}" ]]; then
-    KOL_RUNTIME_ID="$(kol_derive_runtime_id "${KOL_AGENT_NAME:-${LABEL}}" "$CURRENT_WORKTREE")"
+    # SEE-1338 spec v2.1 §2 (D1): issue-keyed identity FIRST — resolved ONCE
+    # here (never per tools/call; no extra platform coupling beyond the env +
+    # existing CLI surfaces). Falls back to the v1 slot-hash key only when the
+    # platform context is entirely absent (manual/solo launch).
+    KOL_RUNTIME_ID="$(kol_derive_runtime_id_v2 "${KOL_AGENT_NAME:-${LABEL}}" "$PWD")"
+    if [[ "$KOL_RUNTIME_ID" == *-solo ]]; then
+        KOL_RUNTIME_ID="$(kol_derive_runtime_id "${KOL_AGENT_NAME:-${LABEL}}" "$CURRENT_WORKTREE")"
+    fi
+    export KOL_ISSUE_ID="${KOL_ISSUE_ID:-$(kol_resolve_issue_id "$PWD" || true)}"
 fi
 export KOL_RUNTIME_ID
 
