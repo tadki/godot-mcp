@@ -81,10 +81,10 @@ LOCK_HOLDER_PID=""
 (
     exec 9>"${PORT_REGISTRY_PATH}.lock"
     flock 9
-    sleep 0.5
+    sleep 0.5   # 竞态窗口语义（CLAUDE.md 边界）：锁持有时长即被测的争抢窗口
 ) &
 LOCK_HOLDER_PID=$!
-sleep 0.05  # let the holder grab the lock first
+sleep 0.05  # 竞态窗口语义（CLAUDE.md 边界）：保证 holder 先夺锁的交错时序，即被测行为
 START_MS="$(date +%s%N)"
 port_registry_upsert "$RID" "port=6553" "agent=Bachi" 2>&1
 END_MS="$(date +%s%N)"

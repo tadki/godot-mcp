@@ -115,7 +115,7 @@ if proxy_alive; then
 else
     ko "G1.4: proxy died during grace-race recovery"
 fi
-sleep 0.5
+wait_for_stable "$START_COUNTER" 2000   # SEE-1342 D4
 if [[ "$(count_lines "$START_COUNTER")" -le 3 ]]; then
     ok "G1.5: no eviction loop (spawn count stable at ≤3; one-shot guard held)"
 else
@@ -150,7 +150,7 @@ if wait_for "$PROXY_OUT" '"id":2' 45000; then
 else
     ko "G2.1: legacy path failed to warm"
 fi
-sleep 0.5
+wait_for_stable "$START2" 2000   # SEE-1342 D4
 if [[ "$(count_lines "$START2")" -eq 1 ]] && ! grep -q 'GRACE_RACE_GUARD' "$PROXY_ERR"; then
     ok "G2.2: red side confirmed — exactly 1 spawn, no guard (修复前行为可复现)"
 else
@@ -180,7 +180,7 @@ send_line "$INIT_LINE"
 wait_for "$PROXY_OUT" '"id":1' 1500 || ko "G3.pre: initialize not answered"
 send_line "$(call_line 2)"
 wait_spawn_count "$START3" 2 || true
-sleep 6   # give a would-be loop plenty of rope
+sleep 6   # 竞态窗口语义（CLAUDE.md 边界）：负向断言"守卫不复环"须观测窗已过，窗长=一轮慢 mock 的完整重启窗，即被测行为（G3）
 if [[ "$(count_lines "$START3")" -eq 2 ]] && [[ "$(grep -c 'GRACE_RACE_GUARD' "$PROXY_ERR")" -eq 1 ]]; then
     ok "G3.1: guard fired exactly once across the persistently slow round (no loop)"
 else

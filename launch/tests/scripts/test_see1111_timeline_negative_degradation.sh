@@ -100,14 +100,14 @@ wait_for "$PROXY_OUT" '"id":1' 1500 || ko "B.pre: initialize not answered"
 # buildWarmupTimeline sec() rendered them as NEGATIVES; the fix degrades them
 # to `?`. (The offset seed already happened at proxy boot, so these appended
 # lines ARE scanned — but before any spawn trigger.)
-sleep 0.5
+wait_for_stable "$EDITOR_LOG" 2000   # SEE-1342 D4
 cat >> "$EDITOR_LOG" <<EOF
 [godot-mcp] Plugin initialized
 [godot-mcp] Server listening on 127.0.0.1:$PORT
 [godot-mcp] TCP connection received from 127.0.0.1 awaiting WebSocket handshake
 [godot-mcp] WebSocket handshake complete
 EOF
-sleep 0.5
+sleep 0.5   # 竞态窗口语义（CLAUDE.md 边界）：给 lease monitor 的 tail 轮询留消费余量（必须在 spawn 触发前行被扫入），mtime 稳定不证明已消费
 
 # --- round 1: configure fails (async) → id=2 held, then real spawn_failed -------
 sep "Round 1 — transient configure failure, real spawn_failed diagnostic"
@@ -187,7 +187,7 @@ if wait_for "$TMPDIR/npx.log" '"id":5' 4000; then
 else
     ko "B.3c: id=5 never reached npx"
 fi
-sleep 0.3
+wait_for_stable "$CFG" 2000   # SEE-1342 D4
 CFG3_COUNT=$(count_lines "$CFG")
 if (( CFG3_COUNT >= 2 )); then
     ok "B.3d: configure ran again for the retried spawn (count=$CFG3_COUNT ≥ 2)"

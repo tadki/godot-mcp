@@ -242,6 +242,42 @@ wait_for_death() {
     return 1
 }
 
+# wait_count <file> <value> <budget_ms> — SEE-1342 §SPEC-105 (D4): bounded
+# predicate poll for a counter file to REACH an exact line count. The evented
+# replacement for "sleep N then read" when the target value is known: returns
+# as soon as the event (count==value) lands, upper-bounded by budget.
+wait_count() {
+    local file="$1" want="$2" budget="${3:-5000}" waited=0 have
+    while (( waited < budget )); do
+        have=$(count_lines "$file")
+        [[ "$have" == "$want" ]] && return 0
+        sleep 0.1; waited=$(( waited + 100 ))
+    done
+    return 1
+}
+
+# wait_for_stable <file> <budget_ms> — SEE-1342 §SPEC-105 (D4, event-driven
+# rule): evented counterpart of "sleep N" settle windows. Returns 0 once the
+# file's mtime has stayed unchanged for ~KOL_WAIT_STABLE_MS (default 400ms) —
+# the writes the test is settling for have landed — or when the budget
+# expires (same deadline behavior as the fixed sleep it replaces; bounded,
+# never longer). Second-resolution mtimes, hence the 400ms stability floor.
+wait_for_stable() {
+    local path="$1" budget="${2:-2000}" waited=0 stable_ms="${KOL_WAIT_STABLE_MS:-400}"
+    local last=0 now
+    last=$(stat -c %Y "$path" 2>/dev/null || echo 0)
+    while (( waited < budget )); do
+        sleep 0.05; waited=$(( waited + 50 ))
+        now=$(stat -c %Y "$path" 2>/dev/null || echo 0)
+        if (( last > 0 && now == last )); then
+            if (( waited >= stable_ms )); then return 0; fi
+        else
+            last="$now"
+        fi
+    done
+    return 0
+}
+
 # count_lines <file> — number of lines in a counter file (0 if absent).
 count_lines() {
     [[ -f "$1" ]] && wc -l < "$1" | tr -d ' ' || echo 0

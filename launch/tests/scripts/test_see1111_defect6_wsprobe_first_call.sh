@@ -92,7 +92,7 @@ else
 fi
 
 # F2 — the warmup probe was a REAL WebSocket handshake (marker appended).
-sleep 0.3
+wait_for "$WS_COUNT" 'ws' 3000 || true   # SEE-1342 D4: wait for the marker event itself (listener appends 'ws')
 WS_N=$(count_lines "$WS_COUNT")
 if [[ "$WS_N" -ge 1 ]]; then
     ok "F2.1: listener recorded $WS_N completed WS handshake(s) — probe is a real Upgrade (not raw TCP)"

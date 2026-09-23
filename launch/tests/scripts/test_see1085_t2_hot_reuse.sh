@@ -115,7 +115,7 @@ else
     ko "T2.1: proxy never reached WARM with port already listening"
 fi
 
-sleep 0.3
+wait_for_stable "$CFG_COUNTER" 2000   # SEE-1342 D4
 CFG_COUNT=$(count_lines "$CFG_COUNTER")
 START_COUNT=$(count_lines "$START_COUNTER")
 if [[ "$CFG_COUNT" == "1" ]]; then

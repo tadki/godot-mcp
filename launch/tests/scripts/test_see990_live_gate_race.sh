@@ -156,7 +156,7 @@ for attempt in 1 2 3; do
     python3 "$PROBE" --host "$HOST" --port "$PORT" --check ready --timeout 5 >"$T3_LOG" 2>&1
     T3_RC=$?
     (( T3_RC == 0 )) && grep -q "editor ready" "$T3_LOG" && break
-    sleep 2
+    sleep 2   # 竞态窗口语义（CLAUDE.md 边界）：重试退避间隔（probe 本身即 ready 事件探测），非固定同步等待
 done
 if (( T3_RC == 0 )) && grep -q "editor ready" "$T3_LOG"; then
     ok "T3: shipped probe reaches ready over one connection on live addon ($(tail -1 "$T3_LOG"))"

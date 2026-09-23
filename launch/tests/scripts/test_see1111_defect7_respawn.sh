@@ -158,7 +158,7 @@ if wait_for "$TMPDIR/npx.log" '"id":2' 4000; then
 else
     ko "R1.2: id=2 never reached npx (hold broke the flush)"
 fi
-sleep 0.3
+wait_count "$START_COUNTER" 1 3000   # SEE-1342 D4: wait for the spawn event itself
 SC1=$(count_lines "$START_COUNTER")
 if [[ "$SC1" == "1" ]]; then
     ok "R1.3: start invoked exactly once for the cold spawn (count=$SC1)"
@@ -174,7 +174,7 @@ if [[ -n "$LIS_PID" ]]; then
 else
     ko "R2.1: no mock listener found to kill — test cannot simulate editor death"
 fi
-sleep 0.4   # let the listener die + TCP enter closed/reset
+sleep 0.4   # 竞态窗口语义（CLAUDE.md 边界）：测 TCP 死亡对端侧可见前的转发路径，窗口本身即被测行为
 
 # R3 — a call against the dead port → forwarded (warm path still) → npx returns
 # the bare WebSocket-closed error → the forwarder wraps it as a retryable
@@ -233,12 +233,8 @@ fi
 # in the background — a fixed sleep races that pipeline (under load the real
 # prepare-worktree.sh alone can exceed 300ms). Wait deterministically for the
 # counter to reach 2 instead of guessing a delay.
-SC2=1
-for _ in $(seq 1 50); do
-    SC2=$(count_lines "$START_COUNTER")
-    [[ "$SC2" == "2" ]] && break
-    sleep 0.1
-done
+wait_count "$START_COUNTER" 2 5000   # SEE-1342 D4: wait for the respawn event itself
+SC2=$(count_lines "$START_COUNTER")
 if [[ "$SC2" == "2" ]]; then
     ok "R4.2: start invoked a SECOND time for the respawn (count=$SC2)"
 else
@@ -258,7 +254,7 @@ if wait_for "$PROXY_OUT" '"id":5' 8000; then
 else
     ko "R5.1: no id=5 response"
 fi
-sleep 0.3
+wait_for_stable "$START_COUNTER" 2000   # SEE-1342 D4: settle then prove no THIRD spawn event landed
 SC3=$(count_lines "$START_COUNTER")
 if [[ "$SC3" == "2" ]]; then
     ok "R5.2: start count stayed 2 (no double-respawn flapping)"

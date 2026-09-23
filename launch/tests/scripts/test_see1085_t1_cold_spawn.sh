@@ -81,7 +81,7 @@ if wait_for "$PROXY_ERR" 'editor spawn launched' 3000; then
 else
     ko "T1.3a: proxy never ran configure+start after tools/call"
 fi
-sleep 0.3   # let the counter writes settle (mocks append + exit)
+wait_for_stable "$CFG_COUNTER" 2000   # SEE-1342 D4: settle = mtime-stable, not a fixed 0.3s
 CFG_COUNT=$(count_lines "$CFG_COUNTER")
 START_COUNT=$(count_lines "$START_COUNTER")
 if [[ "$CFG_COUNT" == "1" ]]; then
