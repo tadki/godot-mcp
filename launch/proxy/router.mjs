@@ -20,6 +20,8 @@ import { expandDragInToolsCall } from '../see1240-ui-tools.mjs';
 import { persistGiveUpStatus, spawnFailedDiagnostic, triggerEnsureEditor } from './spawn.mjs';
 import { beginRestartHold, isRestartToolsCall } from './restart.mjs';
 import { shutdown } from './lifecycle.mjs';
+import { writeRuntimeState } from './state-file.mjs';
+import { RUNTIME_ID } from './config.mjs';
 
 function maybeProgressLog(force = false) {
     const now = Date.now();
@@ -29,6 +31,16 @@ function maybeProgressLog(force = false) {
     const count = S.pendingCalls.length;
     const status = S.warm ? 'warm' : S.recovering ? 'recovering' : S.warmupTimedOut ? 'failed-exit' : 'waiting';
     log(`waiting for editor warmup... ${elapsed}s elapsed, ${count} call(s) queued (${status})`);
+}
+
+// SEE-1338 spec v2.1 §3.3 (CALL_BEGIN/CALL_END): every tools/call refreshes
+// the on-disk heartbeat (the R1 reaper clock) and bumps updated_at. Cheap
+// tmp+rename write; failure never blocks the call path.
+function recordCallEvent(kind) {
+    if (!RUNTIME_ID) return;
+    writeRuntimeState(RUNTIME_ID, {
+        heartbeat_at: new Date().toISOString(),
+    }, { event: kind });
 }
 
 function flushQueue() {
@@ -336,6 +348,7 @@ function handleClaudeMessage(line) {
                 maybeProgressLog(true);
                 return;
             }
+            recordCallEvent('CALL_BEGIN');
             forwardToNpx(line);
             return;
         }
@@ -556,4 +569,5 @@ export {
     dropToolsCallId,
     handleClaudeMessage,
     startClaudeReader,
+    recordCallEvent,
 };

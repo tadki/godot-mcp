@@ -358,7 +358,7 @@ port_arbiter_registry_record() {
     REG_PATH="$path" REG_RID="$rid" REG_PORT="$port" REG_PID="$proxy_pid" \
     node -e '
         const fs = require("fs");
-        const out = { schema_version: 1, updated_at: new Date().toISOString(), entries: {} };
+        const out = { schema_version: 2, updated_at: new Date().toISOString(), entries: {} };
         try {
             const cur = JSON.parse(fs.readFileSync(process.env.REG_PATH, "utf8"));
             if (cur && cur.entries && typeof cur.entries === "object") out.entries = cur.entries;

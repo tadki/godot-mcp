@@ -97,6 +97,7 @@ launch/tests/scripts/test_see1244_rechain.mjs
 launch/tests/scripts/test_see1244_shim_handshake.mjs
 launch/tests/scripts/test_see1244_shim_placeholder.mjs
 launch/tests/scripts/test_see1244_v2_gate.mjs
+launch/tests/scripts/test_see1338_p1_sot.mjs
 launch/tests/scripts/test_see1338_stale_takeover.mjs
 `;
 
@@ -112,8 +113,8 @@ const parse = (block) => block.trim().split('\n').map((s) => s.trim()).filter(Bo
 const fastEntries = [...parse(FAST_SHELL), ...parse(FAST_NODE)];
 const longEntries = parse(LONG);
 
-if (fastEntries.length !== 67) {
-  throw new Error(`fast tier expects 67 entries, resolved ${fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
+if (fastEntries.length !== 68) {
+  throw new Error(`fast tier expects 68 entries, resolved ${fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
 }
 if (longEntries.length !== 2) {
   throw new Error(`long tier expects 2 entries, resolved ${longEntries.length}`);

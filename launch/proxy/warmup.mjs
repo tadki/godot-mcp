@@ -26,6 +26,8 @@ import { cliConnectSignalExpected } from './npx.mjs';
 import { startRenderStableMonitor, tcpProbe, wsProbe } from './probes.mjs';
 import { maybeRefreshToolsCache } from './tools-cache.mjs';
 import { resolveWorktreeForSpawn } from './worktree.mjs';
+import { writeRuntimeState } from './state-file.mjs';
+import { RUNTIME_ID, GODOT_PORT as SOT_PORT } from './config.mjs';
 
 // eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
 async function warmupLoop() {
@@ -133,6 +135,13 @@ async function warmupLoop() {
                     S.recovering = true;
                     S.recoveringEnteredAt = nowWait;
                     lastTcpOkAt = nowWait;
+                    if (RUNTIME_ID) {
+                        writeRuntimeState(RUNTIME_ID, {
+                            state: 'RECOVERING',
+                            port: SOT_PORT,
+                            last_error: 'warmup timed out; entering RECOVERING',
+                        }, { event: 'STATE_TRANSITION', fromState: 'WARMING', detail: 'warmup timeout' });
+                    }
                     rejectQueue(
                         `editor warmup timed out after ${Math.floor(currentWarmupTimeout() / 1000)}s; please retry`,
                         warmupDiagnostic('recovering'),
@@ -306,7 +315,13 @@ async function warmupLoop() {
                     // opens the gate: the WS handshake must ALSO be observed.
                     // Degradations bypass: hot reuse (lastSpawnReused) and unreadable
                     // log (!logTailAvailable) — the same seams as 缺陷 A.
+                    // SEE-1338 spec v2.1: a HANDOFF-reused editor (the disk
+                    // said a prior record served this slot; our CLI may
+                    // already be connected) provably bound long ago — bypass
+                    // the milestone gate exactly like hot reuse.
+                    const handoffWarm = process.env.GODOT_MCP_HANDOFF_WARM === '1';
                     const gateOpen = S.lastSpawnReused
+                        || handoffWarm
                         || !S.logTailAvailable
                         || (S.stageTimestamps.SERVER_LISTENING !== null
                             && S.stageTimestamps.WS_HANDSHAKE !== null);
@@ -363,6 +378,18 @@ async function warmupLoop() {
                         // one-shot within a single round still prevents loops.
                         S.graceRaceGuardFired = false;
                         S.pendingHandshake.clear();
+                        // SEE-1338 spec v2.1 §3.3 STATE_TRANSITION: WARM lands on
+                        // disk so a future successor reads a live record (盘上
+                        // 状态 = 决策唯一依据). Fire-and-forget — never blocks.
+                        if (RUNTIME_ID) {
+                            writeRuntimeState(RUNTIME_ID, {
+                                state: 'WARM',
+                                port: SOT_PORT,
+                                warm_at: new Date(now).toISOString(),
+                                heartbeat_at: new Date(now).toISOString(),
+                                last_error: null,
+                            }, { event: 'STATE_TRANSITION', fromState: 'WARMING', detail: 'warm gate opened' });
+                        }
                         stageLog('WARM', `elapsed_ms=${now - (S.spawnStartedAt || S.startedAt)} reused=${S.lastSpawnReused === true}`);
                         // SEE-1110 §2.1: WARM(7) is the final stage, reached exactly here.
                         if (KOL_PROGRESS_PROTOCOL !== 'off') {
