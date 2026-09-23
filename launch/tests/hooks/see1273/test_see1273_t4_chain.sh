@@ -49,7 +49,7 @@ else
   T4_SHIM="$HERE/../../..//godot-mcp-shim.mjs"
 fi
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-# 竞态窗口语义（CLAUDE.md 边界）：sleep 12/8 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
+# 竞态窗口语义（CLAUDE.md 边界）：12s/8s 两段 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
   sleep 12; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
   printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
   | timeout 30 node "$T4_SHIM" > "$TMP/direct.log" 2>&1
@@ -95,7 +95,7 @@ CHAINOUT="$( ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"
 
 # compat shim fallback under T4 shape (old platform path still serves)
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-# 竞态窗口语义（CLAUDE.md 边界）：sleep 12/8 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
+# 竞态窗口语义（CLAUDE.md 边界）：12s/8s 两段 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
   sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
   | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/compat.log" 2>&1
 grep -q '"serverInfo"' "$TMP/compat.log" && ok "compat shim under T4 shape: handshake OK (forward mode)" || bad "compat shim T4-shape handshake failed"
@@ -149,7 +149,7 @@ else
   skip_arm "AC-009 revert drill (T4 pin $T4_COMMIT not reproducible in current KOL history)"
 fi
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-# 竞态窗口语义（CLAUDE.md 边界）：sleep 12/8 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
+# 竞态窗口语义（CLAUDE.md 边界）：12s/8s 两段 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
   sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
   | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/rollback.log" 2>&1
 grep -q '"serverInfo"' "$TMP/rollback.log" && ok "revert: rolled-back state functionally serves handshake (legacy chain)" || bad "revert: rolled-back chain broken"

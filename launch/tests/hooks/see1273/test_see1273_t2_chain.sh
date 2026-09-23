@@ -80,7 +80,7 @@ if [[ -n "$FORKCLI" ]]; then
   git clone -q "$TMP/consumer" "$TMP/consumerB"
   export KOL_PROJECT_GODOT="$TMP/consumerB/project.godot"
   timeout 40 bash addons/godot_mcp/launch/godot-mcp-launcher.sh --port 6574 > "$TMP/chainB.log" 2>&1 &
-  LPID=$!; sleep 25; kill $LPID 2>/dev/null; wait $LPID 2>/dev/null   # 竞态窗口语义（CLAUDE.md 边界）：同上，pipe 会话时长窗=被测场景
+  LPID=$!; sleep 25; kill $LPID 2>/dev/null; wait $LPID 2>/dev/null   # 竞态窗口语义（CLAUDE.md 边界）：同上：25s pipe 会话时长窗=被测场景
   grep -q "stage=FORK_WIRED msg=\"godot-mcp served from owner fork\" cli=$FORKCLI" "$TMP/chainB.log" \
     && ok "form B: GODOT_MCP_FORK_CLI seam wired (FORK_WIRED with env value)" || bad "form B: seam not honored"
   # The resolver logs the CANONICAL env name (GODOT_MCP_GODOT_MCP_CMD) even
@@ -96,7 +96,7 @@ fi
   sleep 12   # 竞态窗口语义（CLAUDE.md 边界）：链路建立窗（同 t3）
   printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
   printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'
-# 竞态窗口语义（CLAUDE.md 边界）：sleep 8 = tools/list 应答留窗，窗长=真实链路应答时长
+# 竞态窗口语义（CLAUDE.md 边界）：8s = tools/list 应答留窗，窗长=真实链路应答时长
   sleep 8 ) | timeout 30 node addons/godot_mcp/launch/godot-mcp-shim.mjs > "$TMP/handshake.log" 2>&1
 grep -q '"serverInfo":{"name":"godot-mcp","version":"kol-proxy-shim-1.0"}' "$TMP/handshake.log" \
   && ok "handshake: initialize returned serverInfo (registration chain intact)" || bad "handshake: no serverInfo"
