@@ -113,7 +113,7 @@ section "T4: late worktree landing — wait succeeds, no connection death"
     printf '{"workspace_id": "%s", "agent_id": "%s"}' "$WSID" "$AGENT" > "$HDIR/.managed_env.json"
     WT="$HDIR/workdir/KingOfLikes-Godot"
     MKR="$(marker_for "$WT")"
-    ( sleep 3; mkdir -p "$WT/launch"; printf x > "$TD/$MKR" ) &
+    ( sleep 3; mkdir -p "$WT/launch"; printf x > "$TD/$MKR" ) &   # 竞态窗口语义（CLAUDE.md 边界）：延迟落 marker 即场景本身（tier1 must WAIT），延迟时长=被测量
     BG=$!
     OUT="$TMP/t4.out"
     ( cd "$H" && env HOME="$H" MULTICA_WORKSPACE_ID="$WSID" MULTICA_AGENT_ID="$AGENT" TMPDIR="$TD" \

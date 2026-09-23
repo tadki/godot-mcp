@@ -134,7 +134,7 @@ if wait_for "$TMPDIR/npx.log" '"id":2' 4000; then
 else
     ko "R1.2: id=2 never reached npx (hold broke the flush)"
 fi
-sleep 0.3
+wait_count "$START_COUNTER" 1 3000   # SEE-1342 D4: wait for the spawn event itself
 SC1=$(count_lines "$START_COUNTER")
 if [[ "$SC1" == "1" ]]; then
     ok "R1.3: start invoked exactly once for the cold spawn (count=$SC1)"
@@ -162,7 +162,7 @@ if [[ -n "$LIS_PID" ]]; then
 else
     ko "R2.1: no mock listener found to kill — test cannot simulate editor death"
 fi
-sleep 0.4   # let the listener die + TCP enter closed/reset
+sleep 0.4   # 竞态窗口语义（CLAUDE.md 边界）：TCP 死亡可见前的窗口本身即被测行为
 
 # R3 — the warm-liveness probe (no tools/call needed) must detect the death and
 # flip the respawn flag. The mock-npx never returns editor_gone, so this log
@@ -191,12 +191,8 @@ else
 fi
 # SEE-1192: same race as defect7 R4.2 — the synchronous respawn hint races the
 # async spawn pipeline; wait deterministically for the counter to reach 2.
-SC2=1
-for _ in $(seq 1 50); do
-    SC2=$(count_lines "$START_COUNTER")
-    [[ "$SC2" == "2" ]] && break
-    sleep 0.1
-done
+wait_count "$START_COUNTER" 2 5000   # SEE-1342 D4: wait for the respawn event itself
+SC2=$(count_lines "$START_COUNTER")
 if [[ "$SC2" == "2" ]]; then
     ok "R4.2: start invoked a SECOND time for the probe-triggered respawn (count=$SC2)"
 else
@@ -209,7 +205,7 @@ else
 fi
 
 # R5 — no-flapping: the respawn round must NOT re-trigger on its own.
-sleep 1.5
+sleep 1.5   # 竞态窗口语义（CLAUDE.md 边界）：必须观察"禁触发窗内无自触发"，窗最小长度 = 代理单轮 cooldown，无法等价事件化
 SC3=$(count_lines "$START_COUNTER")
 if [[ "$SC3" == "2" ]]; then
     ok "R5.1: start count stayed 2 (no self-flapping respawn)"
@@ -236,7 +232,7 @@ if wait_for "$TMPDIR/npx.log" '"id":6' 4000; then
 else
     ko "R6.3: id=6 never reached npx after re-warm"
 fi
-sleep 0.3
+wait_for_stable "$START_COUNTER" 2000   # SEE-1342 D4
 SC4=$(count_lines "$START_COUNTER")
 if [[ "$SC4" == "2" ]]; then
     ok "R6.4: start counter provenance — one spawn per round (cold=1, respawn=2, count=$SC4)"

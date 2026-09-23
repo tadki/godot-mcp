@@ -100,7 +100,7 @@ fi
 
 # Wait long enough that a buggy per-call spawn would have produced extra
 # counter writes (each mock call appends a line). WARM was already awaited above.
-sleep 0.3
+wait_for_stable "$CFG_COUNTER" 2000   # SEE-1342 D4: settle = mtime-stable
 
 CFG_COUNT=$(count_lines "$CFG_COUNTER")
 START_COUNT=$(count_lines "$START_COUNTER")

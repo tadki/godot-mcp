@@ -132,7 +132,7 @@ fi
 stop_proxy
 # Kill the still-listening TCP listener from proxy 1's start mock.
 pkill -f "$LISTENER_SCRIPT" 2>/dev/null || true
-sleep 0.3
+wait_for_stable "$CFG1" 2000   # SEE-1342 D4: counter writes settle
 
 # --- proxy 2: fresh, must walk COLD_EMPTY → spawn → warm ---------------------
 PORT2=$(find_free_port)
@@ -167,7 +167,7 @@ if wait_for "$PROXY_ERR" 'editor spawn launched' 3000; then
 else
     ko "T4.3a: proxy 2 never ran configure+start (COLD_EMPTY path broken)"
 fi
-sleep 0.3
+wait_for_stable "$CFG2" 2000   # SEE-1342 D4
 CFG2_COUNT=$(count_lines "$CFG2")
 START2_COUNT=$(count_lines "$START2")
 if [[ "$CFG2_COUNT" == "1" && "$START2_COUNT" == "1" ]]; then

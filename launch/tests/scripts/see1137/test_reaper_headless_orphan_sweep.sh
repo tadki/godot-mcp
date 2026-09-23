@@ -50,7 +50,7 @@ export KOL_REAP_DISABLE_PWSH=1
 # `exec sleep` would replace the cmdline and fail the *godot* name gate).
 cat > "$FAKE_BIN/godot-fake" <<'EOF'
 #!/usr/bin/env bash
-sleep 600
+sleep 600   # fixture：模拟孤儿进程 keep-alive，非同步等待手段
 EOF
 chmod +x "$FAKE_BIN/godot-fake"
 

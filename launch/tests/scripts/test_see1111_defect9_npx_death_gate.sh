@@ -104,7 +104,7 @@ if wait_for "$TMPDIR/npx.log" '"id":2' 4000; then
 else
     ko "F1.2: id=2 never reached npx (hold broke the flush)"
 fi
-sleep 0.3
+wait_for_stable "$START_COUNTER" 2000   # SEE-1342 D4
 SC1=$(count_lines "$START_COUNTER")
 if [[ "$SC1" == "1" ]]; then
     ok "F1.3: start invoked exactly once for the cold spawn (count=$SC1)"
@@ -142,7 +142,7 @@ fi
 # appear in npx.log now (a forward would be dropped by the dead child — and a
 # drop is precisely the "first call timeout" defect).
 send_line "$(call_line 4)"
-sleep 0.5
+sleep 0.5   # 竞态窗口语义（CLAUDE.md 边界）：断言"重启窗内 id=4 绝不前转"，负向断言须窗已过，窗本身即缺陷 #9 的被测行为
 if grep -q '"id":4' "$TMPDIR/npx.log" 2>/dev/null; then
     ko "F3: id=4 forwarded to a dead npx transport (缺陷 #9: drop → client timeout)"
 else

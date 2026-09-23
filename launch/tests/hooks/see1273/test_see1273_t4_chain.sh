@@ -49,6 +49,7 @@ else
   T4_SHIM="$HERE/../../..//godot-mcp-shim.mjs"
 fi
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
+# 竞态窗口语义（CLAUDE.md 边界）：sleep 12/8 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
   sleep 12; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
   printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
   | timeout 30 node "$T4_SHIM" > "$TMP/direct.log" 2>&1
@@ -77,7 +78,7 @@ printf 'config_version=5\n\n[application]\nconfig/name="T4QAConsumer"\nconfig/fe
 export KOL_PROJECT_GODOT="$TMP/consumer/project.godot"
 unset GODOT_MCP_FORK_CLI GODOT_MCP_SHARED_MASTER KOL_SHARED_MASTER
 timeout 45 bash addons/godot_mcp/launch/godot-mcp-launcher.sh --port 6582 > "$TMP/chain.log" 2>&1 &
-LPID=$!; sleep 25; kill $LPID 2>/dev/null; wait $LPID 2>/dev/null
+LPID=$!; sleep 25; kill $LPID 2>/dev/null; wait $LPID 2>/dev/null   # 竞态窗口语义（CLAUDE.md 边界）：pipe 会话时长窗=被测场景
 grep -q 'stage=LAUNCHER_EXEC' "$TMP/chain.log" && ok "T4 chain: submodule launcher executed (LAUNCHER_EXEC)" || bad "T4 chain: launcher did not start"
 if grep -q 'launching godot-mcp via node' "$TMP/chain.log"; then
   ok "T4 chain: proxy spawned CLI"
@@ -94,6 +95,7 @@ CHAINOUT="$( ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"
 
 # compat shim fallback under T4 shape (old platform path still serves)
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
+# 竞态窗口语义（CLAUDE.md 边界）：sleep 12/8 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
   sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
   | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/compat.log" 2>&1
 grep -q '"serverInfo"' "$TMP/compat.log" && ok "compat shim under T4 shape: handshake OK (forward mode)" || bad "compat shim T4-shape handshake failed"
@@ -147,6 +149,7 @@ else
   skip_arm "AC-009 revert drill (T4 pin $T4_COMMIT not reproducible in current KOL history)"
 fi
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
+# 竞态窗口语义（CLAUDE.md 边界）：sleep 12/8 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
   sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
   | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/rollback.log" 2>&1
 grep -q '"serverInfo"' "$TMP/rollback.log" && ok "revert: rolled-back state functionally serves handshake (legacy chain)" || bad "revert: rolled-back chain broken"

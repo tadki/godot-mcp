@@ -48,7 +48,7 @@ mkdir -p "$SBOX/ws"          # empty workspace root — no lease sidecars
 REG="$SBOX/registry.json"
 
 # A live NON-node process for the PID-reuse case.
-sleep 120 &
+sleep 120 &   # fixture：模拟存活孤儿进程的 keep-alive，非同步等待手段
 SLEEP_PID=$!
 
 # run_reaper <dry_run:0|1> — invokes the real reaper against the sandbox

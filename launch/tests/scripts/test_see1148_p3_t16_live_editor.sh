@@ -144,8 +144,8 @@ if [[ "${KOL_LIVE_EDITOR_E2E:-0}" == "1" ]]; then
         "$EDITOR_BIN" --editor --path "$WT" --kol-mcp-lease --kol-mcp-runtime "$LIVE_RID" >"$LOG" 2>&1 &
         LIVE_EDITOR_PID=$!
         BOUND=""
-        for _ in $(seq 1 45); do
-            sleep 1
+        for _ in $(seq 1 180); do
+            sleep 0.25
             if command -v ss >/dev/null 2>&1 && ss -H -tln 2>/dev/null | grep -qE ":${LIVE_PORT}\b"; then
                 BOUND="$LIVE_PORT"; break
             fi
