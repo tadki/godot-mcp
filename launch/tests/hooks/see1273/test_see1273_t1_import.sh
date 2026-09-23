@@ -13,7 +13,7 @@ set -euo pipefail
 FORK_URL="https://github.com/tadki/godot-mcp.git"
 EXPECTED_MAIN="${EXPECTED_MAIN:-$(git ls-remote "$FORK_URL" refs/heads/main | awk '{print $1}')}"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap 'rm -rf "$TMP" 2>/dev/null || true' EXIT   # SEE-1342 §SPEC-106: godot import cache dirs can carry read-only bits (WSL) — cleanup failure must not mask the PASS verdict
 
 git init -q "$TMP/consumer" && cd "$TMP/consumer" && git checkout -q -b master
 # CI runners may lack a git identity — the commit at the next line needs one.

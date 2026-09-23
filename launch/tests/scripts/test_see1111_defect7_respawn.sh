@@ -281,7 +281,7 @@ if wait_for "$TMPDIR/npx.log" '"id":6' 4000; then
 else
     ko "R6.3: id=6 never reached npx after re-warm"
 fi
-sleep 0.3
+wait_for_stable "$START_COUNTER" 2000   # SEE-1342 §SPEC-107: settle = mtime-stable
 SC4=$(count_lines "$START_COUNTER")
 if [[ "$SC4" == "2" ]]; then
     ok "R6.4: start counter provenance — exactly one spawn per round (cold=1, respawn=2, count=$SC4)"

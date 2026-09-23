@@ -28,6 +28,13 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHIM_SRC="${SHIM_SRC:-$HERE/../../../godot-mcp-shim.mjs}"
 [[ -f "$SHIM_SRC" ]] || { echo "FAIL: fork shim missing at $SHIM_SRC (see1273 harness cannot run)"; exit 1; }
 TMP="$(mktemp -d)"
+# SEE-1342 §SPEC-106 (red root-cause fix): the direct-shim sessions below resolve
+# REPO_ROOT up to the KOL checkout (project.godot + kol-mcp.env → KOL signature),
+# so config-validate hard-fails a bare-HOME run (HOME_HEALTH_UNSAFE, rc=2 — the
+# shim dies before serving, AC-005 reds). Inject a hermetic HOME with a legal
+# GODOT_MCP_HOME under it (same shape the shim unit tests use).
+SHIM_HOME="$TMP/shim-home"
+mkdir -p "$SHIM_HOME/.multica"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "  ok: $1"; }
 bad() { FAIL=$((FAIL+1)); echo "  FAIL: $1"; }
@@ -44,7 +51,7 @@ trap cleanup EXIT
   sleep 12; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'   # 竞态窗口语义（CLAUDE.md 边界）：初始化前留链路建立窗，窗长=真实 shim 链建立时长（≥10s 观测），stdin pacing 场景
   # 竞态窗口语义（CLAUDE.md 边界）：8s = tools/list 应答留窗，窗长=真实链路应答时长
   printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
-  | timeout 30 node "$SHIM_SRC" > "$TMP/legacy.log" 2>&1
+  | env HOME="$SHIM_HOME" GODOT_MCP_HOME="$SHIM_HOME/.multica" timeout 30 node "$SHIM_SRC" > "$TMP/legacy.log" 2>&1
 [[ "$(grep -c 'DEPRECATED' "$TMP/legacy.log")" -eq 0 ]] && ok "AC-005: 0 DEPRECATED (fork shim terminal state)" || bad "AC-005: unexpected DEPRECATED in fork shim"
 grep -q '"serverInfo":{"name":"godot-mcp","version":"kol-proxy-shim-1.0"}' "$TMP/legacy.log" \
   && ok "AC-005: handshake serverInfo via fork shim" || bad "AC-005: handshake failed"

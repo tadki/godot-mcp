@@ -70,6 +70,28 @@ function waitFor(proc, pred, timeoutMs = 5000) {
     });
 }
 
+// SEE-1342 §SPEC-108 (shim flake root cause): the shim writes its stdout
+// answer BEFORE the SHIM_ANSWER_* stderr log line (godot-mcp-shim.mjs
+// answerInitialize/answerToolsList order). Under machine load the stderr
+// readline 'line' event lags the stdout event by tens of ms, so an INSTANT
+// proc.errLines.some() check right after the stdout answer races the pipe
+// delivery (observed: 2/6 standalone reds on fc5d3ac under load, 10x green
+// pristine idle). This evented waiter subscribes to the stderr event itself
+// with a bounded budget — the assertion object and pass condition are
+// unchanged, only the observation is synchronized.
+function waitForErr(proc, pred, timeoutMs = 2000) {
+    const t0 = Date.now();
+    return new Promise((resolve, reject) => {
+        const tick = () => {
+            const found = proc.errLines.find(pred);
+            if (found) return resolve(found);
+            if (Date.now() - t0 > timeoutMs) return reject(new Error('waitForErr timeout'));
+            setTimeout(tick, 20);
+        };
+        tick();
+    });
+}
+
 // Wait for the shim to be logically ready: SHIM_START has been logged AND the
 // background chain spawn attempt has been logged (spawn-skipped is fine — the
 // launcher may not exist from a hostile cwd).
@@ -96,7 +118,7 @@ section('initialize echo + latency');
     ok('serverInfo.version carries shim marker', resp.result.serverInfo.version === 'kol-proxy-shim-1.0');
     ok('capabilities.tools.listChanged declared', resp.result.capabilities?.tools?.listChanged === true);
     ok('initialize answered <1s (AC-2 unit bound)', elapsed < 1000, `${elapsed}ms`);
-    ok('SHIM_ANSWER_INIT logged with elapsed_ms', proc.errLines.some((l) => /SHIM_ANSWER_INIT elapsed_ms=\d+ protocol=2025-06-18/.test(l)));
+    ok('SHIM_ANSWER_INIT logged with elapsed_ms', !!(await waitForErr(proc, (l) => /SHIM_ANSWER_INIT elapsed_ms=\d+ protocol=2025-06-18/.test(l)).catch(() => null)));
 
     // protocolVersion fallback when client omits it
     send(proc, { jsonrpc: '2.0', id: 2, method: 'initialize', params: {} });
@@ -118,7 +140,7 @@ section('tools/list: cache miss → placeholder');
     ok('cache miss returns non-empty tools', Array.isArray(resp.result.tools) && resp.result.tools.length > 0, `n=${resp.result.tools?.length}`);
     ok('placeholder tools carry godot_ui_inspect (§5骨架含 proxy 工具)', resp.result.tools.some((t) => t.name === 'godot_ui_inspect'));
     ok('placeholder description self-describes', resp.result.tools[0].description.includes('[godot-mcp placeholder]'));
-    ok('SHIM_ANSWER_TOOLS source=placeholder logged', proc.errLines.some((l) => /SHIM_ANSWER_TOOLS source=placeholder /.test(l)));
+    ok('SHIM_ANSWER_TOOLS source=placeholder logged', !!(await waitForErr(proc, (l) => /SHIM_ANSWER_TOOLS source=placeholder /.test(l)).catch(() => null)));
     proc.stdin.end();
     await new Promise((r) => proc.on('exit', r));
 }
@@ -143,8 +165,8 @@ section('tools/list: cache hit');
     const line = await waitFor(proc, (l) => l.includes('"id":11') && l.includes('tools'));
     const resp = JSON.parse(line);
     ok('cache hit returns cached list verbatim', JSON.stringify(resp.result.tools) === JSON.stringify(cacheTools));
-    ok('SHIM_ANSWER_TOOLS source=cache logged', proc.errLines.some((l) => /SHIM_ANSWER_TOOLS source=cache tools=2/.test(l)));
-    ok('cache_age_s reported as number', proc.errLines.some((l) => /SHIM_ANSWER_TOOLS source=cache tools=2 cache_age_s=\d+/.test(l)));
+    ok('SHIM_ANSWER_TOOLS source=cache logged', !!(await waitForErr(proc, (l) => /SHIM_ANSWER_TOOLS source=cache tools=2/.test(l)).catch(() => null)));
+    ok('cache_age_s reported as number', !!(await waitForErr(proc, (l) => /SHIM_ANSWER_TOOLS source=cache tools=2 cache_age_s=\d+/.test(l)).catch(() => null)));
     proc.stdin.end();
     await new Promise((r) => proc.on('exit', r));
 }
@@ -159,8 +181,8 @@ section('tools/list: corrupt cache → placeholder fallback (D5)');
     const line = await waitFor(proc, (l) => l.includes('"id":12') && l.includes('tools'));
     const resp = JSON.parse(line);
     ok('corrupt cache falls back to non-empty placeholder', Array.isArray(resp.result.tools) && resp.result.tools.length > 0);
-    ok('corruption warned on stderr', proc.errLines.some((l) => l.includes('SHIM_CACHE_WARN') && l.includes('reason=corrupt')));
-    ok('placeholder source logged after corrupt cache', proc.errLines.some((l) => /SHIM_ANSWER_TOOLS source=placeholder/.test(l)));
+    ok('corruption warned on stderr', !!(await waitForErr(proc, (l) => l.includes('SHIM_CACHE_WARN') && l.includes('reason=corrupt')).catch(() => null)));
+    ok('placeholder source logged after corrupt cache', !!(await waitForErr(proc, (l) => /SHIM_ANSWER_TOOLS source=placeholder/.test(l)).catch(() => null)));
     proc.stdin.end();
     await new Promise((r) => proc.on('exit', r));
 }
@@ -177,7 +199,7 @@ section('ping + invalid JSON resilience');
     proc.stdin.write('{"jsonrpc":"2.0","id":21,"method":"ping"}\n');
     const l21 = await waitFor(proc, (l) => l.includes('"id":21'));
     ok('shim survives invalid JSON line and answers next request', JSON.parse(l21).id === 21);
-    ok('WARNING logged for invalid line', proc.errLines.some((l) => l.includes('WARNING') && l.includes('invalid JSON')));
+    ok('WARNING logged for invalid line', !!(await waitForErr(proc, (l) => l.includes('WARNING') && l.includes('invalid JSON')).catch(() => null)));
     proc.stdin.end();
     await new Promise((r) => proc.on('exit', r));
 }
