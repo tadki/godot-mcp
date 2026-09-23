@@ -51,7 +51,7 @@ function heldRuntimeDirFor(runtimeId) {
 // ---- held-runtime logical lock (spec §2.3/§3.2) ---------------------------------
 // Arbitrates "who manages THIS runtime's editor" — separate layer from the
 // per-port PHYSICAL lock (held-port). mkdir is the atomic primitive (B-6).
-// staleness: a lock older than staleMs whose owner pid is dead is stealable.
+// staleness: a lock whose recorded owner pid is dead is stealable.
 //
 // SEE-1338 P1 QA 缺陷 #1 (HIGH, Revy 复测): this was `async` with no await —
 // the startup handoff call site read `lock.locked` off the raw Promise
@@ -61,23 +61,31 @@ function heldRuntimeDirFor(runtimeId) {
 // site. Fixed by making it SYNCHRONOUS (all IO below is sync fs) — an async
 // signature can no longer lie to future call sites.
 
-export function acquireRuntimeLock(runtimeId, { staleMs = 10 * 60 * 1000, ownerPid = process.pid } = {}) {
-    const dir = heldRuntimeDirFor(runtimeId);
-    // mkdir {recursive:true} never throws EEXIST — the contention probe is an
-    // explicit existsSync + owner check (recursive mkdir succeeded silently
-    // for a live holder, so a second acquirer was never excluded).
-    if (existsSync(dir)) {
-        try {
-            const owner = Number(readFileSync(path.join(dir, 'owner'), 'utf-8').trim());
-            if (Number.isInteger(owner) && owner > 0 && owner !== ownerPid && !pidAlive(owner)) {
-                rmSync(dir, { recursive: true, force: true });
-            } else if (owner !== ownerPid) {
-                return { locked: false, holder: Number.isInteger(owner) ? owner : null };
-            }
-        } catch {
-            return { locked: false, holder: null };
+function resolveLockContention(dir, ownerPid) {
+    // Returns null when the lock is free (or stolen from a dead owner);
+    // otherwise a rejection result for the live holder. mkdir {recursive:true}
+    // never throws EEXIST — the contention probe is this explicit existsSync
+    // + owner check (a live holder was previously never excluded).
+    if (!existsSync(dir)) return null;
+    try {
+        const owner = Number(readFileSync(path.join(dir, 'owner'), 'utf-8').trim());
+        if (Number.isInteger(owner) && owner > 0 && owner !== ownerPid && !pidAlive(owner)) {
+            rmSync(dir, { recursive: true, force: true });
+            return null;
         }
+        if (owner !== ownerPid) {
+            return { locked: false, holder: Number.isInteger(owner) ? owner : null };
+        }
+        return null;
+    } catch {
+        return { locked: false, holder: null };
     }
+}
+
+export function acquireRuntimeLock(runtimeId, { ownerPid = process.pid } = {}) {
+    const dir = heldRuntimeDirFor(runtimeId);
+    const contention = resolveLockContention(dir, ownerPid);
+    if (contention) return contention;
     try {
         mkdirSync(dir, { recursive: true });
     } catch {
@@ -118,12 +126,23 @@ function pidAlive(pid) {
 // readRuntimeState(runtimeId) → { ok, state, reason? }. Parse failure /
 // schema mismatch / unknown state name → { ok:false } = "no state" (cold
 // start); never throws (spec §3.4 读侧防御).
+function validateStateDoc(o) {
+    if (!o || typeof o !== 'object') return { ok: false, reason: 'not-object' };
+    const sv = Number(o.schema_version);
+    if (sv !== STATE_SCHEMA_VERSION) {
+        return { ok: false, reason: 'schema-mismatch', schema_version: sv };
+    }
+    if (!VALID_STATES.has(o.state)) {
+        return { ok: false, reason: 'unknown-state', state: String(o.state) };
+    }
+    return null;
+}
+
 export function readRuntimeState(runtimeId) {
     if (!runtimeId) return { ok: false, reason: 'no-runtime-id' };
-    const p = statePathFor(runtimeId);
     let raw;
     try {
-        raw = readFileSync(p, 'utf-8');
+        raw = readFileSync(statePathFor(runtimeId), 'utf-8');
     } catch (e) {
         return { ok: false, reason: e && e.code === 'ENOENT' ? 'no-file' : 'unreadable' };
     }
@@ -133,15 +152,7 @@ export function readRuntimeState(runtimeId) {
     } catch (e) {
         return { ok: false, reason: 'unparseable', error: e && e.message };
     }
-    if (!o || typeof o !== 'object') return { ok: false, reason: 'not-object' };
-    const sv = Number(o.schema_version);
-    if (sv !== STATE_SCHEMA_VERSION) {
-        return { ok: false, reason: 'schema-mismatch', schema_version: sv };
-    }
-    if (!VALID_STATES.has(o.state)) {
-        return { ok: false, reason: 'unknown-state', state: String(o.state) };
-    }
-    return { ok: true, state: o };
+    return validateStateDoc(o) || { ok: true, state: o };
 }
 
 // ---- write ----------------------------------------------------------------------
@@ -151,17 +162,17 @@ export function readRuntimeState(runtimeId) {
 // held-runtime lock), bump updated_at, tmp + fsync + atomic rename. Returns
 // the merged doc. Fire-and-forget by contract: a write failure is logged by
 // the caller but must never block the allocation path.
-export function writeRuntimeState(runtimeId, patch = {}, { event = null, fromState = null, detail = '' } = {}) {
-    if (!runtimeId) return null;
-    const dir = stateDir();
+
+function readStateDocOrEmpty(runtimeId) {
     try {
-        mkdirSync(dir, { recursive: true });
-    } catch { /* exists */ }
-    let doc = {};
-    try {
-        doc = JSON.parse(readFileSync(statePathFor(runtimeId), 'utf-8'));
-    } catch { /* fresh */ }
-    const prev = doc.state || null;
+        const doc = JSON.parse(readFileSync(statePathFor(runtimeId), 'utf-8'));
+        return { doc, prev: doc.state || null };
+    } catch {
+        return { doc: {}, prev: null };
+    }
+}
+
+function mergeStateDoc(doc, patch) {
     const merged = Object.assign({}, doc, patch, {
         schema_version: STATE_SCHEMA_VERSION,
         updated_at: new Date().toISOString(),
@@ -169,8 +180,11 @@ export function writeRuntimeState(runtimeId, patch = {}, { event = null, fromSta
     for (const k of Object.keys(merged)) {
         if (merged[k] === undefined) delete merged[k];
     }
-    const tmp = `${statePathFor(runtimeId)}.tmp.${process.pid}`;
-    const payload = JSON.stringify(merged, null, 2) + '\n';
+    return merged;
+}
+
+function atomicWriteJson(pathName, payload) {
+    const tmp = `${pathName}.tmp.${process.pid}`;
     const fd = openSync(tmp, 'w');
     try {
         writeFileSync(fd, payload, 'utf8');
@@ -181,11 +195,26 @@ export function writeRuntimeState(runtimeId, patch = {}, { event = null, fromSta
     } finally {
         closeSync(fd);
     }
-    renameSync(tmp, statePathFor(runtimeId));
-    if (event) {
-        appendEvent(runtimeId, { event, from_state: fromState || prev, to_state: merged.state || null, detail });
-    }
+    renameSync(tmp, pathName);
+}
+
+export function writeRuntimeState(runtimeId, patch = {}, { event = null, fromState = null, detail = '' } = {}) {
+    if (!runtimeId) return null;
+    try { mkdirSync(stateDir(), { recursive: true }); } catch { /* exists */ }
+    const { doc, prev } = readStateDocOrEmpty(runtimeId);
+    const merged = mergeStateDoc(doc, patch);
+    atomicWriteJson(statePathFor(runtimeId), JSON.stringify(merged, null, 2) + '\n');
+    if (event) appendStateEvent(runtimeId, { event, fromState, prev, toState: merged.state, detail });
     return merged;
+}
+
+function appendStateEvent(runtimeId, { event, fromState, prev, toState, detail }) {
+    appendEvent(runtimeId, {
+        event,
+        from_state: fromState || prev,
+        to_state: toState || null,
+        detail,
+    });
 }
 
 // appendEvent(runtimeId, {event, from_state, to_state, detail}): audit-only

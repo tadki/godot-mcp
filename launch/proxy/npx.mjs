@@ -11,7 +11,7 @@ import {
     NPX_RESTART_BACKOFF_MS, TAKEOVER_RETRY_MS, TAKEOVER_TIMEOUT_MS,
 } from './config.mjs';
 import { log, stageLog } from './log.mjs';
-import { flushNpxWriteBuffer, forwardToNpx, replayHandshake } from './protocol.mjs';
+import { flushNpxWriteBuffer, replayHandshake } from './protocol.mjs';
 import { markNpxTransportReady, rejectQueue } from './router.mjs';
 import {
     maybeRefreshToolsCache, patchToolsList, resolveToolsCacheRefresh, writeToolsCache,

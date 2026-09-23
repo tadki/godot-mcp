@@ -26,12 +26,8 @@ import {
 import { decideReuse } from '../see1129-reuse-predicate.mjs';
 import { decideSidecarGuard } from '../see1129-sidecar-guard-predicate.mjs';
 import { maybeEvictStaleHeld } from './stale-proxy.mjs';
-import { writeRuntimeState, readRuntimeState, heartbeatFresh } from './state-file.mjs';
+import { writeRuntimeState, readRuntimeState } from './state-file.mjs';
 import { decideReuseSingleSource } from '../see1338-handoff.mjs';
-
-// SEE-1338 P1: heartbeat freshness window for the reuse-lane single-source
-// decision (spec §4.2 same as the handoff tree's 10min default).
-const HANDOFF_HEARTBEAT_MAX_MS = 10 * 60 * 1000;
 
 // Extract + verify the holder proxy record from a .state doc (triple check:
 // kill-0 + /proc exe node + started_at). Returns { pid, alive }.
@@ -335,7 +331,6 @@ async function ensureEditor(t0) {
                     holderWorktree: st.worktree || '',
                     ourWorktree: ourWorktree || '',
                     samePort: String(st.port || '') === String(GODOT_PORT),
-                    heartbeatFresh: heartbeatFresh(st, { maxAgeMs: HANDOFF_HEARTBEAT_MAX_MS }),
                 });
                 stageLog('SINGLE_SOURCE_REUSE', `action=${reuse.action} reason=${reuse.reason}`);
                 if (reuse.action === 'handoff_reuse') {

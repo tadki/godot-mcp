@@ -175,7 +175,6 @@ function readToolsCache() {
 }
 
 // --- state ---------------------------------------------------------------------
-let initAnswered = false;
 let handedOff = false;
 let chainSpawned = false;      // a chain exists (alive OR mid-backoff respawn pending)
 let chainProc = null;
@@ -224,7 +223,6 @@ function answerInitialize(msg) {
             serverInfo: { name: 'godot-mcp', version: 'kol-proxy-shim-1.0' },
         },
     })}\n`);
-    initAnswered = true;
     log('SHIM_ANSWER_INIT', `elapsed_ms=${Date.now() - START_MS} protocol=${requested}`);
     // §3.5 observation-only refresh timer; handoff clears it.
     if (!refreshTimer) {

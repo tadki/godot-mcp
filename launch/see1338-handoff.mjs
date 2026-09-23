@@ -22,25 +22,43 @@
 //                     connect receipt; connect = HANDOFF adopt, fail = clean
 //   editor_gone     — holder identity unreadable → fail-closed, no evict
 //                     (§SPEC-007); caller surfaces a retryable diagnostic
-export function decideHandoffAction({ disk, holderProxy = null, nowMs = Date.now(), opts = {} } = {}) {
-    const { heartbeatMaxAgeMs = 10 * 60 * 1000 } = opts;
-    const st = disk && disk.ok ? disk.state : null;
-    if (!st) return { action: 'cold_start', reason: `NO_STATE:${disk ? disk.reason : 'no-input'}` };
+export function decideHandoffAction(input = {}) {
+    const { heartbeatMaxAgeMs = 10 * 60 * 1000 } = input.opts || {};
+    const st = handoffState(input.disk);
+    if (!st) return coldStart(`NO_STATE:${diskReason(input.disk)}`);
+    const ctx = handoffCtx(st, input.holderProxy, input.nowMs, heartbeatMaxAgeMs);
+    return (HANDOFF_DISPATCH[ctx.stName] || decideUnknown)(ctx);
+}
 
-    const stName = String(st.state || '');
-    const proxyAlive = isProxyAlive(holderProxy);
+function handoffState(disk) {
+    return disk && disk.ok ? disk.state : null;
+}
 
-    if (stName === 'FAILED_CLEAN') return { action: 'cold_start', reason: 'FAILED_CLEAN_REENTRANT' };
+function diskReason(disk) {
+    return disk ? disk.reason : 'no-input';
+}
 
-    const fresh = heartbeatFreshPure(st.heartbeat_at, nowMs, heartbeatMaxAgeMs);
+function coldStart(reason) {
+    return { action: 'cold_start', reason };
+}
 
-    if (stName === 'WARM') {
-        return decideWarm({ fresh, proxyAlive });
-    }
-    if (stName === 'WARMING' || stName === 'RECOVERING') {
-        return decideInFlight({ stName, fresh, proxyAlive });
-    }
-    if (stName === 'COLD') return { action: 'cold_start', reason: 'COLD_RECORD' };
+function handoffCtx(st, holderProxy, nowMs, heartbeatMaxAgeMs) {
+    return {
+        stName: String(st.state || ''),
+        fresh: heartbeatFreshPure(st.heartbeat_at, nowMs, heartbeatMaxAgeMs),
+        proxyAlive: isProxyAlive(holderProxy),
+    };
+}
+
+const HANDOFF_DISPATCH = {
+    WARM: decideWarm,
+    WARMING: decideInFlight,
+    RECOVERING: decideInFlight,
+    FAILED_CLEAN: () => ({ action: 'cold_start', reason: 'FAILED_CLEAN_REENTRANT' }),
+    COLD: () => ({ action: 'cold_start', reason: 'COLD_RECORD' }),
+};
+
+function decideUnknown({ stName }) {
     return { action: 'cold_start', reason: `UNKNOWN_STATE:${stName}` };
 }
 
@@ -61,41 +79,52 @@ function isProxyAlive(holderProxy) {
 //   cold_start     — record says the chain is broken (dead holder on a
 //                    mismatched worktree / FAILED_CLEAN / stale dead record):
 //                    legacy cleanup lane owns physical attribution
-export function decideReuseSingleSource({ state = '', holderProxyAlive = false, holderWorktree = '', ourWorktree = '', samePort = true, heartbeatFresh = false }) {
+const WT_MATCH_PREFIXES = { WARM: 'WARM_DEAD_HOLDER', WARMING: 'WARMING_DEAD_HOLDER', RECOVERING: 'RECOVERING_DEAD_HOLDER' };
+
+export function decideReuseSingleSource({ state = '', holderProxyAlive = false, holderWorktree = '', ourWorktree = '', samePort = true }) {
     if (!samePort) return { action: 'cold_start', reason: 'PORT_MISMATCH_RECORD' };
-    const wtMatch = !!holderWorktree && !!ourWorktree
+    if (state === 'FAILED_CLEAN') return { action: 'cold_start', reason: 'FAILED_CLEAN_REENTRANT' };
+    if (!(state in WT_MATCH_PREFIXES)) return { action: 'cold_start', reason: `RECORD_STATE:${state}` };
+    return decideReuseByLane({ state, holderProxyAlive, holderWorktree, ourWorktree });
+}
+
+function decideReuseByLane({ state, holderProxyAlive, holderWorktree, ourWorktree }) {
+    if (state === 'WARM' && holderProxyAlive) {
+        return { action: 'editor_busy', reason: 'HOLDER_PROXY_ALIVE_AMEND1' };
+    }
+    if (worktreeServes(ourWorktree, holderWorktree)) {
+        return { action: 'handoff_reuse', reason: `${WT_MATCH_PREFIXES[state]}_WORKTREE_MATCH` };
+    }
+    // 形态 B corpse: the chain died halfway; a worktree match means the editor
+    // may already be warm → adopt via connect receipt. No match → legacy
+    // cleanup lane owns physical attribution.
+    return { action: 'cold_start', reason: `${WT_MATCH_PREFIXES[state]}_WORKTREE_MISMATCH` };
+}
+
+// worktreeServes(ourWorktree, holderWorktree): the holder record provably
+// serves this slot (equal or our slot nested under the holder root).
+function worktreeServes(ourWorktree, holderWorktree) {
+    return !!holderWorktree && !!ourWorktree
         && (holderWorktree === ourWorktree
             || holderWorktree.startsWith(ourWorktree + '/')
             || ourWorktree.startsWith(holderWorktree + '/'));
-    if (state === 'WARM') {
-        if (holderProxyAlive) return { action: 'editor_busy', reason: 'HOLDER_PROXY_ALIVE_AMEND1' };
-        if (wtMatch) return { action: 'handoff_reuse', reason: 'WARM_DEAD_HOLDER_WORKTREE_MATCH' };
-        return { action: 'cold_start', reason: 'WARM_DEAD_HOLDER_WORKTREE_MISMATCH' };
-    }
-    if (state === 'WARMING' || state === 'RECOVERING') {
-        // 形态 B corpse: the chain died halfway; if the record serves our
-        // worktree the editor may already be warm → adopt via connect receipt.
-        if (wtMatch) return { action: 'handoff_reuse', reason: `${state}_DEAD_HOLDER_WORKTREE_MATCH` };
-        return { action: 'cold_start', reason: `${state}_DEAD_HOLDER_WORKTREE_MISMATCH` };
-    }
-    if (state === 'FAILED_CLEAN') return { action: 'cold_start', reason: 'FAILED_CLEAN_REENTRANT' };
-    return { action: 'cold_start', reason: `RECORD_STATE:${state}` };
 }
 
 function decideWarm({ fresh, proxyAlive }) {
     if (fresh) {
-        if (proxyAlive) return { action: 'handoff_warm', reason: 'WARM_FRESH_LIVE_PROXY' };
-        return { action: 'reclaim_dead', reason: 'WARM_FRESH_PROXY_DEAD' };
+        return proxyAlive
+            ? { action: 'handoff_warm', reason: 'WARM_FRESH_LIVE_PROXY' }
+            : { action: 'reclaim_dead', reason: 'WARM_FRESH_PROXY_DEAD' };
     }
-    if (proxyAlive) return { action: 'editor_busy', reason: 'WARM_STALE_LIVE_PROXY_AMEND1' };
-    return { action: 'reclaim_dead', reason: 'WARM_STALE_PROXY_DEAD' };
+    return proxyAlive
+        ? { action: 'editor_busy', reason: 'WARM_STALE_LIVE_PROXY_AMEND1' }
+        : { action: 'reclaim_dead', reason: 'WARM_STALE_PROXY_DEAD' };
 }
 
 function decideInFlight({ stName, fresh, proxyAlive }) {
-    if (proxyAlive && fresh) {
-        return { action: 'join_wait', reason: `${stName}_LIVE_PROXY_JOIN` };
-    }
-    return { action: 'reclaim_dead', reason: `${stName}_PROXY_DEAD` };
+    return (proxyAlive && fresh)
+        ? { action: 'join_wait', reason: `${stName}_LIVE_PROXY_JOIN` }
+        : { action: 'reclaim_dead', reason: `${stName}_PROXY_DEAD` };
 }
 
 function heartbeatFreshPure(heartbeatAt, nowMs, maxAgeMs) {
