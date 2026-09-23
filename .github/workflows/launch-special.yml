@@ -161,6 +161,11 @@ jobs:
             launch/tests/scripts/test_see990_mcp_ready_gate.sh \
             launch/tests/scripts/test_see1117_live_sidecar_e2e.sh \
             launch/tests/scripts/test_see1148_p3_reclaim.sh \
+            launch/tests/hooks/see1273/test_see1273_t1_import.sh \
+            launch/tests/hooks/see1273/test_see1273_t1_tree_consistency.sh \
+            launch/tests/hooks/see1273/test_see1273_t2_chain.sh \
+            launch/tests/hooks/see1273/test_see1273_t3_chain.sh \
+            launch/tests/hooks/see1273/test_see1273_t4_chain.sh \
             launch/tests/hooks/test_see1091_reconfigure_after_stop_converges.sh \
             launch/tests/hooks/test_see1070_stop_hook_projectgodot_isolation.sh \
             launch/tests/hooks/test_see1111_stop_hook_sanitizes_master.sh \

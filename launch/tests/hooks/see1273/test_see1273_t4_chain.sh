@@ -33,6 +33,9 @@ SHIM_SRC="${SHIM_SRC:-$HERE/../../../godot-mcp-shim.mjs}"
 [[ -f "$SHIM_SRC" ]] || { echo "FAIL: fork shim missing at $SHIM_SRC (see1273 harness cannot run)"; exit 1; }
 skip_arm() { echo "  SKIP: $* (archive-only)"; }
 TMP="$(mktemp -d)"
+# SEE-1342 §SPEC-106: hermetic HOME for the direct-shim session (KOL signature → bare-HOME is HOME_HEALTH_UNSAFE → shim dies before serving)
+SHIM_HOME="$TMP/shim-home"
+mkdir -p "$SHIM_HOME/.multica"
 trap 'rm -rf "$TMP"' EXIT
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "  ok: $1"; }
@@ -52,7 +55,7 @@ fi
 # 竞态窗口语义（CLAUDE.md 边界）：12s/8s 两段 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
   sleep 12; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
   printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
-  | timeout 30 node "$T4_SHIM" > "$TMP/direct.log" 2>&1
+  | env HOME="$SHIM_HOME" GODOT_MCP_HOME="$SHIM_HOME/.multica" timeout 30 node "$T4_SHIM" > "$TMP/direct.log" 2>&1
 grep -q '"serverInfo":{"name":"godot-mcp","version":"kol-proxy-shim-1.0"}' "$TMP/direct.log" \
   && ok "T4-shape handshake via repoint path" || bad "T4-shape handshake failed"
 [[ "$(grep -c 'DEPRECATED' "$TMP/direct.log")" -eq 0 ]] && ok "T4-shape: 0 DEPRECATED" || bad "T4-shape: DEPRECATED emitted"

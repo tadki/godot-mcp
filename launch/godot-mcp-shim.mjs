@@ -202,6 +202,7 @@ let rechainAttempts = 0;
 let rechainTimer = null;
 let chainState = 'proxy_warming';
 let chainMissing = false;      // launcher_missing: chain_exhausted is TERMINAL (mutual exclusion with rechain)
+let exiting = false;           // EOF teardown latch: suppresses rechain on the deliberate-exit path (SEE-1342 §SPEC-108)
 const RECHAIN_BACKOFF_MS = [10000, 20000];
 const RECHAIN_MAX = parseInt(process.env.GODOT_MCP_SHIM_RECHAIN_MAX || process.env.KOL_SHIM_RECHAIN_MAX || '2', 10);
 const REFRESH_MS = parseInt(process.env.GODOT_MCP_SHIM_REFRESH_MS || process.env.KOL_SHIM_REFRESH_MS || '30000', 10);
@@ -310,6 +311,7 @@ function spawnChain() {
     const spawnedPid = chainProc.pid;
     chainProc.on('error', (err) => {
         log('SHIM_CHAIN_EXIT', `code=spawn_error reason=${err && err.message}`);
+        if (exiting) { chainLive = false; chainProc = null; return; } // EOF teardown: fate logged, no rechain (§SPEC-108)
         if (chainProc && chainProc.pid !== spawnedPid) return; // stale event from a replaced chain
         chainLive = false;
         chainProc = null;
@@ -321,6 +323,7 @@ function spawnChain() {
             // D4: post-handoff chain death == today's proxy-death semantics.
             die('chain_died');
         }
+        if (exiting) { chainLive = false; chainProc = null; return; } // EOF teardown: fate logged, no rechain (§SPEC-108)
         if (chainProc && chainProc.pid !== spawnedPid) return; // stale event guard (增量①)
         chainLive = false;
         chainProc = null;
@@ -520,11 +523,24 @@ function holdAndTriggerHandoff(line) {
     heldInbound.push(line);
     if (!handoffTriggered) triggerHandoff('first_call');
 }
-rl.on('close', () => {
+rl.on('close', async () => {
     // §3.2 stdin EOF: SIGTERM the un-handed-off chain (reaper/held-lock trap
     // recovers the orphan if the TERM races) and exit 0.
     if (chainProc && !handedOff) {
         try { chainProc.kill('SIGTERM'); } catch { /* already dead */ }
+        // SEE-1342 §SPEC-108 (chain-fate observability root fix): a bare
+        // process.exit(0) here raced the chain's 'exit' event — under load the
+        // SHIM_CHAIN_EXIT log line landed after the shim was already gone
+        // (shim_degrade D3 flake: fate line missing from the log). Drain the
+        // exit event behind a bounded 500ms grace so the fate is ALWAYS
+        // logged; `exiting` suppresses scheduleRechain — EOF is a deliberate
+        // teardown, never a rechain trigger.
+        exiting = true;
+        const t0 = Date.now();
+        while (chainProc && Date.now() - t0 < 500) {
+            await new Promise((r) => setTimeout(r, 10));
+        }
+        if (chainProc) { try { chainProc.kill('SIGKILL'); } catch { /* gone */ } }
     }
     process.exit(0);
 });
