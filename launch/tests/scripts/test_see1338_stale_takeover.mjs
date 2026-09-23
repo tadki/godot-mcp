@@ -191,12 +191,11 @@ test('AMEND-1 R2 busy_foreign/reuse 判定保持「活 holder 不杀」原语义
 
 // ---- SEE-1338 QA defect #1 (HIGH): warm-gate + HANDOFF regressions ---------------
 
-test('QA#1 R1 warm-gate：fork CLI 已连接时旁路 wsProbe（gate 判定可达）', () => {
+test('QA#1 R1 warm-gate：fork 车道 wsProbe 完全退出生产路径（线性单源）', () => {
     const src = readSrc('proxy/warmup.mjs');
-    assert.ok(/cliConnectSignalExpected\(\) && S\.npxCliConnected\)\s*\?\s*true\s*:\s*await wsProbe\(\)/.test(src),
-        'probe bypass must gate on the FORK CLI connection signal');
-    // SEE-1111 defect-6 contract: the raw wsProbe stays the default path.
-    assert.ok(/await wsProbe\(\)/.test(src));
+    // P1 线性单源裁决: fork lane never schedules wsProbe; legacy lane keeps it.
+    assert.ok(/const forkLane = cliConnectSignalExpected\(\);\s*\n\s*const probeOk = forkLane \? true : await wsProbe\(\);/.test(src),
+        'fork lane must bypass wsProbe structurally, legacy lane keeps it');
 });
 
 test('QA#1 R2 evict/respawn 判定：worktree 匹配的 holder editor 降级为 HANDOFF 复用', () => {

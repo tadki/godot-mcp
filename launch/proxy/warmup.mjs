@@ -259,18 +259,16 @@ async function warmupLoop() {
             // session grinds to the full warmup timeout → RECOVERING grind while
             // a perfectly warm editor serves our CLI (s3x: CLI connected +141s,
             // every gate milestone present, still timed out at +300s). SEE-1111's
-            // own contract resolves it: "once the CLI is connected it owns the
-            // slot and IS the liveness signal" — a successful CLI connection
-            // proves the editor's WS stack handshakes, which is exactly what
-            // probeOk exists to prove. So bypass the probe while the FORK CLI
-            // (the one that holds the slot — cliConnectSignalExpected gates out
-            // mock seams that emit the line without holding anything, keeping
-            // the SEE-1111 defect-6 probe contract untouched) is connected;
-            // npx.mjs clears the flag on 'Disconnected from Godot', so a dead
-            // editor can't keep the bypass alive beyond the CLI's own detection.
-            const probeOk = (cliConnectSignalExpected() && S.npxCliConnected)
-                ? true
-                : await wsProbe();
+            // SEE-1338 P1 线性单源裁决 (Atlas 2026-09-23): in the fork lane
+            // (cliConnectSignalExpected) wsProbe is REMOVED from the production
+            // path entirely — never scheduled. The linear chain is: spawn →
+            // tcpProbe/log milestones (non-occupying progress signals) → CLI
+            // connection event = warm (the warm branch below waits for
+            // npxCliConnected, so probeOk=true here only serves the
+            // milestone-gate plumbing: firstProbeOkAt + renderStable entry).
+            // The legacy lane (no fork CLI — mock seams, frozen) keeps probing.
+            const forkLane = cliConnectSignalExpected();
+            const probeOk = forkLane ? true : await wsProbe();
             const now = Date.now();
 
             if (probeOk) {
@@ -441,7 +439,11 @@ async function warmupLoop() {
                     // RECOVERING — the cold window is still open and the editor is
                     // still booting normally.
                 }
-            } else {
+            }
+            // SEE-1338 P1 线性单源: T2/R2-cap/T4 timing gates run for BOTH lanes —
+            // in the fork lane probeOk is structurally true (no probe scheduled),
+            // so lane-dependent timing would deadlock a never-binding editor.
+            {
                 if (!S.recovering && (now - S.spawnStartedAt) >= currentWarmupTimeout()) {
                     // T2: warmup window exhausted. SEE-1111 目标2 (180s-window
                     // fallback): answer the held first call(s) NOW with a retryable

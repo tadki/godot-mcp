@@ -50,6 +50,38 @@ function isProxyAlive(holderProxy) {
             || (holderProxy.verified !== false && holderProxy.alive !== false)));
 }
 
+// SEE-1338 P1 线性单源裁决 — REUSE lane single-source decision (pure).
+// Replaces the legacy four-flow stack (arbiter verdict → SEE-1129 reuse
+// predicate → sidecar guard → HANDOFF downgrade) for runtimes WITH a readable
+// .state record: every input is an on-disk field plus the holder-pid triple
+// check, computed by the caller. No live probes, no new conditions at the
+// call site — any future condition must land on the record first.
+//   handoff_reuse  — editor provably serves this slot: adopt (no new editor)
+//   editor_busy    — a LIVE same-runtime proxy owns it (AMEND-1: 前任在管)
+//   cold_start     — record says the chain is broken (dead holder on a
+//                    mismatched worktree / FAILED_CLEAN / stale dead record):
+//                    legacy cleanup lane owns physical attribution
+export function decideReuseSingleSource({ state = '', holderProxyAlive = false, holderWorktree = '', ourWorktree = '', samePort = true, heartbeatFresh = false }) {
+    if (!samePort) return { action: 'cold_start', reason: 'PORT_MISMATCH_RECORD' };
+    const wtMatch = !!holderWorktree && !!ourWorktree
+        && (holderWorktree === ourWorktree
+            || holderWorktree.startsWith(ourWorktree + '/')
+            || ourWorktree.startsWith(holderWorktree + '/'));
+    if (state === 'WARM') {
+        if (holderProxyAlive) return { action: 'editor_busy', reason: 'HOLDER_PROXY_ALIVE_AMEND1' };
+        if (wtMatch) return { action: 'handoff_reuse', reason: 'WARM_DEAD_HOLDER_WORKTREE_MATCH' };
+        return { action: 'cold_start', reason: 'WARM_DEAD_HOLDER_WORKTREE_MISMATCH' };
+    }
+    if (state === 'WARMING' || state === 'RECOVERING') {
+        // 形态 B corpse: the chain died halfway; if the record serves our
+        // worktree the editor may already be warm → adopt via connect receipt.
+        if (wtMatch) return { action: 'handoff_reuse', reason: `${state}_DEAD_HOLDER_WORKTREE_MATCH` };
+        return { action: 'cold_start', reason: `${state}_DEAD_HOLDER_WORKTREE_MISMATCH` };
+    }
+    if (state === 'FAILED_CLEAN') return { action: 'cold_start', reason: 'FAILED_CLEAN_REENTRANT' };
+    return { action: 'cold_start', reason: `RECORD_STATE:${state}` };
+}
+
 function decideWarm({ fresh, proxyAlive }) {
     if (fresh) {
         if (proxyAlive) return { action: 'handoff_warm', reason: 'WARM_FRESH_LIVE_PROXY' };

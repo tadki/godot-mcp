@@ -3,7 +3,7 @@
 // ensureEditor chain (arbiter → prepare → configure → start), spawn-failure
 // streaks, WS-5 give-up/rearm, eviction, port-release waits.
 import { execFile } from 'node:child_process';
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readlinkSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { S } from './state.mjs';
@@ -26,7 +26,44 @@ import {
 import { decideReuse } from '../see1129-reuse-predicate.mjs';
 import { decideSidecarGuard } from '../see1129-sidecar-guard-predicate.mjs';
 import { maybeEvictStaleHeld } from './stale-proxy.mjs';
-import { writeRuntimeState } from './state-file.mjs';
+import { writeRuntimeState, readRuntimeState, heartbeatFresh } from './state-file.mjs';
+import { decideReuseSingleSource } from '../see1338-handoff.mjs';
+
+// SEE-1338 P1: heartbeat freshness window for the reuse-lane single-source
+// decision (spec §4.2 same as the handoff tree's 10min default).
+const HANDOFF_HEARTBEAT_MAX_MS = 10 * 60 * 1000;
+
+// Extract + verify the holder proxy record from a .state doc (triple check:
+// kill-0 + /proc exe node + started_at). Returns { pid, alive }.
+function holderProxyFromState(st) {
+    const pid = Number(st && st.proxy_pid);
+    if (!Number.isInteger(pid) || pid <= 0) return { pid: null, alive: false };
+    const startedAt = st.proxy_pid_started_at ? Date.parse(st.proxy_pid_started_at) : null;
+    return { pid, alive: proxyAliveCore(pid, startedAt) };
+}
+
+function proxyAliveCore(pid, startedAtMs) {
+    try {
+        process.kill(pid, 0);
+    } catch {
+        return false;
+    }
+    try {
+        const exe = String(readlinkSync(`/proc/${pid}/exe`));
+        if (!exe.includes('node')) return false;
+    } catch {
+        return false;
+    }
+    if (startedAtMs != null && Number.isFinite(startedAtMs)) {
+        try {
+            const started = statSync(`/proc/${pid}`).mtimeMs;
+            if (Math.abs(started - startedAtMs) > 5000) return false;
+        } catch {
+            return false;
+        }
+    }
+    return true;
+}
 
 // Trigger the editor spawn at most once; concurrent callers share the promise.
 // The trigger fires on the first tools/call after COLD_EMPTY. Spawn success/
@@ -77,6 +114,20 @@ function beginWarmEditorRespawn() {
     // recovery budget (same reasoning as the give-up re-arm reset).
     S.recoveryRound = 0;
     S.recoveryWindowStart = null;
+    // SEE-1338 P1 线性单源 (Atlas 裁决): EDITOR_GONE → the on-disk record
+    // becomes COLD here (the linear state machine made the death call; no
+    // reaper self-judgment). A lingering record in WARM after the editor
+    // died would mislead the next successor into adopting a dead port.
+    if (RUNTIME_ID) {
+        writeRuntimeState(RUNTIME_ID, {
+            state: 'COLD',
+            port: GODOT_PORT,
+            editor_pid: null,
+            editor_pid_started_at: null,
+            last_error: 'editor gone after warmup; respawn armed',
+            heartbeat_at: new Date().toISOString(),
+        }, { event: 'EDITOR_GONE', fromState: 'WARM', detail: 'post-warm death; respawn armed' });
+    }
     // NOTE: spawnStartedAt is NOT reset — the FAILED_EXIT window in the
     // RECOVERING path is seeded from lastTcpOkAt, and buildWarmupTimeline keeps
     // the original t0 for continuity. The respawn round re-enters the outer loop
@@ -264,6 +315,47 @@ async function ensureEditor(t0) {
     //     path, non-fatal on failure since the editor is already live.
     if (await tcpProbe()) {
         stageLog('TCP_PROBE_SHORTCIRCUIT', `port=${GODOT_PORT}`);
+        // SEE-1338 P1 (spec §4.2 + 线性单源裁决): when a readable .state record
+        // exists for this runtime, THE DISK is the sole reuse decision input —
+        // holder pid triple-check + worktree + state, all on-disk fields, one
+        // pure-function branch (see1338-handoff decideReuseSingleSource). The
+        // legacy four-flow stack (arbiter verdict → reuse predicate → sidecar
+        // guard → HANDOFF downgrade) runs ONLY when no .state record exists
+        // (legacy runtime / frozen lane). No live probes here: every condition
+        // must already be on the record (warm-gate 教训).
+        if (RUNTIME_ID) {
+            const disk = readRuntimeState(RUNTIME_ID);
+            if (disk.ok) {
+                const st = disk.state;
+                const holder = holderProxyFromState(st);
+                const ourWorktree = await resolveWorktreeForSpawn();
+                const reuse = decideReuseSingleSource({
+                    state: st.state,
+                    holderProxyAlive: holder.alive,
+                    holderWorktree: st.worktree || '',
+                    ourWorktree: ourWorktree || '',
+                    samePort: String(st.port || '') === String(GODOT_PORT),
+                    heartbeatFresh: heartbeatFresh(st, { maxAgeMs: HANDOFF_HEARTBEAT_MAX_MS }),
+                });
+                stageLog('SINGLE_SOURCE_REUSE', `action=${reuse.action} reason=${reuse.reason}`);
+                if (reuse.action === 'handoff_reuse') {
+                    S.lastSpawnReused = true;
+                    S.spawnLastFailed = false;
+                    const reused = await ensureReusedWorktreeConfigured(t0);
+                    log(`single-source reuse (state=${st.state}, holder proxy ${holder.alive ? 'alive' : 'dead'}, worktree match): adopting the live editor (HANDOFF).`);
+                    return { spawned: false, reused: true, staleHandoff: true, worktree: reused.worktree, reuseStatus: reused.status, configureRc: reused.configureRc, configureError: reused.configureError };
+                }
+                if (reuse.action === 'editor_busy') {
+                    throw new SpawnError('editor_busy',
+                        `port ${GODOT_PORT} is managed by a LIVE proxy of this runtime per the on-disk record (${reuse.reason}) — 前任在管, never double-managed. Retry later.`,
+                        { worktree: null });
+                }
+                // cold_start (incl. record says WARMING→dead / FAILED_CLEAN /
+                // worktree mismatch): fall through — the legacy lanes below own
+                // the physical cleanup (stop the port holder it can attribute).
+                log(`single-source decision: ${reuse.reason} → legacy cleanup lane.`);
+            }
+        }
         // SEE-1148 P2 (§2.3): consult the reuse/evict decision tree FIRST. The
         // arbiter verdict (PID liveness + runtime-id match, /dev/tcp probed)
         // selects the action; the legacy SEE-1129 sidecar guard is the
@@ -707,11 +799,20 @@ function giveUpAndRearm(bucket, message) {
         // SEE-1338 spec v2.1 §3.3 STATE_TRANSITION → FAILED_CLEAN: the
         // re-entrant failure state lands on disk so the NEXT proxy's startup
         // handoff reads it and cold-starts immediately (spec §4.2:
-        // FAILED_CLEAN / 陈旧 / 无文件 → 清理 → 冷启动).
+        // FAILED_CLEAN / 陈旧 / 无文件 → 清理 → 冷启动). P1 线性单源追加:
+        // the retry-budget counters are ALSO on-disk state — a dead proxy
+        // must not lose its budget (进程死了预算状态不丢, Atlas 裁决).
         writeRuntimeState(RUNTIME_ID, {
             state: 'FAILED_CLEAN',
             port: GODOT_PORT,
             spawn_attempts: S.spawnAttempts,
+            spawn_failed_streak: S.spawnFailedStreak,
+            spawn_backoff_until: S.spawnBackoffUntil || null,
+            give_up_count: S.giveUpCount,
+            give_up_backoff_ms: S.giveUpBackoffMs,
+            give_up_armed_at: S.giveUpArmedAt || null,
+            force_restart_count: S.forceRestartCount,
+            recovery_round: S.recoveryRound,
             last_error: `${bucket}: ${message}`,
             heartbeat_at: new Date().toISOString(),
         }, { event: 'STATE_TRANSITION', detail: 'streak exhausted; FAILED_CLEAN armed' });

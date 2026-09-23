@@ -69,15 +69,19 @@ MULTICA_DIR="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}"
 
 print_usage() {
     cat <<'EOF'
-Usage: reap-stale-leases.sh [--root <workspace-root>] [--dry-run] [-h|--help]
+Usage: reap-stale-leases.sh [--root <workspace-root>] [--dry-run] [--from-state] [-h|--help]
 
 Scan for stale mcp-lease.json sidecars (state=active but owner gone, or corrupt)
 and release them + kill their orphaned editor. Safe to run at every cold start.
 
 Arguments:
-  --root <path>   Workspace root to scan (default: $HOME/multica_workspaces).
-  --dry-run       Report what would be reaped without writing/killing.
-  -h, --help      Show this help.
+  --root <path>     Workspace root to scan (default: $HOME/multica_workspaces).
+  --dry-run         Report what would be reaped without writing/killing.
+  --from-state      SEE-1338 P1 executor mode: do NOT self-judge from lease
+                    scans. Execute only the worktrees whose .state = REAP
+                    _PENDING (the proxy's linear state machine is the sole
+                    decision authority; this script is the execution arm).
+  -h, --help        Show this help.
 
 Also sweeps $GODOT_MCP_HOME/godot-port-registry.json for entries whose proxy_pid is
 dead (arbiter liveness standard: kill -0 + /proc/<pid>/exe must be node).
@@ -93,12 +97,14 @@ EOF
 
 ROOT="${HOME}/multica_workspaces"
 DRY_RUN=0
+FROM_STATE=0
 while (( $# > 0 )); do
     case "$1" in
         -h|--help) print_usage; exit 0 ;;
         --root) (( $# >= 2 )) || { echo "--root requires a value" >&2; exit 2; }; ROOT="$2"; shift 2 ;;
         --root=*) ROOT="${1#--root=}"; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
+        --from-state) FROM_STATE=1; shift ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
@@ -169,6 +175,52 @@ if (( DRY_RUN == 0 )); then
     sleep 3
     trap - INT TERM
     fi
+fi
+
+# --- SEE-1338 P1 (spec §5) — --from-state EXECUTOR mode -------------------------
+# 线性单源收敛：the REAP decision belongs to the proxy's linear state machine
+# (it writes .state.state=REAP_PENDING after EDITOR_GONE confirmation); this
+# script is ONLY the execution arm. No independent judgment here: execute the
+# marked records (stop editor via its port → write REAP event → drop the
+# record), then exit. Legacy scan mode is frozen and untouched.
+if (( FROM_STATE == 1 )); then
+    STATE_DIR="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-editor"
+    REAP_PENDING=0
+    EXECUTED=0
+    for st in "$STATE_DIR"/*.state; do
+        [[ -e "$st" ]] || break
+        TOTAL=$((TOTAL+1))
+        read -r ST_NAME PORT_LINE WT_LINE RID_LINE < <(node -e '
+            const fs = require("fs");
+            try {
+                const o = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+                process.stdout.write([o.state||"", o.port||"", o.worktree||"", o.runtime_id||""].join(" "));
+            } catch (e) { process.stdout.write("  "); }
+        ' "$st")
+        if [[ "$ST_NAME" != "REAP_PENDING" ]]; then
+            SKIPPED=$((SKIPPED+1))
+            continue
+        fi
+        REAP_PENDING=$((REAP_PENDING+1))
+        echo "[reap-stale-leases] REAP_PENDING marker: $st (port=${PORT_LINE} worktree=${WT_LINE})"
+        if (( DRY_RUN )); then echo "  -> (dry-run) would stop editor + drop record"; SKIPPED=$((SKIPPED+1)); continue; fi
+        if [[ -n "$PORT_LINE" ]] && command -v "$SCRIPT_DIR/stop-godot-editor.sh" >/dev/null 2>&1; then
+            bash "$SCRIPT_DIR/stop-godot-editor.sh" --port "$PORT_LINE" >/dev/null 2>&1 || true
+        fi
+        node -e '
+            const fs = require("fs"); const p = process.argv[1];
+            try {
+                const o = JSON.parse(fs.readFileSync(p, "utf8"));
+                const line = JSON.stringify({ ts: new Date().toISOString(), event: "REAP", from_state: "REAP_PENDING", to_state: null, detail: "executor" });
+                fs.appendFileSync(p.replace(/\.state$/, ".events.jsonl"), line + "\n");
+                fs.rmSync(p);
+            } catch (e) {}
+        ' "$st" || rm -f "$st"
+        EXECUTED=$((EXECUTED+1))
+        REAPED=$((REAPED+1))
+    done 2>/dev/null
+    echo "[reap-stale-leases] from-state executor: total=$TOTAL reap_pending=$REAP_PENDING executed=$EXECUTED skipped=$SKIPPED"
+    exit 0
 fi
 
 REAPED=0
