@@ -140,6 +140,11 @@ run_case() {
     err="$TMPDIR/${name}.err"
     # Give slow orphan-gate / setup cases enough time to exec proxy and respond.
     wait_after=$(( delay + 3 ))
+    # SEE-1344: the stub launcher's spawn chain gained a prepare-worktree step
+    # (SEE-1342 sync) — under fast-par 4-way load its in-flight wait window
+    # can push exec past delay+3s; the asserted chain (launcher→proxy→npx
+    # stdio) is unchanged, only the observation window widens.
+    wait_after=$(( delay + 6 ))
 
     # SEE-1344: the launcher now waits up to KOL_WORKTREE_WAIT_S=120s for a
     # private worktree to resolve; this chain test only needs the stdio path,
