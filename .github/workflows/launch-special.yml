@@ -119,12 +119,21 @@ jobs:
       - name: Restore previous round's RED set
         # restore-keys 回退到最近一份 drift-red-* 缓存（= 上一轮集合）；key 精确
         # 匹配恒 miss 属预期，防止本轮与上轮文件混淆。
+        id: prev-red
         uses: actions/cache/restore@v4
         with:
           path: drift-red-store
           key: drift-red-${{ github.run_id }}
           restore-keys: |
             drift-red-
+      - name: Report RED-set cache restore status
+        # FR3 LOW-2：restore 命中状态显式入日志 + 供下游脚本复述（cache miss 首日
+        # 报告失真须一眼可辨）。matched key 为空 = 本缓存窗口内首跑。
+        run: |
+          echo "prev RED cache matched-key: '${{ steps.prev-red.outputs.cache-matched-key }}'"
+          if [ -z "${{ steps.prev-red.outputs.cache-matched-key }}" ]; then
+            echo "[drift] cache-miss — first run this window, prev set treated as empty"
+          fi
       - name: Build server CLI
         run: |
           npm ci --no-audit --no-fund
@@ -225,6 +234,7 @@ jobs:
         if: always()
         env:
           DRIFT_STORE: drift-red-store
+          PREV_CACHE_KEY: ${{ steps.prev-red.outputs.cache-matched-key }}
         run: |
           mkdir -p "$DRIFT_STORE"
           node .github/scripts/drift-issue-report.mjs \
