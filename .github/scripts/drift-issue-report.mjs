@@ -14,6 +14,12 @@ if (!currentPath || !storeDir || !runId) {
   process.exit(0);
 }
 
+// FR3 LOW-2：cache restore 状态入 summary，放量期 cache-miss 首日报告失真一眼可辨。
+const prevCacheKey = (process.env.PREV_CACHE_KEY ?? '').trim();
+const cacheNote = prevCacheKey
+  ? `prev=cache-hit (matched ${prevCacheKey})`
+  : 'prev=cache-miss (first run this window)';
+
 const norm = (p) => p.trim().replace(/^launch\//, '').replace(/\\/g, '/');
 const readSet = (p) => {
   try {
@@ -33,16 +39,18 @@ const readSet = (p) => {
 const current = readSet(currentPath);
 if (!current) process.exit(0);
 
-// 上一轮 RED 集合 = store 目录里最近一份非本轮的 red-<runid>.txt（由 actions/cache
-// restore-keys 跨 run 恢复；首跑无上轮 → 视为空集，全部按「新增」处理）。
+// 上一轮 RED 集合 = store 目录里 run_id 数值最大的一份非本轮 red-<runid>.txt（由
+// actions/cache restore-keys 跨 run 恢复；首跑无上轮 → 视为空集，全部按「新增」
+// 处理）。按数值排序而非字典序：99 < 100，跨位数时字典序会选错对比基准。
 let previous = new Set();
 let prevLabel = 'none (first run)';
 try {
-  const files = readdirSync(storeDir)
-    .filter((f) => /^red-\d+\.txt$/.test(f) && !f.endsWith(`red-${runId}.txt`))
-    .sort();
-  if (files.length > 0) {
-    prevLabel = files[files.length - 1];
+  const candidates = readdirSync(storeDir)
+    .map((f) => /^red-(\d+)\.txt$/.exec(f))
+    .filter((m) => m && m[1] !== String(runId))
+    .sort((a, b) => Number(b[1]) - Number(a[1]));
+  if (candidates.length > 0) {
+    prevLabel = candidates[0][0];
     previous = readSet(join(storeDir, prevLabel)) ?? new Set();
   }
 } catch (e) {
@@ -60,7 +68,7 @@ const log = (s) => {
 };
 
 log('## Drift-watch RED report');
-log(`- prev set: ${prevLabel} (${previous.size} RED)`);
+log(`- prev set: ${prevLabel} (${previous.size} RED) — ${cacheNote}`);
 log(`- current set: ${current.size} RED`);
 log(`- NEW RED (${newRed.length}): ${newRed.length ? '' : '—'}`);
 for (const t of newRed) log(`  - ${t}`);
@@ -84,6 +92,13 @@ if (summaryPath) {
     console.error(`[drift-report] cannot append step summary: ${e.message}`);
   }
 }
+
+// 放量模式下建单候选截断的可观测性（INFO-1）：overflow 计数在 summary 尾行复述。
+const OVERFLOW_NOTE =
+  overflow > 0
+    ? `[overflow] ${overflow} candidate(s) beyond cap ${CREATE_CAP} NOT queued this round.`
+    : `[overflow] 0 (all candidates within cap ${CREATE_CAP}).`;
+log(OVERFLOW_NOTE);
 
 if (!enabled) {
   log(
