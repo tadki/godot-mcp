@@ -163,7 +163,7 @@ make_configure_mock() {
     cat > "$sh" <<EOF
 #!/usr/bin/env bash
 echo x >> "\${KOL_CONFIGURE_COUNTER:-$counter}"
-if [[ -n "${wt}" && -n "\\${GODOT_PORT:-}" ]]; then
+if [[ -n "${wt}" ]]; then
     mkdir -p "${wt}/.godot"
     printf '{"state":"active","port":%s}' "\$GODOT_PORT" > "${wt}/.godot/mcp-lease.json"
 fi
