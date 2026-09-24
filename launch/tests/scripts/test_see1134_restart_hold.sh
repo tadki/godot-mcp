@@ -307,6 +307,15 @@ else
     ko "F2.e: held id=11 not flushed after restart"
 fi
 
+# SEE-1344 flake fix: F2's respawn setTimeout and F3's NEVER arming raced —
+# arming NEVER (daemon clears RESPAWN for the in-flight F2 restart) could
+# suppress the F2 relaunch → F2.d/F4.c saw {restarted:false} spuriously.
+# Fence: wait for F2's respawn to complete (id=11 answered = flush done) before
+# arming NEVER.
+if wait_for "$PROXY_OUT" '"id":11' 4000; then
+    :
+fi
+
 # F3 — restart timeout path: enable NEVER_RECONNECT and send a second restart.
 # Mock drops the listener, never reconnects the CLI → proxy must answer
 # {restarted:false, reason:'timeout'} after the deadline (4s) and reject
