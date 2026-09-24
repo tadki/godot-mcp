@@ -215,6 +215,18 @@ SCRATCH_WT="$TMPDIR/scratch-worktree"
 mkdir -p "$SCRATCH_WT/launch"
 printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$SCRATCH_WT/project.godot"
 
+# SEE-1344: the pre-bound listener must pass the e43cdc73 holder check —
+# opt out of the SEE-1338 arbiter and pre-write the .worktree sidecar, or the
+# holder reads as a cross-runtime squatter → evict → no warm.
+EDITOR_LOG="$TMPDIR/godot-editor-Bachi.log"
+printf '%s' "$SCRATCH_WT" > "${EDITOR_LOG%.log}.worktree"
+# Mock the spawn-chain helpers (prepare/configure/start) — this suite drives
+# its own listener and asserts proxy-side contracts, not editor launching.
+printf '#!/usr/bin/env bash\nexit 0\n' > "$TMPDIR/mock-prepare.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$TMPDIR/mock-configure.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$TMPDIR/mock-start.sh"
+chmod +x "$TMPDIR/mock-prepare.sh" "$TMPDIR/mock-configure.sh" "$TMPDIR/mock-start.sh"
+
 CALL_LOG="$TMPDIR/call-log.jsonl"; : > "$CALL_LOG"
 
 PROXY_OUT="$TMPDIR/proxy.out"; : > "$PROXY_OUT"
@@ -229,6 +241,11 @@ coproc PX {
         "KOL_FAILED_EXIT_MS=60000" \
         "KOL_WORKTREE=$SCRATCH_WT" \
         "KOL_PROJECT_GODOT=$SCRATCH_WT/project.godot" \
+        "KOL_PORT_ARBITER=off" \
+        "GODOT_EDITOR_LOG_FILE=$EDITOR_LOG" \
+        "GODOT_MCP_PREPARE_SH=$TMPDIR/mock-prepare.sh" \
+        "GODOT_MCP_CONFIGURE_SH=$TMPDIR/mock-configure.sh" \
+        "GODOT_MCP_START_SH=$TMPDIR/mock-start.sh" \
         "MOCK_CALL_LOG=$CALL_LOG" \
         node "$PROXY" >"$PROXY_OUT" 2>"$PROXY_ERR"
 }
