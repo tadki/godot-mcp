@@ -81,15 +81,22 @@ EOF
 
 # Port already listening → hot reuse; warm flips on the first probe; the call is
 # forwarded (not buffered) and the 4001 error path runs.
+# SEE-1148 P2 sandbox semantics (same seam as T2/T6): opt out of the port
+# arbiter and prove the holder with the .worktree sidecar, else the bare
+# pre-bound listener reads as a cross-runtime holder → evict → no warm.
 start_listener "$PORT" >/dev/null
+EDITOR_LOG="$TMPDIR/godot-editor-Bachi.log"
+printf '%s' "$MOCK_WORKTREE" > "${EDITOR_LOG%.log}.worktree"
 
 sep "E2: slot contention 4001 → editor_busy diagnostic on Channel A"
 start_proxy \
     "GODOT_PORT=$PORT" \
     "KOL_AGENT_NAME=Bachi" \
     "KOL_WORKTREE=$MOCK_WORKTREE" \
+    "GODOT_EDITOR_LOG_FILE=$EDITOR_LOG" \
+    "KOL_PORT_ARBITER=off" \
     "KOL_WARMUP_TIMEOUT_MS=15000" \
-    "KOL_HOT_WARMUP_TIMEOUT_MS=5000" \
+    "KOL_HOT_WARMUP_TIMEOUT_MS=15000" \
     "KOL_PROBE_INTERVAL_MS=200" \
     "KOL_TAKEOVER_TIMEOUT_MS=0" \
     "MOCK_NPX_LOG=$TMPDIR/npx.log"

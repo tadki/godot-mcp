@@ -86,15 +86,25 @@ EOF
 # Port already listening → ensureEditor probe short-circuits to reuse (no spawn);
 # warmupLoop classifies hot and flips warm on the first probe, forwarding the
 # buffered tools/call to npx, which returns the competition error.
+#
+# SEE-1148 P2 sandbox semantics: a bare pre-bound listener (no KOL_RUNTIME_ID,
+# no held dir) reads as an unverifiable cross-runtime holder → arbiter 'evict'
+# kills the mock before warm. T6 owns the editor_busy wrap contract, not the
+# arbiter, so it opts out via KOL_PORT_ARBITER=off (same seam as T2) and proves
+# the holder with the e43cdc73 .worktree sidecar pointing at MOCK_WORKTREE.
 start_listener "$PORT" >/dev/null
+EDITOR_LOG="$TMPDIR/godot-editor-Bachi.log"
+printf '%s' "$MOCK_WORKTREE" > "${EDITOR_LOG%.log}.worktree"
 
 sep "T6: concurrent-client competition error → editor_busy diagnostic"
 start_proxy \
     "GODOT_PORT=$PORT" \
     "KOL_AGENT_NAME=Bachi" \
     "KOL_WORKTREE=$MOCK_WORKTREE" \
+    "GODOT_EDITOR_LOG_FILE=$EDITOR_LOG" \
+    "KOL_PORT_ARBITER=off" \
     "KOL_WARMUP_TIMEOUT_MS=15000" \
-    "KOL_HOT_WARMUP_TIMEOUT_MS=5000" \
+    "KOL_HOT_WARMUP_TIMEOUT_MS=15000" \
     "KOL_PROBE_INTERVAL_MS=200" \
     "KOL_TAKEOVER_TIMEOUT_MS=0" \
     "MOCK_NPX_LOG=$TMPDIR/npx.log"

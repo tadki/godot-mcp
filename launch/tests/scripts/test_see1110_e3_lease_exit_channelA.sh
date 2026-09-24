@@ -64,6 +64,10 @@ sep "E3: lease self-exit → fast-fail (held call rejected with failed_exit)"
 E3_PORT=$(find_free_port)
 E3_LOG="$TMPDIR/e3-editor.log"; : > "$E3_LOG"
 
+# E3 pins the FAILED_EXIT lane (rejectQueue + process.exit(1), header
+# contract): the WS-5 giveup-rearm default lane has its own coverage
+# (test_see1240_ws5_giveup_rearm.sh, long bucket); selecting the lane here
+# is a fixture choice, not an assertion change.
 start_proxy \
     "GODOT_PORT=$E3_PORT" \
     "KOL_WORKTREE=$MOCK_WORKTREE" \
@@ -72,6 +76,7 @@ start_proxy \
     "KOL_WARMUP_TIMEOUT_MS=30000" \
     "KOL_FAILED_EXIT_MS=60000" \
     "GODOT_EDITOR_LOG_FILE=$E3_LOG" \
+    "KOL_GIVEUP_REARM=0" \
     "MOCK_NPX_LOG=$TMPDIR/e3_npx.log"
 
 send_line "$INIT_LINE"
