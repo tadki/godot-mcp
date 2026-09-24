@@ -64,9 +64,21 @@ lib_init
 LAUNCHER="$REPO_ROOT/launch/godot-mcp-launcher.sh"
 CONFIGURE="$REPO_ROOT/launch/configure-mcp-port.sh"
 
-# Known shared D-drive master checkout (guard hardcode). The test must not
-# require it to exist — the path guard is lexical, so absence is fine.
-KNOWN_SHARED="/mnt/d/GodotProjects/king-of-likes"
+# Known shared master checkout (the guards target it lexically). SEE-1344
+# DEFECT-1344-1: this used to be the hardcoded WSL2 D-drive path, which only
+# exists on QA/dev boxes — on CI the §3/§7/§8 sections deterministically red.
+# A shared master is by definition "a git checkout on branch master", so build
+# one in $TMPDIR (same shape as MASTER_WT below): the guards fire on
+# branch==master / lexical path pin, never on the literal mount point.
+KNOWN_SHARED="$TMPDIR/sharedwt/king-of-likes"
+mkdir -p "$KNOWN_SHARED"
+git -C "$KNOWN_SHARED" init -q 2>/dev/null
+git -C "$KNOWN_SHARED" config user.email "test@example.com" >/dev/null 2>&1
+git -C "$KNOWN_SHARED" config user.name "Test" >/dev/null 2>&1
+git -C "$KNOWN_SHARED" checkout -qb master 2>/dev/null || git -C "$KNOWN_SHARED" branch -m master 2>/dev/null || true
+printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$KNOWN_SHARED/project.godot"
+git -C "$KNOWN_SHARED" add project.godot >/dev/null 2>&1
+git -C "$KNOWN_SHARED" commit -qm "baseline" 2>/dev/null || true
 
 # Two independent private agent worktrees, each a real Godot-project-shaped
 # checkout carrying the launch toolchain (down-search discriminator). Direction 3:
