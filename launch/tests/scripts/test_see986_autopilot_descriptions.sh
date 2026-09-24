@@ -7,7 +7,7 @@
 #   Goal 3: 3 non-script autopilots are NOT modified to the trimmed template.
 #
 # This is the description-side half of the SEE-986 QA pair. Doc-side checks
-# live in test_see986_autopilots_doc.sh.
+# (doc-side half retired with SEE-1344 — autopilots doc/paths retired with SEE-1273 T5-F).
 
 set -uo pipefail
 
