@@ -133,6 +133,11 @@ LIS_PID=$(start_listener "$TEST_PORT")
 SCRATCH_WT="$TMPDIR/scratch-worktree"
 mkdir -p "$SCRATCH_WT/launch"
 printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$SCRATCH_WT/project.godot"
+# SEE-1148 P2 sandbox semantics (same seam as T2): opt the proxy out of the
+# port arbiter and prove the pre-bound mock listener with the e43cdc73
+# .worktree sidecar, else it reads as a cross-runtime holder → evict → no warm.
+EDITOR_LOG="$TMPDIR/godot-editor-Bachi.log"
+printf '%s' "$SCRATCH_WT" > "${EDITOR_LOG%.log}.worktree"
 
 PROXY_OUT="$TMPDIR/proxy.out"; : > "$PROXY_OUT"
 PROXY_ERR="$TMPDIR/proxy.err"; : > "$PROXY_ERR"
@@ -147,6 +152,8 @@ coproc PX {
         "KOL_FAILED_EXIT_MS=60000" \
         "KOL_WORKTREE=$SCRATCH_WT" \
         "KOL_PROJECT_GODOT=$SCRATCH_WT/project.godot" \
+        "KOL_PORT_ARBITER=off" \
+        "GODOT_EDITOR_LOG_FILE=$EDITOR_LOG" \
         node "$PROXY" >"$PROXY_OUT" 2>"$PROXY_ERR"
 }
 PX_PID=$PX_PID

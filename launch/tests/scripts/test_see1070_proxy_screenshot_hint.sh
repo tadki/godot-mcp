@@ -22,7 +22,9 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 PROXY="$REPO_ROOT/launch/godot-mcp-proxy.mjs"
-FALLBACK_SCRIPT='launch/screenshot-fallback.sh'
+# SEE-1344: align with the post-T4 real layout — the same constant the
+# fast-tier gate (test_see1328_b_screenshot_link.mjs §SPEC-014) pins.
+FALLBACK_SCRIPT='addons/godot_mcp/launch/screenshot-fallback.sh'
 HINT_FRAGMENT='screenshot-fallback.sh'
 
 [[ -f "$PROXY" ]] || { echo "FATAL: $PROXY not found" >&2; exit 2; }
@@ -147,6 +149,11 @@ LIS_PID=$(start_listener "$TEST_PORT")
 SCRATCH_WT="$TMPDIR/scratch-worktree"
 mkdir -p "$SCRATCH_WT/launch"
 printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$SCRATCH_WT/project.godot"
+# SEE-1148 P2 sandbox semantics (same seam as T2): opt the proxy out of the
+# port arbiter and prove the pre-bound mock listener with the e43cdc73
+# .worktree sidecar, else it reads as a cross-runtime holder → evict → no warm.
+EDITOR_LOG="$TMPDIR/godot-editor-Bachi.log"
+printf '%s' "$SCRATCH_WT" > "${EDITOR_LOG%.log}.worktree"
 
 # --- Proxy under test (coproc bidirectional pipe) ---------------------------
 PROXY_OUT="$TMPDIR/proxy.out"; : > "$PROXY_OUT"
@@ -162,6 +169,8 @@ coproc PX {
         "KOL_FAILED_EXIT_MS=60000" \
         "KOL_WORKTREE=$SCRATCH_WT" \
         "KOL_PROJECT_GODOT=$SCRATCH_WT/project.godot" \
+        "KOL_PORT_ARBITER=off" \
+        "GODOT_EDITOR_LOG_FILE=$EDITOR_LOG" \
         node "$PROXY" >"$PROXY_OUT" 2>"$PROXY_ERR"
 }
 PX_PID=$PX_PID
@@ -305,8 +314,11 @@ else
 fi
 
 # Sanity: the fallback script the hint points at actually exists on disk.
+# Post-T4 layout: the path is KOL-consumer relative (addons/godot_mcp/...);
+# in this standalone fork checkout the same file lives at launch/.
 sep "Sanity: hinted fallback script exists"
-if [[ -f "$REPO_ROOT/$FALLBACK_SCRIPT" ]]; then
+FALLBACK_LOCAL="${FALLBACK_SCRIPT#addons/godot_mcp/}"
+if [[ -f "$REPO_ROOT/$FALLBACK_SCRIPT" || -f "$REPO_ROOT/$FALLBACK_LOCAL" ]]; then
     ok "sanity: $FALLBACK_SCRIPT exists (hint target is real)"
 else
     ko "sanity: $FALLBACK_SCRIPT missing — hint points at a non-existent script"
