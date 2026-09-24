@@ -178,8 +178,20 @@ cat > "$TMPDIR/mock-start.sh" <<'EOF'
 exit 0
 EOF
 chmod +x "$TMPDIR/mock-start.sh"
+# SEE-1344: the spawn chain grew a prepare-worktree.sh step after this harness
+# was written; the real script fails rc=1 against the repo checkout and its
+# spawn_failed drain preempts the pinned warmup-timeout/RECOVERING contract.
+# Mock it like configure/start. KOL_GIVEUP_REARM=0 keeps T4's pinned
+# FAILED_EXIT exit(1) lane (the WS-5 re-arm default lane has its own coverage).
+cat > "$TMPDIR/mock-prepare.sh" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$TMPDIR/mock-prepare.sh"
 export KOL_CONFIGURE_SH="$TMPDIR/mock-configure.sh"
 export KOL_START_SH="$TMPDIR/mock-start.sh"
+export GODOT_MCP_PREPARE_SH="$TMPDIR/mock-prepare.sh"
+export KOL_GIVEUP_REARM=0
 # Resolve repo root from this script's location (.dev/godot-mcp/tests/scripts/).
 _TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _TEST_REPO_ROOT="$(cd "$_TEST_SCRIPT_DIR/../../.." && pwd)"
@@ -378,7 +390,11 @@ T4_PORT=$(find_free_port)
 # SEE-1240 WS-5: the DEFAULT T4 path is now in-band rearm (proxy survives).
 # This suite pins the LEGACY exit contract, so opt out explicitly here; the
 # rearm default is covered by test_see1240_ws5_giveup_rearm.sh.
-start_proxy "GODOT_PORT=$T4_PORT" "KOL_WARMUP_TIMEOUT_MS=2000" "KOL_FAILED_EXIT_MS=4000" "KOL_GIVEUP_REARM=0" "MOCK_NPX_LOG=$TMPDIR/t4_npx.log"
+# SEE-1338 R2 hard-cap backstop (default 2×cold timeout = 4s) would fire a
+# cold RESTART at the same moment T4's pinned FAILED_EXIT (4s sustained probe
+# failure) exits — raise the cap above the window so T4 stays on its pinned
+# lane (cap semantics covered by the R2 path, not this test).
+start_proxy "GODOT_PORT=$T4_PORT" "KOL_WARMUP_TIMEOUT_MS=2000" "KOL_FAILED_EXIT_MS=4000" "KOL_GIVEUP_REARM=0" "KOL_RECOVERING_HARD_CAP_MS=30000" "MOCK_NPX_LOG=$TMPDIR/t4_npx.log"
 send_line "$INIT_LINE"
 send_line "$CALL_LINE"
 wait_for "$PROXY_OUT" '"id":1' 3000 || ko "T4.pre: initialize not answered"
