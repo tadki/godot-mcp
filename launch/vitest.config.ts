@@ -117,6 +117,14 @@ launch/tests/scripts/test_see1244_v2_gate.mjs
 launch/tests/scripts/test_see1111_defect6_wsprobe_first_call.sh
 launch/tests/scripts/test_see1111_defect7_respawn.sh
 launch/tests/scripts/test_see1244_rechain.mjs
+launch/tests/scripts/test_see1045_stdio_proxy.sh
+launch/tests/scripts/test_see1077_edge_cases.sh
+launch/tests/scripts/test_see990_mcp_ready_gate.sh
+launch/tests/scripts/test_see1111_fork_wiring.sh
+launch/tests/scripts/test_see1111_warmup_hint.sh
+launch/tests/scripts/test_see1148_p3_reclaim.sh
+launch/tests/scripts/test_see1244_cache_closure.mjs
+launch/tests/scripts/test_see1244_proxy_tools_cache.mjs
 `;
 
 // FAST_PARALLEL_SHELL — everything else. Shared binning evidence (all entries
@@ -194,11 +202,9 @@ launch/tests/scripts/see1129/test_runtime_registry_marker.sh
 launch/tests/scripts/see1129/test_sidecar_guard_predicate.sh
 launch/tests/scripts/test_see1117_phase1_marker_lifecycle.sh
 launch/tests/scripts/test_see1117_sidecar_lifecycle.sh
-launch/tests/scripts/test_see1045_stdio_proxy.sh
 launch/tests/scripts/test_see1070_proxy_exec_hints.sh
 launch/tests/scripts/test_see1070_proxy_screenshot_hint.sh
 launch/tests/scripts/test_see1070_warmup_self_heal.sh
-launch/tests/scripts/test_see1077_edge_cases.sh
 launch/tests/scripts/test_see1085_t6_editor_busy.sh
 launch/tests/scripts/test_see1085_t8_direct_node.sh
 launch/tests/scripts/test_see1085_t9_editor_gone.sh
@@ -207,12 +213,8 @@ launch/tests/scripts/test_see1085_t11_takeover_timeout.sh
 launch/tests/scripts/test_see1110_e1_cold_warmup_timeline.sh
 launch/tests/scripts/test_see1110_e2_editor_busy_channelA.sh
 launch/tests/scripts/test_see1110_e3_lease_exit_channelA.sh
-launch/tests/scripts/test_see1111_fork_wiring.sh
-launch/tests/scripts/test_see1111_warmup_hint.sh
 launch/tests/scripts/test_see1111_worktree_isolation.sh
-launch/tests/scripts/test_see1148_p3_reclaim.sh
 launch/tests/scripts/test_see1152_reaper_held_sweep.sh
-launch/tests/scripts/test_see990_mcp_ready_gate.sh
 launch/tests/scripts/test_see1240_exec_constraints_proxy.sh
 launch/tests/scripts/test_see1240_proxy_integration.sh
 `;
@@ -236,8 +238,6 @@ launch/tests/scripts/test_see1338_p1_sot.mjs
 launch/tests/scripts/test_see1338_stale_takeover.mjs
 launch/tests/scripts/test_see1085_t7_resolver.mjs
 launch/tests/scripts/test_see1110_stage_parser.mjs
-launch/tests/scripts/test_see1244_cache_closure.mjs
-launch/tests/scripts/test_see1244_proxy_tools_cache.mjs
 `;
 
 const LONG = `
@@ -258,8 +258,8 @@ const serialEntries = parse(FAST_SERIAL);
 const fastEntries = [...parse(FAST_PARALLEL_SHELL), ...parse(FAST_NODE)];
 const longEntries = parse(LONG);
 
-if (serialEntries.length !== 8) {
-  throw new Error(`fast serial bucket expects 8 entries (see1273 five graduated OUT to the launch-special drift bucket, SEE-1342 §SPEC-106), resolved ${serialEntries.length} — update the bucket in sync with the SEE-1291 graduation flow`);
+if (serialEntries.length !== 16) {
+  throw new Error(`fast serial bucket expects 16 entries (8 + SEE-1344's 8 load-fragile graduates: tight internal timing windows proven to flake under 4-way load in r7-r9 sweeps), resolved ${serialEntries.length} — update the bucket in sync with the SEE-1291 graduation flow`);
 }
 if (serialEntries.length + fastEntries.length !== 88) {
   throw new Error(`fast tier expects 88 entries (serial + parallel; SEE-1344 graduated 21 fixed + 4 green drift items in per Atlas final ruling), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
