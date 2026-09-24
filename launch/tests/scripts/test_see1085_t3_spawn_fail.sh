@@ -45,7 +45,7 @@ CFG_COUNTER="$TMPDIR/cfg.count"
 START_COUNTER="$TMPDIR/start.count"
 : > "$CFG_COUNTER"; : > "$START_COUNTER"
 
-CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0)
+CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0 "$MOCK_WORKTREE")
 # rc=1, spawn=0 → start always fails, no listener (editor never boots).
 START_SH=$(make_start_mock "$START_COUNTER" 1 0)
 

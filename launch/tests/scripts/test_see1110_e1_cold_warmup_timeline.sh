@@ -53,7 +53,7 @@ START_COUNTER="$TMPDIR/start.count"
 EDITOR_LOG="$TMPDIR/fake-editor.log"
 : > "$EDITOR_LOG"
 
-CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0)
+CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0 "$MOCK_WORKTREE")
 START_SH=$(make_start_mock "$START_COUNTER" 0 1)   # spawn=1 → listener on GODOT_PORT
 
 sep "E1: cold-start success timeline on Channel A"

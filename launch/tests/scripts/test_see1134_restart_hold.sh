@@ -124,7 +124,7 @@ EDITOR_LOG="$TMPDIR/editor.log"; : > "$EDITOR_LOG"   # empty → renderStable fl
 CFG="$TMPDIR/cfg.count"; START="$TMPDIR/start.count"
 WS_COUNTER="$TMPDIR/ws.count"
 : > "$CFG"; : > "$START"; : > "$WS_COUNTER"
-CFG_SH=$(make_configure_mock "$CFG" 0)
+CFG_SH=$(make_configure_mock "$CFG" 0 "$MOCK_WORKTREE")
 MOCK_RECONNECT_MS=600
 
 # Custom start mock: spawns the WS-completing mock listener (spawn=1) AND

@@ -26,7 +26,7 @@ PORT=$(find_free_port)
 CFG_COUNTER="$TMPDIR/cfg.count"
 START_COUNTER="$TMPDIR/start.count"
 : > "$CFG_COUNTER"; : > "$START_COUNTER"
-CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0)
+CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0 "$MOCK_WORKTREE")
 
 # Mock start: fail with a small deterministic stderr so the log file content
 # is easy to assert on.

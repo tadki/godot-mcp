@@ -66,7 +66,7 @@ for i in $(seq 1 "$N_AGENTS"); do
     CFG_COUNTER="$TMPDIR/cfg${i}.count"
     START_COUNTER="$TMPDIR/start${i}.count"
     : > "$CFG_COUNTER"; : > "$START_COUNTER"
-    CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0)
+    CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0 "$MOCK_WORKTREE")
     START_SH=$(make_start_mock "$START_COUNTER" 0 1)   # spawn=1 → listener on GODOT_PORT
 
     start_proxy \

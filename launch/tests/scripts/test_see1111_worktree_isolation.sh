@@ -256,7 +256,7 @@ sep "7. proxy worktree_shared_master fail-fast (Channel A)"
 # (what the pre-fix fallback produced). The cold path must fail fast BEFORE any
 # configure/start helper runs (mock helpers assert they never fire).
 CFG7="$TMPDIR/cfg7.count"; : > "$CFG7"
-CFG7_SH=$(make_configure_mock "$CFG7" 0)
+CFG7_SH=$(make_configure_mock "$CFG7" 0 "$MOCK_WORKTREE")
 START7="$TMPDIR/start7.count"; : > "$START7"
 START7_SH=$(make_start_mock "$START7" 0 0)
 PORT7=$(find_free_port)
@@ -335,7 +335,7 @@ stop_proxy
 # --- 8. proxy hot-reuse skips the shared-master re-pin non-fatally ---
 sep "8. proxy hot-reuse skips shared-master re-pin"
 CFG8="$TMPDIR/cfg8.count"; : > "$CFG8"
-CFG8_SH=$(make_configure_mock "$CFG8" 0)
+CFG8_SH=$(make_configure_mock "$CFG8" 0 "$MOCK_WORKTREE")
 START8="$TMPDIR/start8.count"; : > "$START8"
 START8_SH=$(make_start_mock "$START8" 0 0)
 PORT8=$(find_free_port)

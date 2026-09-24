@@ -56,7 +56,7 @@ CFG_COUNTER="$TMPDIR/cfg.count"
 START_COUNTER="$TMPDIR/start.count"
 : > "$CFG_COUNTER"; : > "$START_COUNTER"
 
-CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0)
+CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0 "$MOCK_WORKTREE")
 # Slow-start mock: sleeps 2.5s before spawning the WS-completing listener, so
 # the hold window is observable — id=2/id=3 land while the editor is genuinely
 # warming and must be HELD (no answer, no hint) until WARM.
