@@ -66,6 +66,14 @@ lib_init() {
     # but now also stop using the repo as a latent footgun.
     MOCK_WORKTREE="$TMPDIR/mock-worktree"
     mkdir -p "$MOCK_WORKTREE"
+
+    # SEE-1344: the spawn chain now includes prepare-worktree.sh; the real
+    # script fails rc=1 against fixture dirs and its spawn_failed drain
+    # preempts the warmup-timeout contracts most of these suites pin.
+    # Default-mock it (tests pinning prepare semantics override the env).
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$TMPDIR/mock-prepare.sh"
+    chmod +x "$TMPDIR/mock-prepare.sh"
+    _SEE1085_PREPARE_SH="$TMPDIR/mock-prepare.sh"
     cat > "$MOCK_WORKTREE/project.godot" <<'EOF'
 config_version=5
 
@@ -142,14 +150,23 @@ start_listener() {
     echo "$pid"
 }
 
-# make_configure_mock <counter-file> <rc> — writes a mock configure-mcp-port.sh
-# that bumps the counter file and exits with <rc>. Echoes the script path.
+# make_configure_mock <counter-file> <rc> [worktree] — writes a mock
+# configure-mcp-port.sh that bumps the counter file and exits with <rc>. When a
+# worktree is given, the mock also writes the lease sidecar
+# (.godot/mcp-lease.json state=active port=$GODOT_PORT): SEE-1292's
+# assert-then-reactivate loop re-runs configure until the sidecar reads
+# active@GODOT_PORT, so a counter-only mock now counts 4 configure runs per
+# spawn. Echoes the script path.
 make_configure_mock() {
-    local counter="$1" rc="$2"
+    local counter="$1" rc="$2" wt="${3:-}"
     local sh="$TMPDIR/mock-configure.sh"
     cat > "$sh" <<EOF
 #!/usr/bin/env bash
 echo x >> "\${KOL_CONFIGURE_COUNTER:-$counter}"
+if [[ -n "${wt}" && -n "\\${GODOT_PORT:-}" ]]; then
+    mkdir -p "${wt}/.godot"
+    printf '{"state":"active","port":%s}' "\$GODOT_PORT" > "${wt}/.godot/mcp-lease.json"
+fi
 exit $rc
 EOF
     chmod +x "$sh"
@@ -192,6 +209,7 @@ start_proxy() {
             "GODOT_HOST=127.0.0.1" \
             "PATH=$MOCK_NPX_DIR:$PATH" \
             "MOCK_NPX_SCRIPT_DIR=$TMPDIR" \
+            "GODOT_MCP_PREPARE_SH=${_SEE1085_PREPARE_SH}" \
             `# SEE-1111: opt the resolver OUT of the owner-fork preference so the` \
             `# proxy spawns THIS mock npx (on PATH), not the real fork — the mock` \
             `# only answers JSON-RPC; it never drives a real editor.` \

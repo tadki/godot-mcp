@@ -231,7 +231,7 @@ for (const entry of fs.readdirSync(cwd)) {
     let st; try { st = fs.statSync(sub); } catch { continue; }
     if (!st.isDirectory()) continue;
     if (fs.existsSync(path.join(sub, "project.godot")) &&
-        fs.existsSync(path.join(sub, ".dev", "godot-mcp", "launch"))) {
+        fs.existsSync(path.join(sub, "launch"))) {
         process.stdout.write(sub); process.exit(0);
     }
 }
@@ -260,10 +260,14 @@ CFG7_SH=$(make_configure_mock "$CFG7" 0)
 START7="$TMPDIR/start7.count"; : > "$START7"
 START7_SH=$(make_start_mock "$START7" 0 0)
 PORT7=$(find_free_port)
+# SEE-1344: the §7.1 shared-master guard is env-driven (GODOT_MCP_SHARED_MASTER,
+# empty default = guard nothing since AC-M3REORG-011); pin the known shared
+# path explicitly so the guard fires regardless of the box's default.
 start_proxy \
     "GODOT_PORT=$PORT7" \
     "KOL_AGENT_NAME=agent7" \
     "KOL_WORKTREE=$KNOWN_SHARED" \
+    "GODOT_MCP_SHARED_MASTER=$KNOWN_SHARED" \
     "KOL_PROJECT_GODOT=$KNOWN_SHARED/project.godot" \
     "KOL_CONFIGURE_SH=$CFG7_SH" \
     "KOL_START_SH=$START7_SH" \
@@ -336,10 +340,20 @@ START8="$TMPDIR/start8.count"; : > "$START8"
 START8_SH=$(make_start_mock "$START8" 0 0)
 PORT8=$(find_free_port)
 start_listener "$PORT8"   # port already listening → hot path, no spawn
+# SEE-1344: the bare pre-bound listener + sidecar-less holder is evicted by
+# the SEE-1338 arbiter before the hot-reuse lane engages; the §8 contract is
+# re-pin-skipping on the shared master, not eviction. Opt out + prove holder
+# identity via the e43cdc73 .worktree sidecar (holder = scratch identity here;
+# the pin-skip is asserted on the configure-mock counter, not the sidecar).
+EDITOR_LOG8="$TMPDIR/godot-editor-agent8.log"
+printf '%s' "$KNOWN_SHARED" > "${EDITOR_LOG8%.log}.worktree"
 start_proxy \
     "GODOT_PORT=$PORT8" \
     "KOL_AGENT_NAME=agent8" \
     "KOL_WORKTREE=$KNOWN_SHARED" \
+    "GODOT_MCP_SHARED_MASTER=$KNOWN_SHARED" \
+    "GODOT_EDITOR_LOG_FILE=$EDITOR_LOG8" \
+    "KOL_PORT_ARBITER=off" \
     "KOL_PROJECT_GODOT=$KNOWN_SHARED/project.godot" \
     "KOL_CONFIGURE_SH=$CFG8_SH" \
     "KOL_START_SH=$START8_SH" \
@@ -407,7 +421,17 @@ for i in A B; do
     PORT=$(find_free_port)
     CFG_C="$TMPDIR/cfg9$i.count"; : > "$CFG_C"
     START_C="$TMPDIR/start9$i.count"; : > "$START_C"
-    CFG_SH=$(make_configure_mock "$CFG_C" 0)
+    CFG_SH="$TMPDIR/cfg9$i.sh"
+    {
+        echo '#!/usr/bin/env bash'
+        echo 'echo x >> "${KOL_CONFIGURE_COUNTER:-/dev/null}"'
+        # SEE-1292 assert-then-reactivate: configure must leave the lease
+        # sidecar active@GODOT_PORT or the spawn loop re-runs it 3 more times.
+        echo 'mkdir -p "'"$WT"'/.godot"'
+        echo 'printf '"'"'{"state":"active","port":%s}'"'"' "$GODOT_PORT" > "'"$WT"'/.godot/mcp-lease.json"'
+        echo 'exit 0'
+    } > "$CFG_SH"
+    chmod +x "$CFG_SH"
     START_SH=$(make_start_mock "$START_C" 0 1)   # spawn=1 → listener on GODOT_PORT
     start_proxy \
         "GODOT_PORT=$PORT" \
