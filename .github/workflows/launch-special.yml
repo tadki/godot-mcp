@@ -26,24 +26,35 @@ on:
   workflow_dispatch:
     inputs:
       bucket:
-        description: 'Which bucket to run (long|env|drift|gherkin|all)'
+        description: 'Which bucket to run (long|env|drift|gherkin|coverage|all)'
         type: choice
         default: all
-        options: [all, long, env, drift, gherkin]
+        options: [all, long, env, drift, gherkin, coverage]
   schedule:
+    # SEE-1342 §SPEC-110 (Owner 2026-09-24 三档时长裁决)：
+    #   <10min 门禁 / 10-20min 每天 cron / >20min 每周两次（周三+周日）。
+    # Daily 02:23 UTC — 10-20min 档：long-suites + drift-watch（两 job 的 if
+    # 条件按 cron 字符串匹配本条）。
+    - cron: '23 2 * * *'
     # Sundays 03:07 UTC — off-minute per house convention.
     - cron: '7 3 * * 0'
-    # Wednesdays 03:13 UTC — SEE-1334 SPEC-023 fast-tier speed audit (nightly
-    # cadence, non-blocking evidence; per-entry >60s or total >8min flags a
-    # downgrade review, decision trail lives on the issue).
+    # Wednesdays 03:13 UTC — 周三与周日两条共享 >20min 档（mutation-evidence、
+    # coverage-launch、speed-audit、env、gherkin）。
     - cron: '13 3 * * 3'
+
+env:
+  # 仅一个环境变量即切换通道：默认 dry-run（只打 summary 报告不真建 issue），
+  # Owner 确认后放量为 'true'。
+  ENABLE_DRIFT_ISSUE_CHANNEL: 'false'
 
 permissions:
   contents: read
 
 jobs:
   long-suites:
-    if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' || inputs.bucket == 'long' }}
+    # SEE-1342 §SPEC-110 目标2：long 桶（10-20min 档）迁每日 cron，按 cron
+    # 字符串精确匹配，避免在周三/日 schedule 上重复跑第二次。
+    if: ${{ (github.event_name == 'schedule' && github.event.schedule == '23 2 * * *') || (github.event_name == 'workflow_dispatch' && (inputs.bucket == 'all' || inputs.bucket == 'long')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -68,7 +79,8 @@ jobs:
         working-directory: launch
 
   env-bound:
-    if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' || inputs.bucket == 'env' }}
+    # env 桶为秒级 documented skip，维持周三/周日周检节奏（§SPEC-110：仅 long/drift 迁每日）。
+    if: ${{ (github.event_name == 'schedule' && (github.event.schedule == '7 3 * * 0' || github.event.schedule == '13 3 * * 3')) || (github.event_name == 'workflow_dispatch' && (inputs.bucket == 'all' || inputs.bucket == 'env')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -92,7 +104,8 @@ jobs:
           echo "  launch/test_see1273_t2_param.sh               (runs green headless — see long bucket note)"
 
   drift-watch:
-    if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' || inputs.bucket == 'drift' }}
+    # 目标2：drift（10-20min 档）与 long 同迁每日 cron（§SPEC-110）。
+    if: ${{ (github.event_name == 'schedule' && github.event.schedule == '23 2 * * *') || (github.event_name == 'workflow_dispatch' && (inputs.bucket == 'all' || inputs.bucket == 'drift')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     continue-on-error: true
@@ -103,6 +116,15 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: server/package-lock.json
+      - name: Restore previous round's RED set
+        # restore-keys 回退到最近一份 drift-red-* 缓存（= 上一轮集合）；key 精确
+        # 匹配恒 miss 属预期，防止本轮与上轮文件混淆。
+        uses: actions/cache/restore@v4
+        with:
+          path: drift-red-store
+          key: drift-red-${{ github.run_id }}
+          restore-keys: |
+            drift-red-
       - name: Build server CLI
         run: |
           npm ci --no-audit --no-fund
@@ -113,8 +135,12 @@ jobs:
         # purpose — drift entries are evidence runs (continue-on-error), not
         # vitest-managed tests. Graduation into fast = moving the entry into
         # launch/vitest.config.ts's FAST list.
+        # SEE-1342 §SPEC-110 目标4：逐项结果追加写入 red-<run_id>.txt（RED 项），
+        # 供尾部 summary 步骤做跨轮 RED 集合对比（artifact + cache 承载上轮）。
         run: |
           set -uo pipefail
+          RED_LOG="drift-red-${{ github.run_id }}.txt"
+          : > "$RED_LOG"
           for t in \
             launch/tests/scripts/test_see1045_stdio_proxy.sh \
             launch/tests/scripts/test_see1070_host_mirror_parity.sh \
@@ -177,20 +203,50 @@ jobs:
             echo "::group::$t"
             case "$t" in
               *.mjs) timeout 180 node "$t" </dev/null && echo "[special:drift] PASS (drift fixed → graduate)" \
-                     || echo "::warning::[special:drift] RED $t" ;;
+                     || { echo "::warning::[special:drift] RED $t"; echo "$t" >> "$RED_LOG"; } ;;
               *.sh)  timeout 180 bash "$t" </dev/null && echo "[special:drift] PASS (drift fixed → graduate)" \
-                     || echo "::warning::[special:drift] RED $t" ;;
+                     || { echo "::warning::[special:drift] RED $t"; echo "$t" >> "$RED_LOG"; } ;;
             esac
             echo "::endgroup::"
           done
           exit 0
+      - name: Archive RED set (artifact + cache for next round's diff)
+        # artifact 留档可追溯；cache 用 restore-keys 恢复「最近一轮」给下轮对比
+        # （首跑无上轮 → 视为空集，全按新增处理）。
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-red-set-${{ github.run_id }}
+          path: drift-red-${{ github.run_id }}.txt
+          retention-days: 30
+      - name: RED → Multica issue report (auto-create channel, dry-run by default)
+        # §SPEC-110 目标4：对比本轮与上轮 RED 集合，新增/持续 RED 走建单候选
+        # （去重 + 单次 ≤5）；默认 dry-run 只写 step summary，不真建。
+        if: always()
+        env:
+          DRIFT_STORE: drift-red-store
+        run: |
+          mkdir -p "$DRIFT_STORE"
+          node .github/scripts/drift-issue-report.mjs \
+            "drift-red-${{ github.run_id }}.txt" "$DRIFT_STORE" "${{ github.run_id }}"
+          cp "drift-red-${{ github.run_id }}.txt" "$DRIFT_STORE/red-${{ github.run_id }}.txt"
+      - name: Save RED set to cross-run cache
+        # actions/cache 在 job 结束的 post 阶段落盘；下轮 restore-keys 'drift-red-'
+        # 命中最近一轮。key 带 run_id 保证永远 miss、走 restore 恢复旧集合。
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: drift-red-store
+          key: drift-red-${{ github.run_id }}
 
   # SEE-1334 Phase 2 / SPEC-023 — fast-tier speed audit (nightly, non-blocking).
   # Runs the fast+long vitest suite and flags: any entry >60s (downgrade
   # review candidate → long tier) or total >8min (80% of the fast job budget).
   # Findings are advisory; the downgrade DECISION is recorded on the issue.
   speed-audit:
-    if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' }}
+    # SEE-1342 §SPEC-110 目标3（Owner 2026-09-24：speed-audit 改每周两次）：
+    # 显式归位周三/周日两条 cron，每日 cron 不跑。
+    if: ${{ (github.event_name == 'schedule' && (github.event.schedule == '7 3 * * 0' || github.event.schedule == '13 3 * * 3')) || (github.event_name == 'workflow_dispatch' && inputs.bucket == 'all') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     continue-on-error: true
@@ -238,7 +294,7 @@ jobs:
   # Strict cucumber: any failing/pending scenario blocks the job — the
   # suite is protocol-level mocked and should be seconds-fast and stable.
   gherkin-evidence:
-    if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' || inputs.bucket == 'gherkin' }}
+    if: ${{ (github.event_name == 'schedule' && (github.event.schedule == '7 3 * * 0' || github.event.schedule == '13 3 * * 3')) || (github.event_name == 'workflow_dispatch' && (inputs.bucket == 'all' || inputs.bucket == 'gherkin')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -256,13 +312,13 @@ jobs:
         run: npx cucumber-js --strict
         working-directory: server
 
-  # SEE-1334 Phase 4 (SPEC-041) — FULL-REPO mutation evidence run, nightly,
-  # NON-BLOCKING (health snapshot: kill rate is reported, never gated; the
-  # strict gate is the whitelist in stryker.config.json). Estimated 2.5-3h
+  # SEE-1334 Phase 4 (SPEC-041) — FULL-REPO mutation evidence run, twice-weekly
+  # (Wed+Sun) NON-BLOCKING (health snapshot: kill rate is reported, never gated;
+  # the strict gate is the whitelist in stryker.config.json). Estimated 2.5-3h
   # on a 4-core runner (16.7k mutants measured on run 1) — hence 240min
-  # timeout and the Wednesday cadence shared with speed-audit.
+  # timeout and the cadence shared with speed-audit.
   mutation-evidence:
-    if: ${{ github.event_name == 'schedule' || inputs.bucket == 'all' }}
+    if: ${{ (github.event_name == 'schedule' && (github.event.schedule == '7 3 * * 0' || github.event.schedule == '13 3 * * 3')) || (github.event_name == 'workflow_dispatch' && inputs.bucket == 'all') }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
     continue-on-error: true
@@ -283,3 +339,45 @@ jobs:
           name: mutation-nightly-report
           path: reports/mutation/
           retention-days: 14
+
+  # SEE-1342 §SPEC-110 目标1 — coverage-launch 从 launch-ci.yml 撤下 PR/push
+  # 触发，并入本文件周三/周日 schedule（>20min 预算档）。job 本体与 c8 阈值
+  # 判定逻辑（wrapper 注入 NODE_V8_COVERAGE → c8 合并 → exit code）逐字平移，
+  # 仅执行时机变化。continue-on-error 与 special 层其余 evidence job 一致。
+  coverage-launch:
+    if: ${{ (github.event_name == 'schedule' && (github.event.schedule == '7 3 * * 0' || github.event.schedule == '13 3 * * 3')) || (github.event_name == 'workflow_dispatch' && (inputs.bucket == 'all' || inputs.bucket == 'coverage')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Build server CLI (harness fork-CLI path)
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      - name: Cache Godot binary
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/godot
+          key: godot-${{ runner.os }}-4.6.2-stable
+      - name: Install Godot 4.x (cache miss path)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          GODOT_VERSION=4.6.2
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          sudo mv "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+          godot --version
+      - name: Install root dev tooling (vitest + c8)
+        run: npm ci --no-audit --no-fund
+      - name: Run launch coverage gate (wrapper injection → c8 merge → thresholds)
+        timeout-minutes: 18
+        run: npm run coverage:launch
