@@ -122,6 +122,11 @@ printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_ove
 start_proxy() {
     PROXY_OUT="$TMPDIR/proxy.out"; : > "$PROXY_OUT"
     PROXY_ERR="$TMPDIR/proxy.err"; : > "$PROXY_ERR"
+        # SEE-1344: sandbox holder identity — opt out of the SEE-1338 arbiter
+        # (pre-bound listeners here are bare mocks; assertions target warm/
+        # hedge/lease semantics, not eviction). E2 pins the one-shot
+        # FAILED_EXIT lane ("fast-fail fires exactly once"), so the
+        # giveup-rearm default lane is explicitly off.
     coproc PX {
         env \
             "GODOT_HOST=127.0.0.1" \
@@ -130,6 +135,8 @@ start_proxy() {
             "MOCK_NPX_SCRIPT_DIR=$TMPDIR" \
             "KOL_WORKTREE=$SCRATCH_WT" \
             "KOL_PROJECT_GODOT=$SCRATCH_WT/project.godot" \
+            "KOL_PORT_ARBITER=off" \
+            "KOL_GIVEUP_REARM=0" \
             "$@" \
             node "$PROXY" >"$PROXY_OUT" 2>"$PROXY_ERR"
     }
@@ -184,7 +191,12 @@ wait_for_death() {
 # ---------------------------------------------------------------------------
 sep "E1: GODOT_EDITOR_LOG_FILE points to nonexistent path → proxy warms via TCP probe"
 E1_PORT=$(find_free_port)
-E1_LOG="$TMPDIR/e1/does/not/exist.log"   # parent dirs do NOT exist
+E1_LOG="$TMPDIR/e1/does/not/exist.log"   # the LOG file itself never appears
+# e43cdc73 sidecar-guard: the holder must prove it serves this slot's worktree
+# or it is evicted by design. Pre-writing the .worktree sidecar is holder
+# identity only — the asserted condition (missing editor log) is untouched.
+mkdir -p "$(dirname "$E1_LOG")"
+printf '%s' "$SCRATCH_WT" > "${E1_LOG%.log}.worktree"
 E1_LPID=$(start_listener "$E1_PORT")
 sleep 0.2
 
@@ -297,10 +309,23 @@ sleep 0.3
 # ---------------------------------------------------------------------------
 sep "E3: GODOT_EDITOR_LOG_FILE='' (explicit empty) → lease monitor fully no-op"
 E3_PORT=$(find_free_port)
-E3_LPID=$(start_listener "$E3_PORT")
-sleep 0.2
+# e43cdc73 sidecar-guard: with an empty log env the holder cannot prove its
+# worktree, so a PRE-BOUND listener is evicted by design. Drive the editor up
+# via the mock start script instead — the asserted behavior (warm + held-call
+# flush under empty GODOT_EDITOR_LOG_FILE) is unchanged.
+E3_CFG="$TMPDIR/e3-configure.sh"; printf '#!/usr/bin/env bash\nexit 0\n' > "$E3_CFG"; chmod +x "$E3_CFG"
+E3_START="$TMPDIR/e3-start.sh"
+{
+    echo '#!/usr/bin/env bash'
+    echo 'if [[ -n "${GODOT_PORT:-}" ]]; then'
+    echo "    LISTEN_PORT=\"\$GODOT_PORT\" nohup node \"$LISTENER_SCRIPT\" </dev/null >/dev/null 2>\"$TMPDIR/e3-listener.err\" &"
+    echo 'fi'
+    echo 'exit 0'
+} > "$E3_START"
+chmod +x "$E3_START"
 
 start_proxy "GODOT_PORT=$E3_PORT" "KOL_WARMUP_TIMEOUT_MS=8000" "KOL_FAILED_EXIT_MS=30000" \
+            "KOL_CONFIGURE_SH=$E3_CFG" "KOL_START_SH=$E3_START" \
             "GODOT_EDITOR_LOG_FILE=" "MOCK_NPX_LOG=$TMPDIR/e3_npx.log"
 send_line "$INIT_LINE"
 send_line "$CALL_LINE"
@@ -334,7 +359,7 @@ else
     ko "E3.2b: lease false-fail with empty env"
 fi
 stop_proxy
-kill "$E3_LPID" 2>/dev/null || true
+# (E3 editor lifecycle is owned by the mock start script; nothing extra to kill)
 sleep 0.3
 
 # ---------------------------------------------------------------------------
