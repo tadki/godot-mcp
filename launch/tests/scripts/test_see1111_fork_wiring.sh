@@ -81,11 +81,9 @@ EOF
 exit 0
 EOF
     chmod +x "$dir"/*.sh
-    cp "$PROXY" "$dir/godot-mcp-proxy.mjs"
-    cp "$LAUNCH_DIR/godot-mcp-resolve.mjs" "$dir/godot-mcp-resolve.mjs"
-    cp "$LAUNCH_DIR/warmup-stage-parser.mjs" "$dir/warmup-stage-parser.mjs"
-    cp "$LAUNCH_DIR/agent-ports.lib.sh" "$dir/agent-ports.lib.sh"
-    cp "$LAUNCH_DIR/agent-ports.json" "$dir/agent-ports.json"
+    # SEE-1344: vendor the full launch top-level + proxy/ tree — per-file
+    # copies go stale silently against the decomposed proxy modules.
+    (cd "$LAUNCH_DIR" && find . -maxdepth 1 -type f -exec cp {} "$dir/" \; && cp -r proxy "$dir/")
     echo "$dir"
 }
 
@@ -123,6 +121,10 @@ sep() { echo; echo "============================================================
 sep "Case A: launcher honors external KOL_GODOT_MCP_CMD + GODOT_MCP_QUICK_TIMEOUT_MS overrides"
 STUB_DIR="$(make_stubbed_wrapper)"
 PORT_A=$(find_free_port)
+# SEE-1344: pin an explicit scratch project (skips the 120s WORKTREE_WAIT
+# tier — this test asserts fork wiring, not worktree resolution).
+SCRATCH_A="$TMPDIR/caseA-scratch"; mkdir -p "$SCRATCH_A"
+printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$SCRATCH_A/project.godot"
 : > "$TMPDIR/fork.marker"
 # The proxy spawns the godot-mcp child lazily on the first tools/call; run the
 # stubbed launcher through a full initialize + trigger + retry so the child is
@@ -136,6 +138,8 @@ PORT_A=$(find_free_port)
     "KOL_AGENT_NAME=Bachi" \
     "GODOT_HOST=127.0.0.1" \
     "GODOT_PORT=$PORT_A" \
+    "KOL_PROJECT_GODOT=$SCRATCH_A/project.godot" \
+    "KOL_WORKTREE=$SCRATCH_A" \
     "KOL_GODOT_MCP_CMD=$MOCK_BIN" \
     "GODOT_MCP_QUICK_TIMEOUT_MS=12345" \
     bash "$STUB_DIR/godot-mcp-launcher.sh" --port "$PORT_A" \
@@ -171,6 +175,8 @@ sep "Case B: fork present on this machine → launcher logs FORK_WIRED"
 STUB_DIR_B="$(make_stubbed_wrapper)"
 PORT_B=$(find_free_port)
 FORK_CLI="${GODOT_MCP_FORK_CLI:-${REPO_ROOT}/server/dist/cli.js}"
+SCRATCH_B="$TMPDIR/caseB-scratch"; mkdir -p "$SCRATCH_B"
+printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$SCRATCH_B/project.godot"
 if [[ -x "$FORK_CLI" ]]; then
     (
         printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"fork-test"}}}'
@@ -179,6 +185,8 @@ if [[ -x "$FORK_CLI" ]]; then
         "KOL_AGENT_NAME=Bachi" \
         "GODOT_HOST=127.0.0.1" \
         "GODOT_PORT=$PORT_B" \
+        "KOL_PROJECT_GODOT=$SCRATCH_B/project.godot" \
+        "KOL_WORKTREE=$SCRATCH_B" \
         bash "$STUB_DIR_B/godot-mcp-launcher.sh" --port "$PORT_B" \
         >"$TMPDIR/caseB.out" 2>"$TMPDIR/caseB.err" &
     pid=$!
@@ -205,6 +213,8 @@ else
         "KOL_AGENT_NAME=Bachi" \
         "GODOT_HOST=127.0.0.1" \
         "GODOT_PORT=$PORT_B" \
+        "KOL_PROJECT_GODOT=$SCRATCH_B/project.godot" \
+        "KOL_WORKTREE=$SCRATCH_B" \
         bash "$STUB_DIR_B/godot-mcp-launcher.sh" --port "$PORT_B" \
         >"$TMPDIR/caseB.out" 2>"$TMPDIR/caseB.err" &
     pid=$!

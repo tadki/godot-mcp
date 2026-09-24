@@ -53,12 +53,20 @@ function runProxyForCache(label, home) {
             env: {
                 ...process.env,
                 HOME: home,
+                // SEE-1344: the state dir moved to GODOT_MCP_HOME with an
+                // os-homedir fallback (SEE-1292 §DECPL-001); HOME alone no
+                // longer routes it — pin it to the asserted cache location.
+                GODOT_MCP_HOME: path.join(home, '.multica'),
                 KOL_AGENT_NAME: label,
                 KOL_GODOT_MCP_CMD: MOCK_NPX,
                 // Proxy probes GODOT_HOST:GODOT_PORT for warm; the mock's fake
                 // editor listens on 127.0.0.1 with the same port.
                 GODOT_HOST: '127.0.0.1',
                 KOL_WORKTREE: process.cwd(),
+                // SEE-1344: pin an explicit scratch project — the launcher's
+                // 120s WORKTREE_WAIT tier preempts the tools/list timeout
+                // window when resolution falls through.
+                KOL_PROJECT_GODOT: path.join(process.cwd(), 'launch', 'tests', 'scripts', '_see1244_scratch', 'project.godot'),
                 KOL_DIRECT_GODOT_MCP: '1',
                 KOL_PORT_ARBITER: 'off',
                 // Hermetic random port: the mock NOW binds a fake editor WS on

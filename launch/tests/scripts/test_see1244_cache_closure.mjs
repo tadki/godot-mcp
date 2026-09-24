@@ -64,6 +64,12 @@ function runColdFlow(home, label) {
                 // WSL gateway (detectWindowsHost) that nothing listens on.
                 GODOT_HOST: '127.0.0.1',
                 KOL_WORKTREE: process.cwd(),
+                // SEE-1344: pin an explicit scratch project — the launcher's
+                // 120s WORKTREE_WAIT tier (shared/SEE-1342 sync) preempts the
+                // 30s cache-closure window when resolution falls through; this
+                // chain test asserts cache semantics, not worktree resolution.
+                KOL_PROJECT_GODOT: path.join(process.cwd(), 'launch', 'tests', 'scripts', '_see1244_scratch', 'project.godot'),
+
                 KOL_DIRECT_GODOT_MCP: '1',
                 KOL_PORT_ARBITER: 'off',
                 KOL_MCP_PORT: String(port),
