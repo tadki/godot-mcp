@@ -158,7 +158,7 @@ start_listener() {
 # active@GODOT_PORT, so a counter-only mock now counts 4 configure runs per
 # spawn. Echoes the script path.
 make_configure_mock() {
-    local counter="$1" rc="$2" wt="${3:-}"
+    local counter="$1" rc="$2" wt="$3"
     local sh="$TMPDIR/mock-configure.sh"
     cat > "$sh" <<EOF
 #!/usr/bin/env bash

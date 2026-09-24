@@ -187,6 +187,7 @@ if [[ -x "$FORK_CLI" ]]; then
         "GODOT_PORT=$PORT_B" \
         "KOL_PROJECT_GODOT=$SCRATCH_B/project.godot" \
         "KOL_WORKTREE=$SCRATCH_B" \
+        "GODOT_MCP_FORK_CLI=$FORK_CLI" \
         bash "$STUB_DIR_B/godot-mcp-launcher.sh" --port "$PORT_B" \
         >"$TMPDIR/caseB.out" 2>"$TMPDIR/caseB.err" &
     pid=$!
@@ -215,6 +216,7 @@ else
         "GODOT_PORT=$PORT_B" \
         "KOL_PROJECT_GODOT=$SCRATCH_B/project.godot" \
         "KOL_WORKTREE=$SCRATCH_B" \
+        "GODOT_MCP_FORK_CLI=$FORK_CLI" \
         bash "$STUB_DIR_B/godot-mcp-launcher.sh" --port "$PORT_B" \
         >"$TMPDIR/caseB.out" 2>"$TMPDIR/caseB.err" &
     pid=$!
