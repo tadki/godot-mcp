@@ -16,10 +16,9 @@ name: Launch CI (fast tier)
 # suites are NOT here — they live in launch-special.yml.
 #
 # Two parallel jobs stay under the 10-minute budget. The launch coverage gate
-# (SPEC-021, revised: repo-internal `npm run coverage:launch` — wrapper-injected
-# NODE_V8_COVERAGE + c8 merge + threshold exit code) runs as its own job so
-# node-units keeps its 5-min shape and the gate gets the full-suite window.
-# — see the coverage step notes.
+# (SPEC-021) moved to launch-special.yml per SEE-1342 §SPEC-110 (Owner
+# 2026-09-24 three-tier duration ruling: >20min tier runs on Wed+Sun cron,
+# not per-PR) — PR time no longer pays its 10-18min window.
 
 on:
   push:
@@ -100,52 +99,11 @@ jobs:
       - name: Install root dev tooling
         run: npm ci --no-audit --no-fund
       # NODE_V8_COVERAGE propagates to the harness child processes (vitest's
-      # own coverage provider cannot see subprocesses). Merging happens in the
-      # audit workflow; here it is collected so any single job can be re-run
-      # with --coverage without a code change.
+      # own coverage provider cannot see subprocesses). Merging happens in
+      # launch-special.yml's coverage-launch job (Wed+Sun cron); here it is
+      # collected so any single job can be re-run with --coverage without a
+      # code change.
       - name: Run fast-tier node unit tests via vitest (14 entries)
         timeout-minutes: 4
         run: npx vitest run launch/tests/.vitest-gen/fast --testNamePattern "\.mjs$"
         working-directory: launch
-
-  # SEE-1334 SPEC-021 (revised per QA D1): launch coverage gate as a
-  # repo-internal, reproducible command. The generated wrappers inject
-  # NODE_V8_COVERAGE into every harness child; the gate script merges the raw
-  # v8 dumps with c8 and judges line/branch floors (exit code). Job name is a
-  # NEW context (`coverage-launch`) — not added to required checks (SPEC-013's
-  # list is unchanged; adding it is a later, separate decision).
-  coverage-launch:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: server/package-lock.json
-      - name: Build server CLI (harness fork-CLI path)
-        run: |
-          npm ci --no-audit --no-fund
-          npm run build
-        working-directory: server
-      - name: Cache Godot binary
-        id: godot-cache
-        uses: actions/cache@v4
-        with:
-          path: /usr/local/bin/godot
-          key: godot-${{ runner.os }}-4.6.2-stable
-      - name: Install Godot 4.x (cache miss path)
-        if: steps.godot-cache.outputs.cache-hit != 'true'
-        run: |
-          GODOT_VERSION=4.6.2
-          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O /tmp/godot.zip
-          unzip -q /tmp/godot.zip -d /tmp/godot
-          sudo mv "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
-          sudo chmod +x /usr/local/bin/godot
-          godot --version
-      - name: Install root dev tooling (vitest + c8)
-        run: npm ci --no-audit --no-fund
-      - name: Run launch coverage gate (wrapper injection → c8 merge → thresholds)
-        timeout-minutes: 18
-        run: npm run coverage:launch
