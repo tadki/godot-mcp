@@ -108,6 +108,43 @@ try {
 //   worktree_wait 先于 proxy_warming 出现在 stderr 订阅流（两轮并行实测均为
 //   排序颠倒）、D3 断言 SHIM_CHAIN_EXIT 落日志观测窗。对调度延迟零容忍，
 //   串行基线稳定绿 → 留串行桶。
+//
+//   —— SEE-1344 rebin 8 项（紧时序窗/负载校准预算，4-way 实测 flake 证据；
+//   与上方三先例同语义，r7-r10 全量 sweep 定性，详见 ② 汇报与 f5e2486）——
+//
+//   test_see1045_stdio_proxy.sh — stub launcher 全链 stdio 观测窗按
+//   delay+6s 校准（launcher 侧 WORKTREE_WAIT/prepare 链路延迟窗）；4-way
+//   下 exec 落点越过观测窗（r3 实测红，standalone 稳定绿）→ 留串行桶。
+//
+//   test_see1077_edge_cases.sh — E2 burst 断言依赖「5 条 exiting 行 <100ms
+//   写入后 5s 内 fast-fail 恰一次」的亚秒窗 + E1/E3 的 warm 观测预算；
+//   r7/r9 实测 E2.1-E2.4 全组红（lease 计时器被调度延迟拖过 5s 窗），
+//   standalone 稳定绿 → 留串行桶。
+//
+//   test_see990_mcp_ready_gate.sh — B1 断言 gate 路径 <6s（TCP 快路径
+//   wall 上限语义）+ A1 exec 观测窗；r9 实测 B1 11s（预算超限非语义红）
+//   → 留串行桶。
+//
+//   test_see1111_fork_wiring.sh — Case A/B 依赖 stub launcher 在固定 sleep
+//   观测窗内完成 fork 解析 + 子进程 spawn（marker 文件落盘窗）；r8 实测
+//   marker 空组红，standalone 5/5 稳定绿 → 留串行桶。
+//
+//   test_see1111_warmup_hint.sh — W9 断言 3s warmup 窗内 held 不应答、
+//   窗口耗尽后以 recovering 诊断应答（hold-to-timeout 语义即被测对象）；
+//   负载下 spawn 链延迟使应答提前落窗（r8 实测 W9a 红）→ 留串行桶。
+//
+//   test_see1148_p3_reclaim.sh — reaper 全量 sweep ×多 case，单 case 内
+//   真实时钟 grace 窗（intentional_release 15s 窗语义）+ resident 模式
+//   切换等待；机器级扫描器（与 see1137/lease_matrix 同类），r10 实测
+//   180s 逐项预算溢出（standalone 36s 绿）→ 留串行桶。
+//
+//   test_see1244_cache_closure.mjs — PROACTIVE refresh 闭环断言挂 30s
+//   closure timer（负载校准预算，r2 恰以 30.5s 撞线红，r1/r3 绿）；
+//   cache 写入时机依赖 warm+CLI 连接的亚秒窗 → 留串行桶。
+//
+//   test_see1244_proxy_tools_cache.mjs — 同族：tools cache 写入点 =
+//   NPX_CLI_CONNECTED 亚秒窗后的同步 rename（r8 实测 write 点被调度延迟
+//   推出观测窗）→ 留串行桶。
 const FAST_SERIAL = `
 launch/tests/scripts/see1137/test_reaper_headless_orphan_sweep.sh
 launch/tests/scripts/see1129/test_lease_lifecycle_boundary_matrix.sh
