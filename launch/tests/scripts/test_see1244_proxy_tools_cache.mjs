@@ -46,6 +46,30 @@ function section(t) { console.log(`\n== ${t} ==`); }
 
 const MOCK_NPX = `${HERE}/_see1244_mock_npx.mjs`;
 
+// SEE-1344 DEFECT-1344-2: SIGTERM is async — a child killed but not yet
+// exited can still write into GODOT_MCP_HOME after rmSync starts, making the
+// recursive rmdir fail ENOTEMPTY (uncaught → exit 1 after all assertions).
+// Teardown must first await the child's exit event.
+function exitedOnce(child) {
+    if (!child || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+    return new Promise((resolve) => child.once('exit', () => resolve()));
+}
+// rmSync with bounded ENOTEMPTY retry: a grandchild (launcher→shim chain)
+// may outlive the direct child; retry gives it the beat to finish.
+function rmHome(dir) {
+    for (let i = 0; i < 5; i += 1) {
+        try { fs.rmSync(dir, { recursive: true, force: true }); return; }
+        catch (err) {
+            if (err && err.code === 'ENOTEMPTY' && i < 4) {
+                const end = Date.now() + 100;
+                while (Date.now() < end) { /* bounded teardown-only pause */ }
+                continue;
+            }
+            throw err;
+        }
+    }
+}
+
 function runProxyForCache(label, home) {
     return new Promise((resolve, reject) => {
         const proc = spawn('bash', [path.resolve(HERE, '../../../launch/godot-mcp-launcher.sh'), label], {
@@ -120,7 +144,7 @@ function runShimRead(home, label) {
             for (const line of buf.split('\n')) {
                 if (line.includes('"id":2') && line.includes('"tools"')) {
                     clearTimeout(timer); proc.kill();
-                    setTimeout(() => resolve({ resp: JSON.parse(line), errLines }), 150);
+                    setTimeout(() => resolve({ resp: JSON.parse(line), errLines, child: proc }), 150);
                 }
             }
         });
@@ -149,11 +173,12 @@ section('proxy writes post-patch cache through the real chain entry');
             ok('no .tmp residue (atomic rename)', !fs.existsSync(`${cacheFile}.tmp-` + '*') && fs.readdirSync(path.dirname(cacheFile)).every((f) => !f.includes('.tmp-')));
         }
         // Shim read side: fresh session hits the cache written by the proxy.
-        const { resp, errLines } = await runShimRead(home, 'CacheTest');
+        const { resp, errLines, child } = await runShimRead(home, 'CacheTest');
         ok('shim cache hit after proxy write', Array.isArray(resp?.result?.tools) && resp.result.tools.length > 0);
         ok('shim logged source=cache', errLines.some((l) => /SHIM_ANSWER_TOOLS source=cache/.test(l)));
+        await exitedOnce(child);
     }
-    fs.rmSync(home, { recursive: true, force: true });
+    rmHome(home);
 }
 
 section('fork mtime drift → shim stale flag (still answers)');
@@ -190,7 +215,8 @@ section('fork mtime drift → shim stale flag (still answers)');
         });
         proc.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list' })}\n`);
     });
-    fs.rmSync(home, { recursive: true, force: true });
+    await exitedOnce(proc);
+    rmHome(home);
 }
 
 console.log(`\nSUMMARY: PASS=${PASS} FAIL=${FAIL}`);
