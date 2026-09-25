@@ -51,7 +51,7 @@ PORT1=$(find_free_port)
 EDITOR_LOG="$TMPDIR/editor1.log"; : > "$EDITOR_LOG"   # empty → renderStable flips in ~4s
 CFG1="$TMPDIR/cfg1.count"; START1="$TMPDIR/start1.count"
 : > "$CFG1"; : > "$START1"
-CFG1_SH=$(make_configure_mock "$CFG1" 0)
+CFG1_SH=$(make_configure_mock "$CFG1" 0 "$MOCK_WORKTREE")
 START1_SH=$(make_start_mock "$START1" 0 1)             # spawn=1 → listener on GODOT_PORT
 
 sep "T4: proxy 1 — warm, lease line, expect fast-fail"
@@ -138,7 +138,7 @@ wait_for_stable "$CFG1" 2000   # SEE-1342 D4: counter writes settle
 PORT2=$(find_free_port)
 CFG2="$TMPDIR/cfg2.count"; START2="$TMPDIR/start2.count"
 : > "$CFG2"; : > "$START2"
-CFG2_SH=$(make_configure_mock "$CFG2" 0)
+CFG2_SH=$(make_configure_mock "$CFG2" 0 "$MOCK_WORKTREE")
 START2_SH=$(make_start_mock "$START2" 0 1)
 
 sep "T4: proxy 2 — fresh process, empty port, first tools/call spawns editor"

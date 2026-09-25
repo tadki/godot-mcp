@@ -32,8 +32,15 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-REAPER="$REPO_ROOT/launch/reap-stale-leases.sh"
-LAUNCH_HELD="$REPO_ROOT/launch/held"
+# SEE-1344: the launcher-held family root is ${SCRIPT_DIR}/held — with two
+# reaper sweeps now in the same fast-par pool, the shared checkout copy
+# cross-erases between tests. Vendor reaper+libs into a per-run tmp SCRIPT_DIR
+# so each sweep owns its held root (assertions unchanged).
+STUB_LAUNCH="$(mktemp -d)"
+cp "$REPO_ROOT/launch/reap-stale-leases.sh" "$REPO_ROOT/launch/"*.lib.sh "$STUB_LAUNCH/"
+cp "$REPO_ROOT/launch/agent-ports.json" "$STUB_LAUNCH/"
+REAPER="$STUB_LAUNCH/reap-stale-leases.sh"
+LAUNCH_HELD="$STUB_LAUNCH/held"   # vendored reaper SCRIPT_DIR/held — private per run
 
 PASS=0
 FAIL=0

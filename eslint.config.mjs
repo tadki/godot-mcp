@@ -69,6 +69,15 @@ export default tseslint.config(
       // Downgraded to the warning tier so the --max-warnings baseline still
       // blocks NEW unused vars; ratchet back to error after the split lands.
       'no-unused-vars': 'warn',
+      // SEE-1344 ⑬ (Owner 2026-09-25 01:02): fixed numeric-literal sleeps
+      // (setTimeout(fn, N) with a literal delay) surface as warnings — not
+      // banned: legitimate timeout paths keep an inline disable with a WHY
+      // (launch/CLAUDE.md 边界条款). The ratchet baseline (= sites present at
+      // rule introduction) absorbs them; new sites get flagged.
+      'no-restricted-syntax': ['warn', {
+        selector: "CallExpression[callee.name='setTimeout'] > Literal:nth-child(2)",
+        message: 'fixed-literal sleep (setTimeout(fn, N)) — use event-driven waits per launch/CLAUDE.md; keep only with an inline disable + WHY.',
+      }],
     },
   },
 );

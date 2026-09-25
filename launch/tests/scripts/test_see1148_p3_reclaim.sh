@@ -19,6 +19,11 @@ command -v node >/dev/null 2>&1 || { echo "FAIL: node required"; exit 1; }
 SBOX="$(mktemp -d)"
 trap 'rm -rf "$SBOX"' EXIT
 export HOME="$SBOX/home"
+# SEE-1344: the mode file lives under GODOT_MCP_HOME (SEE-1292 §DECPL-001,
+# default $HOME/.config/godot-mcp), not $HOME/.multica — pin the env so the
+# resident wrapper and these P3.2 writes agree.
+export GODOT_MCP_HOME="$HOME/.config/godot-mcp"
+
 mkdir -p "$HOME/.multica"
 # Hermetic: keep the D1 powershell fallback from doing live Win32 sweeps in
 # every reaper invocation below (they test mode/gating logic, not plumbing).
@@ -80,12 +85,12 @@ OUT="$("$REAPER" --root "$SBOX/iso-c" --dry-run 2>&1)"
 if echo "$OUT" | grep -q "STALE"; then bad "released lease wrongly reclaimed: $OUT"; else ok "released lease not reclaimed"; fi
 
 echo "== P3.2.1: resident wrapper defaults to dry-run with no mode file =="
-rm -f "$HOME/.multica/godot-reaper.mode"
+mkdir -p "$GODOT_MCP_HOME"; rm -f "$GODOT_MCP_HOME/godot-reaper.mode"
 OUT="$( "$RESIDENT" 2>&1 )"
 if echo "$OUT" | grep -q "dry_run=1"; then ok "no mode file -> dry-run"; else bad "no mode file not dry-run: $OUT"; fi
 
 echo "== P3.2.2: resident wrapper honors mode=live =="
-echo live > "$HOME/.multica/godot-reaper.mode"
+echo live > "$GODOT_MCP_HOME/godot-reaper.mode"
 OUT="$( "$RESIDENT" 2>&1 )"
 if echo "$OUT" | grep -q "dry_run=0"; then ok "mode=live -> live run"; else bad "mode=live not honored: $OUT"; fi
 
@@ -94,7 +99,7 @@ OUT="$( DRY_RUN=1 "$RESIDENT" 2>&1 )"
 if echo "$OUT" | grep -q "dry_run=1"; then ok "DRY_RUN=1 env forces dry-run"; else bad "DRY_RUN=1 override failed: $OUT"; fi
 
 echo "== P3.2.4: garbage mode value falls back to dry-run =="
-echo "bogus" > "$HOME/.multica/godot-reaper.mode"
+echo "bogus" > "$GODOT_MCP_HOME/godot-reaper.mode"
 OUT="$( "$RESIDENT" 2>&1 )"
 if echo "$OUT" | grep -q "dry_run=1"; then ok "garbage mode -> dry-run"; else bad "garbage mode not dry-run: $OUT"; fi
 

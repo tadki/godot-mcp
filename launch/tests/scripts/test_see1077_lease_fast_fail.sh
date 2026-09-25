@@ -266,8 +266,8 @@ stop_proxy() {
     [[ -n "${PX[1]:-}" ]] && { eval "exec ${PX[1]}>&-" 2>/dev/null || true; }
     [[ -n "${PX[0]:-}" ]] && { eval "exec ${PX[0]}<&-" 2>/dev/null || true; }
     if [[ -n "${PX_PID:-}" ]]; then
-        kill -9 "$PX_PID" 2>/dev/null || true
-        wait "$PX_PID" 2>/dev/null || true
+        [[ -n "${PX_PID:-}" ]] && kill -9 "$PX_PID" 2>/dev/null || true
+        [[ -n "${PX_PID:-}" ]] && wait "$PX_PID" 2>/dev/null || true
     fi
 }
 

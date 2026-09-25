@@ -36,7 +36,7 @@ lib_init
 CFG_COUNTER="$TMPDIR/cfg.count"
 START_COUNTER="$TMPDIR/start.count"
 : > "$CFG_COUNTER"; : > "$START_COUNTER"
-CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0)
+CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0 "$MOCK_WORKTREE")
 # No-op reap mock: evictStaleHolder runs the REAL reap-stale-leases.sh, whose
 # full-workspace pwsh sweeps take 15-45s on this machine and are irrelevant to
 # the guard logic under test. KOL_REAP_SH is the proxy's own test seam.

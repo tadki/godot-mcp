@@ -64,9 +64,21 @@ lib_init
 LAUNCHER="$REPO_ROOT/launch/godot-mcp-launcher.sh"
 CONFIGURE="$REPO_ROOT/launch/configure-mcp-port.sh"
 
-# Known shared D-drive master checkout (guard hardcode). The test must not
-# require it to exist — the path guard is lexical, so absence is fine.
-KNOWN_SHARED="/mnt/d/GodotProjects/king-of-likes"
+# Known shared master checkout (the guards target it lexically). SEE-1344
+# DEFECT-1344-1: this used to be the hardcoded WSL2 D-drive path, which only
+# exists on QA/dev boxes — on CI the §3/§7/§8 sections deterministically red.
+# A shared master is by definition "a git checkout on branch master", so build
+# one in $TMPDIR (same shape as MASTER_WT below): the guards fire on
+# branch==master / lexical path pin, never on the literal mount point.
+KNOWN_SHARED="$TMPDIR/sharedwt/king-of-likes"
+mkdir -p "$KNOWN_SHARED"
+git -C "$KNOWN_SHARED" init -q 2>/dev/null
+git -C "$KNOWN_SHARED" config user.email "test@example.com" >/dev/null 2>&1
+git -C "$KNOWN_SHARED" config user.name "Test" >/dev/null 2>&1
+git -C "$KNOWN_SHARED" checkout -qb master 2>/dev/null || git -C "$KNOWN_SHARED" branch -m master 2>/dev/null || true
+printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$KNOWN_SHARED/project.godot"
+git -C "$KNOWN_SHARED" add project.godot >/dev/null 2>&1
+git -C "$KNOWN_SHARED" commit -qm "baseline" 2>/dev/null || true
 
 # Two independent private agent worktrees, each a real Godot-project-shaped
 # checkout carrying the launch toolchain (down-search discriminator). Direction 3:
@@ -231,7 +243,7 @@ for (const entry of fs.readdirSync(cwd)) {
     let st; try { st = fs.statSync(sub); } catch { continue; }
     if (!st.isDirectory()) continue;
     if (fs.existsSync(path.join(sub, "project.godot")) &&
-        fs.existsSync(path.join(sub, ".dev", "godot-mcp", "launch"))) {
+        fs.existsSync(path.join(sub, "launch"))) {
         process.stdout.write(sub); process.exit(0);
     }
 }
@@ -256,14 +268,18 @@ sep "7. proxy worktree_shared_master fail-fast (Channel A)"
 # (what the pre-fix fallback produced). The cold path must fail fast BEFORE any
 # configure/start helper runs (mock helpers assert they never fire).
 CFG7="$TMPDIR/cfg7.count"; : > "$CFG7"
-CFG7_SH=$(make_configure_mock "$CFG7" 0)
+CFG7_SH=$(make_configure_mock "$CFG7" 0 "$MOCK_WORKTREE")
 START7="$TMPDIR/start7.count"; : > "$START7"
 START7_SH=$(make_start_mock "$START7" 0 0)
 PORT7=$(find_free_port)
+# SEE-1344: the §7.1 shared-master guard is env-driven (GODOT_MCP_SHARED_MASTER,
+# empty default = guard nothing since AC-M3REORG-011); pin the known shared
+# path explicitly so the guard fires regardless of the box's default.
 start_proxy \
     "GODOT_PORT=$PORT7" \
     "KOL_AGENT_NAME=agent7" \
     "KOL_WORKTREE=$KNOWN_SHARED" \
+    "GODOT_MCP_SHARED_MASTER=$KNOWN_SHARED" \
     "KOL_PROJECT_GODOT=$KNOWN_SHARED/project.godot" \
     "KOL_CONFIGURE_SH=$CFG7_SH" \
     "KOL_START_SH=$START7_SH" \
@@ -331,15 +347,25 @@ stop_proxy
 # --- 8. proxy hot-reuse skips the shared-master re-pin non-fatally ---
 sep "8. proxy hot-reuse skips shared-master re-pin"
 CFG8="$TMPDIR/cfg8.count"; : > "$CFG8"
-CFG8_SH=$(make_configure_mock "$CFG8" 0)
+CFG8_SH=$(make_configure_mock "$CFG8" 0 "$MOCK_WORKTREE")
 START8="$TMPDIR/start8.count"; : > "$START8"
 START8_SH=$(make_start_mock "$START8" 0 0)
 PORT8=$(find_free_port)
 start_listener "$PORT8"   # port already listening → hot path, no spawn
+# SEE-1344: the bare pre-bound listener + sidecar-less holder is evicted by
+# the SEE-1338 arbiter before the hot-reuse lane engages; the §8 contract is
+# re-pin-skipping on the shared master, not eviction. Opt out + prove holder
+# identity via the e43cdc73 .worktree sidecar (holder = scratch identity here;
+# the pin-skip is asserted on the configure-mock counter, not the sidecar).
+EDITOR_LOG8="$TMPDIR/godot-editor-agent8.log"
+printf '%s' "$KNOWN_SHARED" > "${EDITOR_LOG8%.log}.worktree"
 start_proxy \
     "GODOT_PORT=$PORT8" \
     "KOL_AGENT_NAME=agent8" \
     "KOL_WORKTREE=$KNOWN_SHARED" \
+    "GODOT_MCP_SHARED_MASTER=$KNOWN_SHARED" \
+    "GODOT_EDITOR_LOG_FILE=$EDITOR_LOG8" \
+    "KOL_PORT_ARBITER=off" \
     "KOL_PROJECT_GODOT=$KNOWN_SHARED/project.godot" \
     "KOL_CONFIGURE_SH=$CFG8_SH" \
     "KOL_START_SH=$START8_SH" \
@@ -407,7 +433,17 @@ for i in A B; do
     PORT=$(find_free_port)
     CFG_C="$TMPDIR/cfg9$i.count"; : > "$CFG_C"
     START_C="$TMPDIR/start9$i.count"; : > "$START_C"
-    CFG_SH=$(make_configure_mock "$CFG_C" 0)
+    CFG_SH="$TMPDIR/cfg9$i.sh"
+    {
+        echo '#!/usr/bin/env bash'
+        echo 'echo x >> "${KOL_CONFIGURE_COUNTER:-/dev/null}"'
+        # SEE-1292 assert-then-reactivate: configure must leave the lease
+        # sidecar active@GODOT_PORT or the spawn loop re-runs it 3 more times.
+        echo 'mkdir -p "'"$WT"'/.godot"'
+        echo 'printf '"'"'{"state":"active","port":%s}'"'"' "$GODOT_PORT" > "'"$WT"'/.godot/mcp-lease.json"'
+        echo 'exit 0'
+    } > "$CFG_SH"
+    chmod +x "$CFG_SH"
     START_SH=$(make_start_mock "$START_C" 0 1)   # spawn=1 → listener on GODOT_PORT
     start_proxy \
         "GODOT_PORT=$PORT" \

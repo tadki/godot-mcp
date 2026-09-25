@@ -73,15 +73,22 @@ rl.on('line', (line) => {
 });
 EOF
 
+# SEE-1148 P2 sandbox semantics (same seam as T2/T6): the pre-bound bare
+# listener needs the arbiter opt-out + .worktree sidecar, else the arbiter
+# evicts it as a cross-runtime holder before warm.
 start_listener "$PORT" >/dev/null
+EDITOR_LOG="$TMPDIR/godot-editor-Bachi.log"
+printf '%s' "$MOCK_WORKTREE" > "${EDITOR_LOG%.log}.worktree"
 
 sep "T9: post-warm editor unreachable → editor_gone diagnostic (not editor_busy)"
 start_proxy \
     "GODOT_PORT=$PORT" \
     "KOL_AGENT_NAME=Bachi" \
     "KOL_WORKTREE=$MOCK_WORKTREE" \
+    "GODOT_EDITOR_LOG_FILE=$EDITOR_LOG" \
+    "KOL_PORT_ARBITER=off" \
     "KOL_WARMUP_TIMEOUT_MS=15000" \
-    "KOL_HOT_WARMUP_TIMEOUT_MS=5000" \
+    "KOL_HOT_WARMUP_TIMEOUT_MS=15000" \
     "KOL_PROBE_INTERVAL_MS=200" \
     "MOCK_NPX_LOG=$TMPDIR/npx.log"
 

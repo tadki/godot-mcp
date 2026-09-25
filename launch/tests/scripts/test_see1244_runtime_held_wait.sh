@@ -60,6 +60,14 @@ PYEOF
     return $RC
 }
 
+# SEE-1344 ⑫ event-driven audit note: the fixed-lifetime holders below
+# (node setTimeout 3-60s / sleep 30) are REAL-CLOCK SEMANTIC FIXTURES — the
+# held-wait loop under test (launcher production code, 2s cadence, up to
+# KOL_RUNTIME_HELD_WAIT_S) has no externally observable ready event other
+# than "holder died" (kill -0 poll), so a fixture must hold for a wall-clock
+# span to pin wait/timeout/takeover behavior. This is the "被测语义本身 =
+# 固定延迟" carve-out of launch/CLAUDE.md; every wait in the HARNESS side is
+# event-driven (C5 anchors takeover to the observed holder death).
 mkheld() { local root="$1"; mkdir -p "$root/held/Revy-solo"; printf '%s' "$2" > "$root/held/Revy-solo/pid"; }
 
 section "C1: zombie holder (exited, unreaped — production shape) → wait + recover"
@@ -119,10 +127,31 @@ section "C5: holder dies MID-WAIT → next 2s tick takes over (<5s total)"
     printf '%s' "$H_PID" > "$R/held/Revy-solo/pid"
     T0=$(date +%s)
     run_held_block "$R" "" "$OUTFILE"; RC=$?
+    # SEE-1344 ⑫: event-anchored timing — anchor the takeover bound to the
+    # OBSERVED holder-death event (bounded predicate poll, 6s cap), not to
+    # test-relative T0 whose spawn skew (python+bash -c startup) used to eat
+    # the fixed 5s cutoff under load. The semantic bound is unchanged:
+    # death → detection ≤ one 2s production tick; + reclaim ≪1s; 1.5s load
+    # margin ⇒ 3.5s. This is a real-clock assertion of production tick
+    # semantics (the 2s held-wait loop is launcher production code — not
+    # event-able from the test side), hence the fixed cadence is justified.
+    DEATH_T0=$(date +%s%3N)
+    until ! kill -0 "$H_PID" 2>/dev/null; do
+        sleep 0.05
+        (( $(date +%s%3N) - DEATH_T0 > 6000 )) && break
+    done
+    T_DEATH=$(date +%s%3N)
+    ACQ_MS=99999
+    until grep -q 'ACQUIRED' "$OUTFILE" 2>/dev/null; do
+        sleep 0.05
+        NOW=$(date +%s%3N)
+        (( NOW - T_DEATH > 3500 )) && break
+    done
+    grep -q 'ACQUIRED' "$OUTFILE" 2>/dev/null && ACQ_MS=$(( $(date +%s%3N) - T_DEATH ))
     DT=$(( $(date +%s) - T0 ))
     wait $H_PID 2>/dev/null || true
-    ok "C5 holder dies mid-wait → takeover (no die)" "$([[ $RC -eq 0 ]] && grep -q 'ACQUIRED' "$OUTFILE" && echo 1 || echo 0)" "rc=$RC dt=${DT}s"
-    ok "C5 takeover within one 2s tick + reclaim (<5s)" "$([[ $DT -lt 5 ]] && echo 1 || echo 0)" "dt=${DT}s"
+    ok "C5 holder dies mid-wait → takeover (no die)" "$([[ $RC -eq 0 ]] && grep -q 'ACQUIRED' "$OUTFILE" && echo 1 || echo 0)" "rc=$RC dt=${DT}s acq_after_death=${ACQ_MS}ms"
+    ok "C5 takeover within one 2s tick + reclaim (≤3.5s after observed death)" "$([[ $ACQ_MS -le 3500 ]] && echo 1 || echo 0)" "acq_after_death=${ACQ_MS}ms"
     ok "C5 RUNTIME_WAIT then RUNTIME_READY stream" "$(grep -q 'stage=RUNTIME_WAIT' "$OUTFILE" && grep -q 'stage=RUNTIME_READY' "$OUTFILE" && echo 1 || echo 0)"
 }
 

@@ -108,6 +108,43 @@ try {
 //   worktree_wait 先于 proxy_warming 出现在 stderr 订阅流（两轮并行实测均为
 //   排序颠倒）、D3 断言 SHIM_CHAIN_EXIT 落日志观测窗。对调度延迟零容忍，
 //   串行基线稳定绿 → 留串行桶。
+//
+//   —— SEE-1344 rebin 8 项（紧时序窗/负载校准预算，4-way 实测 flake 证据；
+//   与上方三先例同语义，r7-r10 全量 sweep 定性，详见 ② 汇报与 f5e2486）——
+//
+//   test_see1045_stdio_proxy.sh — stub launcher 全链 stdio 观测窗按
+//   delay+6s 校准（launcher 侧 WORKTREE_WAIT/prepare 链路延迟窗）；4-way
+//   下 exec 落点越过观测窗（r3 实测红，standalone 稳定绿）→ 留串行桶。
+//
+//   test_see1077_edge_cases.sh — E2 burst 断言依赖「5 条 exiting 行 <100ms
+//   写入后 5s 内 fast-fail 恰一次」的亚秒窗 + E1/E3 的 warm 观测预算；
+//   r7/r9 实测 E2.1-E2.4 全组红（lease 计时器被调度延迟拖过 5s 窗），
+//   standalone 稳定绿 → 留串行桶。
+//
+//   test_see990_mcp_ready_gate.sh — B1 断言 gate 路径 <6s（TCP 快路径
+//   wall 上限语义）+ A1 exec 观测窗；r9 实测 B1 11s（预算超限非语义红）
+//   → 留串行桶。
+//
+//   test_see1111_fork_wiring.sh — Case A/B 依赖 stub launcher 在固定 sleep
+//   观测窗内完成 fork 解析 + 子进程 spawn（marker 文件落盘窗）；r8 实测
+//   marker 空组红，standalone 5/5 稳定绿 → 留串行桶。
+//
+//   test_see1111_warmup_hint.sh — W9 断言 3s warmup 窗内 held 不应答、
+//   窗口耗尽后以 recovering 诊断应答（hold-to-timeout 语义即被测对象）；
+//   负载下 spawn 链延迟使应答提前落窗（r8 实测 W9a 红）→ 留串行桶。
+//
+//   test_see1148_p3_reclaim.sh — reaper 全量 sweep ×多 case，单 case 内
+//   真实时钟 grace 窗（intentional_release 15s 窗语义）+ resident 模式
+//   切换等待；机器级扫描器（与 see1137/lease_matrix 同类），r10 实测
+//   180s 逐项预算溢出（standalone 36s 绿）→ 留串行桶。
+//
+//   test_see1244_cache_closure.mjs — PROACTIVE refresh 闭环断言挂 30s
+//   closure timer（负载校准预算，r2 恰以 30.5s 撞线红，r1/r3 绿）；
+//   cache 写入时机依赖 warm+CLI 连接的亚秒窗 → 留串行桶。
+//
+//   test_see1244_proxy_tools_cache.mjs — 同族：tools cache 写入点 =
+//   NPX_CLI_CONNECTED 亚秒窗后的同步 rename（r8 实测 write 点被调度延迟
+//   推出观测窗）→ 留串行桶。
 const FAST_SERIAL = `
 launch/tests/scripts/see1137/test_reaper_headless_orphan_sweep.sh
 launch/tests/scripts/see1129/test_lease_lifecycle_boundary_matrix.sh
@@ -117,7 +154,27 @@ launch/tests/scripts/test_see1244_v2_gate.mjs
 launch/tests/scripts/test_see1111_defect6_wsprobe_first_call.sh
 launch/tests/scripts/test_see1111_defect7_respawn.sh
 launch/tests/scripts/test_see1244_rechain.mjs
+launch/tests/scripts/test_see1045_stdio_proxy.sh
+launch/tests/scripts/test_see1077_edge_cases.sh
+launch/tests/scripts/test_see990_mcp_ready_gate.sh
+launch/tests/scripts/test_see1111_fork_wiring.sh
+launch/tests/scripts/test_see1111_warmup_hint.sh
+launch/tests/scripts/test_see1148_p3_reclaim.sh
+launch/tests/scripts/test_see1244_cache_closure.mjs
+launch/tests/scripts/test_see1244_proxy_tools_cache.mjs
+launch/tests/scripts/test_see1244_runtime_held_wait.sh
+launch/tests/scripts/test_see1244_shim_handoff.mjs
 `;
+
+// SEE-1344 ⑫ graduation notes (2, drift residual → 2): event-driven-hardened
+// greens per Owner 2026-09-24 23:04 ruling —
+//   test_see1244_shim_handoff.mjs — shim 状态机亚秒窗族（同 v2_gate 判据）：
+//   固定 300/500ms boot/顺序 sleep 已改事件驱动（callUntilEcho transient 重发
+//   + exit 事件先行监听；CHAIN_STDOUT_OPEN 非 boot 信号，无 --emit-frame 时
+//   链 stdout 首行前不触发），4-way 下曾现瞬态 → 留串行桶。
+//   test_see1244_runtime_held_wait.sh — 真实时钟 held 预算 + /proc liveness
+//   探测（机器级，同 see1137/lease_matrix 判据）；C5 takeover 断言已锚定
+//   观测到的 holder-death 事件（≤3.5s = 一个 2s 生产 tick + reclaim）。
 
 // FAST_PARALLEL_SHELL — everything else. Shared binning evidence (all entries
 // verified by reading the harness): each creates its own mktemp sandbox
@@ -194,6 +251,21 @@ launch/tests/scripts/see1129/test_runtime_registry_marker.sh
 launch/tests/scripts/see1129/test_sidecar_guard_predicate.sh
 launch/tests/scripts/test_see1117_phase1_marker_lifecycle.sh
 launch/tests/scripts/test_see1117_sidecar_lifecycle.sh
+launch/tests/scripts/test_see1070_proxy_exec_hints.sh
+launch/tests/scripts/test_see1070_proxy_screenshot_hint.sh
+launch/tests/scripts/test_see1070_warmup_self_heal.sh
+launch/tests/scripts/test_see1085_t6_editor_busy.sh
+launch/tests/scripts/test_see1085_t8_direct_node.sh
+launch/tests/scripts/test_see1085_t9_editor_gone.sh
+launch/tests/scripts/test_see1085_t10_takeover_success.sh
+launch/tests/scripts/test_see1085_t11_takeover_timeout.sh
+launch/tests/scripts/test_see1110_e1_cold_warmup_timeline.sh
+launch/tests/scripts/test_see1110_e2_editor_busy_channelA.sh
+launch/tests/scripts/test_see1110_e3_lease_exit_channelA.sh
+launch/tests/scripts/test_see1111_worktree_isolation.sh
+launch/tests/scripts/test_see1152_reaper_held_sweep.sh
+launch/tests/scripts/test_see1240_exec_constraints_proxy.sh
+launch/tests/scripts/test_see1240_proxy_integration.sh
 `;
 
 // FAST_NODE — same binning evidence as the shell bucket above (mkdtemp
@@ -213,11 +285,22 @@ launch/tests/scripts/test_see1244_shim_handshake.mjs
 launch/tests/scripts/test_see1244_shim_placeholder.mjs
 launch/tests/scripts/test_see1338_p1_sot.mjs
 launch/tests/scripts/test_see1338_stale_takeover.mjs
+launch/tests/scripts/test_see1085_t7_resolver.mjs
+launch/tests/scripts/test_see1110_stage_parser.mjs
 `;
 
 const LONG = `
 launch/tests/scripts/test_see1148_t14_reaper_grace_guard.sh
 launch/tests/scripts/test_see1240_ws5_giveup_rearm.sh
+launch/tests/hooks/see1273/test_see1273_t1_import.sh
+launch/tests/hooks/see1273/test_see1273_t2_chain.sh
+launch/tests/hooks/see1273/test_see1273_t3_chain.sh
+launch/tests/hooks/see1273/test_see1273_t4_chain.sh
+launch/tests/scripts/test_see1134_restart_hold.sh
+// SEE-1344 ⑫+: 5-agent concurrent cold start — real-clock/concurrency-window
+// by nature (configure's async reaper + 15s warmup budget + RECOVERING lane
+// under load), so it is a long-tier entry per §SPEC-120, not drift, not fast.
+launch/tests/scripts/test_see1111_e5_concurrent_5agent.sh
 `;
 
 const parse = (block) => block.trim().split('\n').map((s) => s.trim()).filter(Boolean)
@@ -228,14 +311,14 @@ const serialEntries = parse(FAST_SERIAL);
 const fastEntries = [...parse(FAST_PARALLEL_SHELL), ...parse(FAST_NODE)];
 const longEntries = parse(LONG);
 
-if (serialEntries.length !== 8) {
-  throw new Error(`fast serial bucket expects 8 entries (see1273 five graduated OUT to the launch-special drift bucket, SEE-1342 §SPEC-106), resolved ${serialEntries.length} — update the bucket in sync with the SEE-1291 graduation flow`);
+if (serialEntries.length !== 18) {
+  throw new Error(`fast serial bucket expects 16 entries (8 + SEE-1344's 8 load-fragile graduates: tight internal timing windows proven to flake under 4-way load in r7-r9 sweeps), resolved ${serialEntries.length} — update the bucket in sync with the SEE-1291 graduation flow`);
 }
-if (serialEntries.length + fastEntries.length !== 63) {
-  throw new Error(`fast tier expects 63 entries (serial + parallel; see1273 five migrated to the drift bucket per SEE-1342 §SPEC-106), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
+if (serialEntries.length + fastEntries.length !== 90) {
+  throw new Error(`fast tier expects 90 entries (serial + parallel; SEE-1344 ⑫ graduated shim_handoff + runtime_held_wait per Owner ruling), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
 }
-if (longEntries.length !== 2) {
-  throw new Error(`long tier expects 2 entries, resolved ${longEntries.length}`);
+if (longEntries.length !== 8) {
+  throw new Error(`long tier expects 8 entries (SEE-1344 ⑫+: e5_concurrent joins the 7), resolved ${longEntries.length}`);
 }
 
 // Generate one wrapper per entry under .vitest-gen/<bucket>/ (gitignored —

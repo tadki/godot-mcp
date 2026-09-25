@@ -56,7 +56,7 @@ CFG_COUNTER="$TMPDIR/cfg.count"
 START_COUNTER="$TMPDIR/start.count"
 : > "$CFG_COUNTER"; : > "$START_COUNTER"
 
-CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0)
+CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0 "$MOCK_WORKTREE")
 # Slow-start mock: sleeps 2.5s before spawning the WS-completing listener, so
 # the hold window is observable — id=2/id=3 land while the editor is genuinely
 # warming and must be HELD (no answer, no hint) until WARM.
@@ -193,8 +193,18 @@ stop_proxy
 # ---------------------------------------------------------------------------
 sep "H9: [目标2] warmup window exhausted → held call answered with retryable timeout"
 T2_PORT=$(find_free_port)
+# SEE-1344: pin the pure-warmup-timeout scenario — without the configure/start
+# mocks + scratch worktree the spawn chain fails fast (prepare/rc!=0) and its
+# spawn_failed drain answers the held call inside the window, breaking the
+# pinned hold-to-timeout contract. The start mock must NOT spawn a listener
+# (spawn=0): a late-bind editor flips hot-reuse WARM inside the window and
+# preempts the pinned timeout drain.
+START_SH_NOSPAWN=$(make_start_mock "$START_COUNTER" 0 0)
 start_proxy \
     "GODOT_PORT=$T2_PORT" \
+    "KOL_WORKTREE=$MOCK_WORKTREE" \
+    "KOL_CONFIGURE_SH=$CFG_SH" \
+    "KOL_START_SH=$START_SH_NOSPAWN" \
     "KOL_WARMUP_TIMEOUT_MS=3000" \
     "KOL_FAILED_EXIT_MS=30000" \
     "KOL_PROBE_INTERVAL_MS=200" \

@@ -33,7 +33,7 @@ CFG_COUNTER="$TMPDIR/cfg.count"
 START_COUNTER="$TMPDIR/start.count"
 : > "$CFG_COUNTER"; : > "$START_COUNTER"
 
-CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0)
+CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0 "$MOCK_WORKTREE")
 START_SH=$(make_start_mock "$START_COUNTER" 0 1)
 
 sep "T5: dedup — 5 concurrent tools/call ⇒ configure+start exactly once"
