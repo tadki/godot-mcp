@@ -81,10 +81,24 @@ function isProxyAlive(holderProxy) {
 //                    legacy cleanup lane owns physical attribution
 const WT_MATCH_PREFIXES = { WARM: 'WARM_DEAD_HOLDER', WARMING: 'WARMING_DEAD_HOLDER', RECOVERING: 'RECOVERING_DEAD_HOLDER' };
 
-export function decideReuseSingleSource({ state = '', holderProxyAlive = false, holderWorktree = '', ourWorktree = '', samePort = true }) {
+// SEE-1348 WP7 (§SPEC-012): the reuse-lane single-source decision now ALSO
+// weighs the recorded editor_pid. WP4 populated editor_pid/editor_pid_source
+// on the .state record; when the proxy is dead AND the recorded editor pid is
+// ALSO dead (split-source probe: WSL kill(0) / Windows Get-Process), there is
+// no live editor to adopt even on a worktree match — a cold_start beats a
+// handoff that would spend the whole warmup budget connecting to a corpse
+// before falling back. The liveness INPUT is still the on-disk record + the
+// pure split-source probe (no live network probes; the warm-gate lesson).
+export function decideReuseSingleSource({ state = '', holderProxyAlive = false, holderWorktree = '', ourWorktree = '', samePort = true, editorAlive = null }) {
     if (!samePort) return { action: 'cold_start', reason: 'PORT_MISMATCH_RECORD' };
     if (state === 'FAILED_CLEAN') return { action: 'cold_start', reason: 'FAILED_CLEAN_REENTRANT' };
     if (!(state in WT_MATCH_PREFIXES)) return { action: 'cold_start', reason: `RECORD_STATE:${state}` };
+    // editorAlive === false is a POSITIVE on-disk+probe verdict that the
+    // recorded editor is dead; null (no record / unknown source / probe
+    // unavailable) keeps the historical behavior — unknown must not guess.
+    if (editorAlive === false) {
+        return { action: 'cold_start', reason: `${WT_MATCH_PREFIXES[state]}_EDITOR_DEAD` };
+    }
     return decideReuseByLane({ state, holderProxyAlive, holderWorktree, ourWorktree });
 }
 
