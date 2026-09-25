@@ -32,6 +32,9 @@ jobs:
   # gates (`complexity` warn@10, `sonarjs/cognitive-complexity` error@15).
   # Errors are zero-tolerance; the legacy warning count is pinned by
   # --max-warnings in the root lint script and may only ratchet down.
+  # SEE-1344 ⑬: the baseline includes 8 legacy fixed-sleep sites flagged by
+  # the no-restricted-syntax setTimeout warning (warning tier, not a ban —
+  # legitimate timeout paths keep an inline disable with a WHY).
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 5
