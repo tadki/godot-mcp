@@ -14,7 +14,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -107,4 +107,54 @@ test('A2: pending marker clears the pid slot and stamps source=pending', () => {
     const d = JSON.parse(readFileSync(statePath('M4-a2'), 'utf8'));
     assert.equal(d.editor_pid, null);
     assert.equal(d.editor_pid_source, 'pending');
+});
+
+// SEE-1348 hardener (Revy): mutant B1 survived — the `p <= 0` guard loosened
+// to `p < 0` passed the whole suite, letting pid 0 fall through to
+// process.kill(0, 0) (a process-GROUP probe that always succeeds → dead
+// reads alive). Pin the boundary: 0 and negatives are never alive.
+test('F: editorPidAlive rejects pid 0 and negatives before probing (boundary)', () => {
+    assert.equal(sf.editorPidAlive(0, 'wsl'), false);
+    assert.equal(sf.editorPidAlive(-7, 'wsl'), false);
+    assert.equal(sf.editorPidAlive(0, 'windows'), false);
+    assert.equal(sf.editorPidAlive('abc', 'wsl'), false);
+});
+
+// SEE-1348 hardener (Revy): the whole windows probe leg (B4-B7: constant
+// true, count-gate flip, name-check flip, name-unreadable trust flip)
+// survived — powershell.exe interop is absent on this box, so no test could
+// reach it. Drive it deterministically through a PATH stub: editorPidAlive
+// resolves powershell.exe via the current process's PATH, so a temp-dir
+// stub standing in for it exercises every branch on any host.
+test('G: editorPidAlive windows leg — count probe + godot name check + degrade paths (PATH stub)', () => {
+    const stubDir = mkdtempSync(path.join(tmpdir(), 'see1348-m4-psstub-'));
+    const stubPath = path.join(stubDir, 'powershell.exe');
+    const realPath = process.env.PATH;
+    const withStub = (script) => {
+        writeFileSync(stubPath, script);
+        chmodSync(stubPath, 0o755);
+        process.env.PATH = `${stubDir}:${realPath}`;
+    };
+    try {
+        // count=0 → dead
+        withStub('#!/bin/sh\necho "0"\n');
+        assert.equal(sf.editorPidAlive(4321, 'windows'), false, 'count=0 must read dead');
+        // count=1, non-godot name → a reused PID belonging to another process reads dead
+        withStub('#!/bin/sh\necho "1 notepad"\n');
+        assert.equal(sf.editorPidAlive(4321, 'windows'), false, 'non-godot name must read dead (PID-reuse defense)');
+        // count=1, godot name → alive
+        withStub('#!/bin/sh\necho "1 Godot"\n');
+        assert.equal(sf.editorPidAlive(4321, 'windows'), true, 'godot name must read alive');
+        withStub('#!/bin/sh\necho "1 Godot_v4.6-stable"\n');
+        assert.equal(sf.editorPidAlive(4321, 'windows'), true, 'godot binary variant must read alive');
+        // count=1, name unreadable → trust the count probe (never false-negative a live editor)
+        withStub('#!/bin/sh\necho "1"\n');
+        assert.equal(sf.editorPidAlive(4321, 'windows'), true, 'unreadable name must trust the count');
+        // probe unavailable (powershell fails) → cannot claim alive
+        withStub('#!/bin/sh\nexit 1\n');
+        assert.equal(sf.editorPidAlive(4321, 'windows'), false, 'probe failure must read dead, never guess');
+    } finally {
+        process.env.PATH = realPath;
+        rmSync(stubDir, { recursive: true, force: true });
+    }
 });
