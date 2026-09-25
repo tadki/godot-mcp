@@ -178,6 +178,11 @@ state to confirm an effect by state-delta.
   motion, never a cursor position, and the game owns `Input.mouse_mode`.
   **Absolute/polled cursor positioning remains the only input gap this document
   records as out of scope** (the polled-position ceiling above is unchanged).
+  *Update (SEE-1141 Track D + SEE-1348 M1 docs): the EVENT-path half of this
+  gap is now covered — absolute `mouse_move` / `mouse_button` entries land
+  `event.position` / GUI input and drive cooperative games end-to-end; the
+  **polled** half stands and is served by the MCPCursor/MousePos contract
+  (see [mouse-cursor-coop.md](mouse-cursor-coop.md)).*
 - **A real bug fix ships.** The investigation found that
   `MCPGameBridge.execute_input_sequence` dropped unfired action *releases* when it
   cleared its queue mid-flight, latching the action "pressed" forever. Fixed and

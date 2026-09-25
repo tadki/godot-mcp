@@ -1,6 +1,6 @@
 # Input Tools
 
-Input injection for testing running games: named actions, joypad buttons, analog axes and stick vectors, raw keyboard keys with modifier combos, relative mouse-look, and text typing (no absolute cursor positioning)
+Input injection for testing running games: named actions, joypad buttons, analog axes and stick vectors, raw keyboard keys with modifier combos, relative mouse-look, absolute mouse positioning (mouse_move/mouse_button), and text typing. Absolute entries drive the event path only — the polled OS cursor deliberately does not move (DECIDED: docs/design/mouse-input-spike.md); cooperative games adopt MCPCursor/MousePos instead (migration: docs/design/mouse-cursor-coop.md).
 
 ## Tools
 
@@ -10,7 +10,7 @@ Input injection for testing running games: named actions, joypad buttons, analog
 
 ## godot_input
 
-Inject input into a running Godot game for testing: named actions (with analog strength), joypad buttons, analog axes, stick vectors, raw keyboard keys (with modifier combos), and relative mouse-look. Use get_map to discover available input actions and their bindings, sequence to execute inputs with precise timing (optionally with an effect probe that proves the inputs changed game state), or type_text to type into UI elements. Note: relative mouse-look is supported (look: [dx, dy], for FPS-camera _input handlers); absolute cursor positioning is not (see docs/design/mouse-input-spike.md).
+Inject input into a running Godot game for testing: named actions (with analog strength), joypad buttons, analog axes, stick vectors, raw keyboard keys (with modifier combos), relative mouse-look (look: [dx, dy], for FPS-camera _input handlers), and ABSOLUTE mouse positioning (mouse_move/mouse_button, viewport/canvas space). Use get_map to discover available input actions and their bindings, sequence to execute inputs with precise timing (optionally with an effect probe that proves the inputs changed game state), or type_text to type into UI elements. Absolute entries drive the EVENT path only (event.position, Control._gui_input, mouse_entered); they deliberately do NOT move the polled OS cursor — games polling get_mouse_position() read the physical pointer, and warping it is off-limits by DECIDED design (docs/design/mouse-input-spike.md); poll-based games adopt the cooperative MCPCursor/MousePos contract instead (migration guide in docs/design/mouse-cursor-coop.md). Last-position semantics: the bridge never clears the virtual cursor (clear_virtual is intentionally never called) — once any absolute entry sets it, the game-side cooperative cursor keeps reporting that position for the rest of the session rather than falling back to the physical cursor mid-session; a click without a prior move seeds from the last known (first use: physical) position.
 
 ### Actions
 
@@ -72,3 +72,43 @@ Type text into the focused UI element
 
 ---
 
+## Absolute mouse recipes (SEE-1141 Track D)
+
+`mouse_move` / `mouse_button` place the cursor in **VIEWPORT/canvas space** (the
+bridge maps through the viewport's final transform, so the same coordinate lands
+on the same canvas pixel under every stretch/content-scale config).
+
+### Grab-offset drag recipe
+
+A drag that grabs an item at an offset (e.g. its top-left corner) must not teleport
+the item's anchor to the cursor. Resolve the grab offset **game-side** and encode
+it in the coordinates you send:
+
+1. `mouse_move` to `(item_pos + grab_offset)` — hover/hit-testing now points at
+   the item (read `item_pos` from `godot_runtime_state`; `grab_offset` is the
+   vector from the item origin to the point a real user would grab).
+2. `mouse_button` press at the same point with a real `duration_ms`.
+3. `mouse_move` entries to each intermediate/final waypoint. The **release
+   automatically fires at press start_ms + duration_ms** and reuses the press
+   coordinates, so the release does not take its own position: place the drop
+   point in the LAST `mouse_move` before the hold expires (or give the hold a
+   longer `duration_ms` to leave room for the waypoint moves).
+4. Release — nothing to send; it rides the press entry's paired release.
+
+### duration_ms = 0 is a tap (the classic trap)
+
+With `duration_ms: 0` the press and its paired release fire back-to-back in the
+same frame — for drag-based UI the button is never observed as held, and the drag
+silently becomes a click. Any interaction that must be *held* (drag, hold-to-paint,
+long-press) needs a real `duration_ms` on the press entry.
+
+### Keep moves and press/release on separate frames
+
+The equal-time event sort deliberately fires presses before releases at the same
+timestamp, but a `mouse_move` sharing the press's `start_ms` may land before or
+with the press — order between different entry kinds at equal time is not
+guaranteed. Give the press and every move **distinct `start_ms` values spaced
+≥ one frame** (e.g. press at 0 with `duration_ms` 400, moves at 50 / 100 / 150 /
+200 — the release lands at 400, at least one frame after the last waypoint).
+This also lets hover/`mouse_entered` update between waypoints, which drag
+previews and grid highlighting typically require.
