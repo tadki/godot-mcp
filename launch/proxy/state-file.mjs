@@ -309,7 +309,13 @@ export function heartbeatFresh(state, { maxAgeMs = 10 * 60 * 1000, nowMs = Date.
 //   'windows' → Get-Process count probe (windowsPidAlive — name-checked, so a
 //               reused PID belonging to a non-Godot process reads dead — the
 //               Windows-side twin of the launcher's /proc/<pid>/exe check)
-//   any other → false (an unknown source must not fall back to a wrong probe)
+//   any other → false (an unknown SOURCE must not fall back to a wrong probe)
+// Return contract (SEE-1348 F-QA-3): true = positively alive, false =
+// positively dead, null = PROBE UNAVAILABLE (powershell unresolvable or
+// errored). Callers must treat null as unknown and never as dead — a live
+// editor on a PATH-less WSL host (appendWindowsPath off) used to read as
+// dead here and got cold_start-preempted by the WP7 veto (Revy QA, pid
+// 21756 ground-truth alive).
 export function editorPidAlive(pid, source) {
     const p = Number(pid);
     if (!Number.isInteger(p) || p <= 0) return false;
@@ -325,23 +331,41 @@ export function editorPidAlive(pid, source) {
     return false;
 }
 
+// powershell resolution chain (F-QA-3): env override → bare PATH name →
+// the well-known System32 absolute path. A WSL PATH with appendWindowsPath
+// off never resolves the bare name, so the absolute fallback is what keeps
+// the probe working on those hosts.
+const POWERSHELL_SYSTEM32 = '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
+
+function powershellCandidates() {
+    const out = [];
+    if (process.env.GODOT_MCP_POWERSHELL_PATH) out.push(process.env.GODOT_MCP_POWERSHELL_PATH);
+    out.push('powershell.exe');
+    out.push(POWERSHELL_SYSTEM32);
+    return out;
+}
+
 // Get-Process count probe (the reaper's D5b shape): $? is unusable with
 // -ErrorAction SilentlyContinue, so the "1 <name>" / "0" count is the probe.
 // Degrades to count-only when the process name is unreadable (Access Denied
 // on a real editor), so a live editor is never false-negatived.
+// Returns true/false for a completed probe, null when no powershell could be
+// launched or the probe errored — UNKNOWN, never "dead".
 function windowsPidAlive(p) {
-    let out;
-    try {
-        out = execFileSync(
-            'powershell.exe',
-            ['-NoProfile', '-Command',
-                '$p = Get-Process -Id ' + p + ' -ErrorAction SilentlyContinue; '
-                + 'if ($p) { Write-Output ("1 " + $p.ProcessName) } else { Write-Output "0" }'],
-            { encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] },
-        );
-    } catch {
-        return false; // powershell unavailable/failed — cannot claim alive
+    const args = ['-NoProfile', '-Command',
+        '$p = Get-Process -Id ' + p + ' -ErrorAction SilentlyContinue; '
+        + 'if ($p) { Write-Output ("1 " + $p.ProcessName) } else { Write-Output "0" }'];
+    let out = null;
+    for (const cand of powershellCandidates()) {
+        try {
+            out = execFileSync(cand, args, { encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] });
+            break;
+        } catch (e) {
+            if (e && e.code === 'ENOENT') continue; // candidate unresolvable → next in chain
+            return null; // powershell ran but failed (non-zero/timeout) — no verdict
+        }
     }
+    if (out === null) return null; // no candidate resolvable — unknown
     const line = String(out).trim().split(/\r?\n/)[0] || '';
     const [n, ...nameParts] = line.split(' ');
     if (n !== '1') return false;
