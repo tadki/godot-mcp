@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import { ResponseSchema, createRequest, isSuccessResponse, isErrorResponse } from './protocol.js';
 import {
   GodotConnectionError,
+  GodotConnectionClosedError,
   GodotCommandError,
   GodotTimeoutError,
 } from '../utils/errors.js';
@@ -41,6 +42,17 @@ export interface ConnectionDiagnostics {
   environment: 'wsl' | 'native';
 }
 
+// Typed codes carried by GodotConnectionClosedError when the bridge closes
+// with commands still in flight (SEE-1326 M5 onclose-reject-all).
+export type ConnectionCloseCode =
+  | 'CLOSED_BY_CLIENT'
+  | 'CONNECTION_LOST'
+  | 'REPLACED_BY_NEW_CLIENT'
+  | 'REJECTED_ANOTHER_CLIENT'
+  | 'STALE_CLOSED_BY_SERVER'
+  | 'CONNECTION_REFUSED'
+  | 'CLOSE_UNKNOWN';
+
 export type HandshakeStatus = 'pending' | 'success' | 'failed' | 'timeout';
 
 export interface HandshakeResult {
@@ -73,6 +85,7 @@ export class GodotConnection extends EventEmitter {
   private isClosing = false;
   private heartbeatPending = false;
   private handshakeResult: HandshakeResult | null = null;
+  private pendingCloseCode: ConnectionCloseCode | null = null;
 
   private lastDisconnectReason: DisconnectReason = 'never_connected';
   private rejectionCount = 0;
@@ -246,6 +259,7 @@ export class GodotConnection extends EventEmitter {
 
         if (code === CLOSE_CODE_ALREADY_CONNECTED) {
           this.lastDisconnectReason = 'rejected_another_client';
+          this.pendingCloseCode = 'REJECTED_ANOTHER_CLIENT';
           this.rejectionCount++;
           // Back off in proportion to how many times we've been rejected so a
           // lingering second client doesn't busy-loop reconnecting every second
@@ -265,6 +279,7 @@ export class GodotConnection extends EventEmitter {
           // dead - keep reconnecting so it recovers automatically once the
           // other client disconnects (or is itself replaced).
           this.lastDisconnectReason = 'replaced_by_new_client';
+          this.pendingCloseCode = 'REPLACED_BY_NEW_CLIENT';
           const reasonStr = reason?.toString() || 'Replaced by new client';
           logger.warningRateLimited(
             'replaced-by-new-client',
@@ -276,14 +291,17 @@ export class GodotConnection extends EventEmitter {
           );
         } else if (code === CLOSE_CODE_STALE) {
           this.lastDisconnectReason = 'connection_lost';
+          this.pendingCloseCode = 'STALE_CLOSED_BY_SERVER';
           const reasonStr = reason?.toString() || 'Connection timed out (no activity)';
           logger.warning('Godot closed stale connection, will reconnect', {
             reason: reasonStr,
           });
         } else if (wasConnected) {
           this.lastDisconnectReason = 'connection_lost';
+          this.pendingCloseCode = 'CONNECTION_LOST';
         } else if (this.lastDisconnectReason === 'never_connected') {
           this.lastDisconnectReason = 'connection_refused';
+          this.pendingCloseCode = 'CONNECTION_REFUSED';
         }
 
         this.cleanup();
@@ -311,6 +329,7 @@ export class GodotConnection extends EventEmitter {
   disconnect(): void {
     this.isClosing = true;
     this.lastDisconnectReason = 'closed_normally';
+    this.pendingCloseCode = 'CLOSED_BY_CLIENT';
     this.currentState = 'disconnected';
     this.cleanup();
     if (this.ws) {
@@ -519,9 +538,14 @@ export class GodotConnection extends EventEmitter {
       this.reconnectTimeout = null;
     }
 
+    // Typed close rejection: callers branch on the code instead of matching
+    // message strings (SEE-1326 M5 onclose-reject-all).
+    const closeCode = this.pendingCloseCode ?? 'CLOSE_UNKNOWN';
+    this.pendingCloseCode = null;
+
     for (const pending of this.pendingRequests.values()) {
       clearTimeout(pending.timeoutId);
-      pending.reject(new GodotConnectionError('Connection closed'));
+      pending.reject(new GodotConnectionClosedError(closeCode, 'Connection closed'));
     }
     this.pendingRequests.clear();
   }

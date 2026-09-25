@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer, type WebSocket as WsSocket } from 'ws';
 import { GodotConnection } from '../../connection/websocket.js';
+import { GodotConnectionClosedError, GodotConnectionError } from '../../utils/errors.js';
 import { getServerVersion } from '../../version.js';
 
 // Keep diagnostics hermetic (no WSL detection / no child processes) and quiet.
@@ -188,5 +189,125 @@ describe('GodotConnection per-request timeout (#276)', () => {
 
     const result = await connection.sendCommand<{ ok: boolean }>('get_runtime_state', {}, { timeoutMs: 1000 });
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('GodotConnection close-time typed rejection (SEE-1348 WP2 / §SPEC-011)', () => {
+  let connection: GodotConnection | null = null;
+  let wss: WebSocketServer | null = null;
+
+  afterEach(async () => {
+    connection?.disconnect();
+    connection = null;
+    if (wss) {
+      await new Promise<void>((resolve) => wss!.close(() => resolve()));
+      wss = null;
+    }
+  });
+
+  /** Bridge that completes the handshake, then hands the first real command to `onCommand`. */
+  async function bridgeThatClosesOnCommand(
+    onCommand: (socket: WsSocket, msg: { id: string; command: string }) => void
+  ): Promise<{ wss: WebSocketServer; port: number }> {
+    return startFakeBridge((socket) => {
+      socket.on('message', (raw) => {
+        let msg: { id: string; command: string } | undefined;
+        try {
+          msg = JSON.parse(raw.toString());
+        } catch {
+          return;
+        }
+        if (!msg) return;
+        if (msg.command === 'mcp_handshake') {
+          socket.send(JSON.stringify({ id: msg.id, status: 'success', result: { addon_version: getServerVersion() } }));
+          return;
+        }
+        onCommand(socket, msg);
+      });
+    });
+  }
+
+  it('rejects every in-flight command with GodotConnectionClosedError when the bridge drops the socket', async () => {
+    // Emulate an abrupt bridge death: no close frame, no answers (1006 on client).
+    const bridge = await bridgeThatClosesOnCommand((socket) => socket.terminate());
+    wss = bridge.wss;
+    connection = new GodotConnection({ host: '127.0.0.1', port: bridge.port, autoReconnect: false });
+    await connection.connect();
+
+    const first = connection.sendCommand('get_runtime_state', {}, { timeoutMs: 5000 });
+    const second = connection.sendCommand('ping_pong', {}, { timeoutMs: 5000 });
+
+    await expect(first).rejects.toMatchObject({
+      name: 'GodotConnectionClosedError',
+      code: 'CONNECTION_LOST',
+    });
+    await expect(second).rejects.toBeInstanceOf(GodotConnectionClosedError);
+    await expect(second).rejects.toBeInstanceOf(GodotConnectionError);
+  });
+
+  it('maps addon close codes onto typed close codes (replaced 4003)', async () => {
+    const bridge = await bridgeThatClosesOnCommand((socket) =>
+      socket.close(CLOSE_CODE_REPLACED, 'Replaced by new client')
+    );
+    wss = bridge.wss;
+    connection = new GodotConnection({ host: '127.0.0.1', port: bridge.port, autoReconnect: false });
+    await connection.connect();
+
+    await expect(connection.sendCommand('ping_pong', {}, { timeoutMs: 5000 })).rejects.toMatchObject({
+      code: 'REPLACED_BY_NEW_CLIENT',
+    });
+  });
+
+  it('silently drops a late response whose request was already rejected at close time', async () => {
+    let preCloseRequestId: string | null = null;
+    let connectionCount = 0;
+    const wssLocal = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    await once(wssLocal, 'listening');
+    wssLocal.on('connection', (socket) => {
+      connectionCount++;
+      const isFirstConnection = connectionCount === 1;
+      socket.on('message', (raw) => {
+        let msg: { id: string; command: string } | undefined;
+        try {
+          msg = JSON.parse(raw.toString());
+        } catch {
+          return;
+        }
+        if (!msg) return;
+        if (msg.command === 'mcp_handshake') {
+          socket.send(JSON.stringify({ id: msg.id, status: 'success', result: { addon_version: getServerVersion() } }));
+          if (!isFirstConnection && preCloseRequestId) {
+            // Replay the pre-close request id on the NEW connection: the
+            // late-response race. It must be dropped, not resolved or errored.
+            socket.send(JSON.stringify({ id: preCloseRequestId, status: 'success', result: { late: true } }));
+          }
+          return;
+        }
+        if (isFirstConnection) {
+          preCloseRequestId = msg.id;
+          socket.terminate();
+        } else {
+          socket.send(JSON.stringify({ id: msg.id, status: 'success', result: { ok: true } }));
+        }
+      });
+    });
+    wss = wssLocal;
+    const port = (wssLocal.address() as AddressInfo).port;
+    connection = new GodotConnection({ host: '127.0.0.1', port });
+    const errors: Error[] = [];
+    connection.on('error', (error: Error) => errors.push(error));
+    await connection.connect();
+
+    // First connection: command dies with the typed close error.
+    await expect(connection.sendCommand('get_runtime_state', {}, { timeoutMs: 5000 })).rejects.toBeInstanceOf(
+      GodotConnectionClosedError
+    );
+
+    // Reconnect (autoReconnect default), then issue a fresh command; its reply
+    // proves the late replayed response has already been processed and dropped.
+    await waitForEvent(connection, 'connected');
+    const result = await connection.sendCommand<{ ok: boolean }>('ping_pong', {}, { timeoutMs: 5000 });
+    expect(result).toEqual({ ok: true });
+    expect(errors).toEqual([]);
   });
 });

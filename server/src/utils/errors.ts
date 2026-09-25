@@ -5,6 +5,20 @@ export class GodotConnectionError extends Error {
   }
 }
 
+// Raised when the websocket closes while commands are still in flight.
+// Extends GodotConnectionError so existing consumers keep treating it as a
+// connection failure, but callers can now branch on the code instead of
+// string-matching the message (SEE-1326 M5 onclose-reject-all).
+export class GodotConnectionClosedError extends GodotConnectionError {
+  public readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'GodotConnectionClosedError';
+    this.code = code;
+  }
+}
+
 export class GodotCommandError extends Error {
   public readonly code: string;
 
@@ -24,6 +38,9 @@ export class GodotTimeoutError extends Error {
 
 export function formatError(error: unknown): string {
   if (error instanceof GodotCommandError) {
+    return `[${error.code}] ${error.message}`;
+  }
+  if (error instanceof GodotConnectionClosedError) {
     return `[${error.code}] ${error.message}`;
   }
   if (error instanceof GodotTimeoutError) {
