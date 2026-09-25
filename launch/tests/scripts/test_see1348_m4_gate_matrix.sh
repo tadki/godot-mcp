@@ -178,6 +178,19 @@ for entry in "${faces[@]}"; do
     ' "$sidecar"; then ok "S7[$face] 5-writer mixed-slot: zero lost updates"; else ko "S7[$face] 5-writer mixed-slot LOST UPDATE: $(cat "$sidecar" | tr -d '\n' | head -c 160)"; fi
 done
 
+# P4 — cross-language lock contract (SEE-1348 hardener, Revy): mutant C3
+# (sidecar_mutate drifting its lock target to ${sidecar}.otherlock) passed the
+# whole matrix — both contenders go through the lib, so a CONSISTENT internal
+# drift is invisible to P1/S7. But the lock FILENAME is a protocol with
+# lifecycle.mjs's markIntentionalRelease (exec 9>"$sidecar.lock" + flock -w 5):
+# a drift silently ends bash↔node mutual exclusion. Pin the shared literal.
+if grep -q 'local lock_path="${sidecar}.lock"' "$REPO/launch/mcp-sidecar.lib.sh" \
+    && grep -q 'exec 9>"\$sidecar\.lock"' "$REPO/launch/proxy/lifecycle.mjs"; then
+    ok "P4[contract] sidecar_mutate and lifecycle markIntentionalRelease lock the same <sidecar>.lock"
+else
+    ko "P4[contract] lock-path drift between mcp-sidecar.lib.sh and lifecycle.mjs"
+fi
+
 # ------------------------------------------------------------- report ----
 echo "---- SEE-1348 WP4 gate matrix results ----"
 for r in "${ROWS[@]}"; do echo "$r"; done

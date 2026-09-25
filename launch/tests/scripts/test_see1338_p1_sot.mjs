@@ -193,6 +193,10 @@ test('§4.2 D3 T17 started_at 三重校验：pid 复用（started_at 漂移）�
     assert.equal(alive, false, 'started_at mismatch (PID reuse) must read DEAD');
     assert.equal(sf.proxyAlive(process.pid, null), true, 'null startedAt degrades to two-check');
     assert.equal(sf.proxyAlive(999999999, null), false);
+    // SEE-1348 hardener (Revy): the same `p <= 0` → `p < 0` boundary mutant
+    // survived here as on editorPidAlive (kill(0,0) is a process-GROUP probe
+    // that always succeeds). Pin it.
+    assert.equal(sf.proxyAlive(0, null), false, 'pid 0 must never probe the process group');
 });
 
 // ---- D1: runtime_id_v2 keying ------------------------------------------------------
@@ -301,6 +305,34 @@ test('§4.2+ T26c WP7 claim-time：editorAlive 未知（null/undefined）不改�
         editorAlive: true,
     });
     assert.equal(d2.action, 'handoff_reuse');
+});
+
+// SEE-1348 hardener (Revy): mutant A5 survived — hoisting the editorAlive
+// veto above the samePort/FAILED_CLEAN/RECORD_STATE guards was invisible to
+// the suite. Pin the precedence: structural guards fire BEFORE the veto, so
+// non-reuse states keep their own reason (and never read an undefined
+// WT_MATCH_PREFIXES entry).
+test('§4.2+ T26e hardener：守卫优先级——FAILED_CLEAN/未知状态先于 editorAlive 否决', () => {
+    const fc = decideReuseSingleSource({
+        state: 'FAILED_CLEAN', holderProxyAlive: false,
+        holderWorktree: '/tmp/wt', ourWorktree: '/tmp/wt', samePort: true,
+        editorAlive: false,
+    });
+    assert.equal(fc.action, 'cold_start');
+    assert.equal(fc.reason, 'FAILED_CLEAN_REENTRANT');
+    const unk = decideReuseSingleSource({
+        state: 'BOGUS', holderProxyAlive: false,
+        holderWorktree: '/tmp/wt', ourWorktree: '/tmp/wt', samePort: true,
+        editorAlive: false,
+    });
+    assert.equal(unk.action, 'cold_start');
+    assert.equal(unk.reason, 'RECORD_STATE:BOGUS');
+    const pm = decideReuseSingleSource({
+        state: 'WARM', holderProxyAlive: false,
+        holderWorktree: '/tmp/wt', ourWorktree: '/tmp/wt', samePort: false,
+        editorAlive: false,
+    });
+    assert.equal(pm.reason, 'PORT_MISMATCH_RECORD');
 });
 
 test('§4.2+ T26d WP7 spawn.mjs 接线：editorAlive 进决策 + editorPidAlive 导入在位', () => {
