@@ -11,12 +11,12 @@ name: Launch Special (heavy/env tier)
 #             GitHub runner they cannot pass; kept here as documented stubs
 #             (preflight probe proves the requirement, then skips).
 #   drift   — residual entries after the SEE-1344 triage (Atlas final ruling):
-#             drift-maintained greens (4) + frozen pending-owner (2,
-#             documented-pending-owner, explicit SKIP lane) + env-adjacent
-#             live entries. 25 items graduated into launch/vitest.config.ts
-#             FAST lists (21 fixed + 4 green), 5 into LONG, 13 documented in
-#             the env bucket, 7 retired files deleted; residual RED must
-#             stay 0 (§SPEC-114).
+#             drift-maintained greens (2: see1111_e5_concurrent,
+#             see1273_t1_tree_consistency). 27 items
+#             graduated into launch/vitest.config.ts FAST lists (21 fixed +
+#             4 green + ⑫ 2 more), 5 into LONG, 13 documented in the env
+#             bucket, 9 retired files deleted (7 triage + 2 frozen, Owner
+#             2026-09-24 23:04); residual RED must stay 0 (§SPEC-114).
 #
 # Manual dispatch runs everything runnable headless and reports per-entry
 # status without failing the workflow (continue-on-error evidence runs) —
@@ -163,24 +163,18 @@ jobs:
           set -uo pipefail
           RED_LOG="drift-red-${{ github.run_id }}.txt"
           : > "$RED_LOG"
+          # SEE-1344 ⑫: 冻结 2 件（see1111_gitignore_prepare_worktree /
+          # linked_worktree_fixes）经 Owner 2026-09-24 23:04 指令删除（语义过时），
+          # SKIP lane 一并移除；残留 drift 清单 = 2 件维持绿项。
+          # SEE-1344 ⑫: shim_handoff + runtime_held_wait 毕业进 FAST（硬断言 90），
+          # 残留 drift 清单 = 2 件（e5_concurrent、t1_tree_consistency）。
           for t in \
             launch/tests/scripts/test_see1111_e5_concurrent_5agent.sh \
-            launch/tests/scripts/test_see1244_shim_handoff.mjs \
-            launch/tests/scripts/test_see1244_runtime_held_wait.sh \
             launch/tests/hooks/see1273/test_see1273_t1_tree_consistency.sh \
-            # SEE-1344 冻结待 Owner 裁决（documented-pending-owner）：不执行、不计 RED。
-            # 留清单原位保留可见性；两件的 project.godot Direction-3 语义归属待裁。
-            launch/tests/scripts/test_see1111_gitignore_prepare_worktree.sh \
-            launch/tests/scripts/test_see1111_linked_worktree_fixes.sh \
           ; do
             [ -f "$t" ] || { echo "[special:drift] MISSING $t"; continue; }
             echo "::group::$t"
             case "$t" in
-              # SEE-1344 冻结待 Owner 裁决（documented-pending-owner）：显式 skip，
-              # 不进 RED 集（drift 残留 RED=0 判据下可见且不阻塞）。
-              launch/tests/scripts/test_see1111_gitignore_prepare_worktree.sh \
-              | launch/tests/scripts/test_see1111_linked_worktree_fixes.sh)
-                echo "[special:drift] SKIP (documented-pending-owner: project.godot Direction-3 归属待裁) $t" ;;
               *.py)  timeout 180 python3 "$t" </dev/null && echo "[special:drift] PASS (drift fixed → graduate)" \
                      || { echo "::warning::[special:drift] RED $t"; echo "$t" >> "$RED_LOG"; } ;;
               *.mjs) timeout 180 node "$t" </dev/null && echo "[special:drift] PASS (drift fixed → graduate)" \

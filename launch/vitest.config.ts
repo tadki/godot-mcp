@@ -162,7 +162,19 @@ launch/tests/scripts/test_see1111_warmup_hint.sh
 launch/tests/scripts/test_see1148_p3_reclaim.sh
 launch/tests/scripts/test_see1244_cache_closure.mjs
 launch/tests/scripts/test_see1244_proxy_tools_cache.mjs
+launch/tests/scripts/test_see1244_runtime_held_wait.sh
+launch/tests/scripts/test_see1244_shim_handoff.mjs
 `;
+
+// SEE-1344 ⑫ graduation notes (2, drift residual → 2): event-driven-hardened
+// greens per Owner 2026-09-24 23:04 ruling —
+//   test_see1244_shim_handoff.mjs — shim 状态机亚秒窗族（同 v2_gate 判据）：
+//   固定 300/500ms boot/顺序 sleep 已改事件驱动（callUntilEcho transient 重发
+//   + exit 事件先行监听；CHAIN_STDOUT_OPEN 非 boot 信号，无 --emit-frame 时
+//   链 stdout 首行前不触发），4-way 下曾现瞬态 → 留串行桶。
+//   test_see1244_runtime_held_wait.sh — 真实时钟 held 预算 + /proc liveness
+//   探测（机器级，同 see1137/lease_matrix 判据）；C5 takeover 断言已锚定
+//   观测到的 holder-death 事件（≤3.5s = 一个 2s 生产 tick + reclaim）。
 
 // FAST_PARALLEL_SHELL — everything else. Shared binning evidence (all entries
 // verified by reading the harness): each creates its own mktemp sandbox
@@ -295,11 +307,11 @@ const serialEntries = parse(FAST_SERIAL);
 const fastEntries = [...parse(FAST_PARALLEL_SHELL), ...parse(FAST_NODE)];
 const longEntries = parse(LONG);
 
-if (serialEntries.length !== 16) {
+if (serialEntries.length !== 18) {
   throw new Error(`fast serial bucket expects 16 entries (8 + SEE-1344's 8 load-fragile graduates: tight internal timing windows proven to flake under 4-way load in r7-r9 sweeps), resolved ${serialEntries.length} — update the bucket in sync with the SEE-1291 graduation flow`);
 }
-if (serialEntries.length + fastEntries.length !== 88) {
-  throw new Error(`fast tier expects 88 entries (serial + parallel; SEE-1344 graduated 21 fixed + 4 green drift items in per Atlas final ruling), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
+if (serialEntries.length + fastEntries.length !== 90) {
+  throw new Error(`fast tier expects 90 entries (serial + parallel; SEE-1344 ⑫ graduated shim_handoff + runtime_held_wait per Owner ruling), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
 }
 if (longEntries.length !== 7) {
   throw new Error(`long tier expects 7 entries (SEE-1344: see1273 t1/t2/t3/t4 chains + see1134 restart_hold graduate in), resolved ${longEntries.length}`);
