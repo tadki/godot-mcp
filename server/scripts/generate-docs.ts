@@ -51,7 +51,7 @@ const categories: ToolCategory[] = [
   { name: 'Resource', filename: 'resource', description: 'Resource inspection tools for SpriteFrames, TileSet, Materials, etc.', tools: resourceTools },
   { name: 'Scene3D', filename: 'scene3d', description: '3D spatial information and bounding box tools', tools: scene3dTools },
   { name: 'Documentation', filename: 'docs', description: 'Fetch Godot Engine documentation with smart extraction', tools: docsTools },
-  { name: 'Input', filename: 'input', description: 'Input injection for testing running games: named actions, joypad buttons, analog axes and stick vectors, raw keyboard keys with modifier combos, relative mouse-look, and text typing (no absolute cursor positioning)', tools: inputTools },
+  { name: 'Input', filename: 'input', description: 'Input injection for testing running games: named actions, joypad buttons, analog axes and stick vectors, raw keyboard keys with modifier combos, relative mouse-look, absolute mouse positioning (mouse_move/mouse_button), and text typing. Absolute entries drive the event path only — the polled OS cursor deliberately does not move (DECIDED: docs/design/mouse-input-spike.md); cooperative games adopt MCPCursor/MousePos instead (migration: docs/design/mouse-cursor-coop.md).', tools: inputTools },
   { name: 'Profiler', filename: 'profiler', description: 'Performance profiling: snapshots, per-frame time series with spike detection, active process inspection, signal connections', tools: profilerTools },
   { name: 'Runtime State', filename: 'runtime-state', description: 'Observe live game entity state as structured JSON — positions, velocities, animation state, and custom _mcp_state() data. Works out of the box for both 2D and 3D scenes (the auto fallback surfaces visible 3D world nodes — meshes, gridmaps, cameras, lights, physics bodies and areas — not just UI). Much cheaper than screenshots.', tools: runtimeStateTools },
   { name: 'Game Time Control', filename: 'game-time', description: 'Deterministic game-clock control: freeze the running game, step a bounded slice of game time (or step until a condition holds) with inputs riding inside the window, then thaw — so observation is not racing ahead between tool calls.', tools: gameTimeTools },
@@ -420,6 +420,53 @@ function generateToolMarkdown(tool: AnyToolDefinition): string {
   return md;
 }
 
+// Hand-maintained guidance blocks appended after the generated per-tool markdown
+// in matching category files. Written here (not edited in the generated files)
+// so the next generator run keeps them.
+const CATEGORY_APPENDIX: Record<string, string> = {
+  input: `## Absolute mouse recipes (SEE-1141 Track D)
+
+\`mouse_move\` / \`mouse_button\` place the cursor in **VIEWPORT/canvas space** (the
+bridge maps through the viewport's final transform, so the same coordinate lands
+on the same canvas pixel under every stretch/content-scale config).
+
+### Grab-offset drag recipe
+
+A drag that grabs an item at an offset (e.g. its top-left corner) must not teleport
+the item's anchor to the cursor. Resolve the grab offset **game-side** and encode
+it in the coordinates you send:
+
+1. \`mouse_move\` to \`(item_pos + grab_offset)\` — hover/hit-testing now points at
+   the item (read \`item_pos\` from \`godot_runtime_state\`; \`grab_offset\` is the
+   vector from the item origin to the point a real user would grab).
+2. \`mouse_button\` press at the same point with a real \`duration_ms\`.
+3. \`mouse_move\` entries to each intermediate/final waypoint. The **release
+   automatically fires at press start_ms + duration_ms** and reuses the press
+   coordinates, so the release does not take its own position: place the drop
+   point in the LAST \`mouse_move\` before the hold expires (or give the hold a
+   longer \`duration_ms\` to leave room for the waypoint moves).
+4. Release — nothing to send; it rides the press entry's paired release.
+
+### duration_ms = 0 is a tap (the classic trap)
+
+With \`duration_ms: 0\` the press and its paired release fire back-to-back in the
+same frame — for drag-based UI the button is never observed as held, and the drag
+silently becomes a click. Any interaction that must be *held* (drag, hold-to-paint,
+long-press) needs a real \`duration_ms\` on the press entry.
+
+### Keep moves and press/release on separate frames
+
+The equal-time event sort deliberately fires presses before releases at the same
+timestamp, but a \`mouse_move\` sharing the press's \`start_ms\` may land before or
+with the press — order between different entry kinds at equal time is not
+guaranteed. Give the press and every move **distinct \`start_ms\` values spaced
+≥ one frame** (e.g. press at 0 with \`duration_ms\` 400, moves at 50 / 100 / 150 /
+200 — the release lands at 400, at least one frame after the last waypoint).
+This also lets hover/\`mouse_entered\` update between waypoints, which drag
+previews and grid highlighting typically require.
+`,
+};
+
 function generateCategoryFile(category: ToolCategory): string {
   let md = `# ${category.name} Tools\n\n`;
   md += `${category.description}\n\n`;
@@ -435,6 +482,9 @@ function generateCategoryFile(category: ToolCategory): string {
     md += generateToolMarkdown(tool);
     md += '---\n\n';
   }
+
+  const appendix = CATEGORY_APPENDIX[category.filename];
+  if (appendix) md += appendix;
 
   return md;
 }
