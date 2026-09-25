@@ -314,8 +314,8 @@ proxy_alive && ok "T6.2: proxy still alive after non-JSON line" || ko "T6.2: pro
 # Teardown.
 [[ -n "${PX[1]:-}" ]] && { eval "exec ${PX[1]}>&-" 2>/dev/null || true; }
 [[ -n "${PX[0]:-}" ]] && { eval "exec ${PX[0]}<&-" 2>/dev/null || true; }
-kill -9 "$PX_PID" 2>/dev/null || true
-wait "$PX_PID" 2>/dev/null || true
+[[ -n "${PX_PID:-}" ]] && kill -9 "$PX_PID" 2>/dev/null || true
+[[ -n "${PX_PID:-}" ]] && wait "$PX_PID" 2>/dev/null || true
 kill "$LIS_PID" 2>/dev/null || true
 
 echo
