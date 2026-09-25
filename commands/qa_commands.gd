@@ -16,6 +16,15 @@ const LONG_TIMEOUT := 28.0
 
 var _last_error: Dictionary = {}
 var _call_seq := 0
+# F-QA-8 residual: the debugger plugin keeps ONE response slot per msg_type,
+# so a second concurrent wait's bridge-side wait_already_pending rejection
+# (a mismatched call_id from its slot) gets consumed and discarded by the
+# FIRST wait's relay, and the second starves to its relay [TIMEOUT]. This
+# relay-level mutex refuses the second wait BEFORE the debugger channel:
+# nothing is sent for the refused call, so the in-flight wait's slot and
+# relay stay untouched. The flag returns when the in-flight relay completes
+# — response or timeout, both fall through the single await below.
+var _wait_in_flight := false
 
 
 func get_commands() -> Dictionary:
@@ -34,7 +43,13 @@ func qa_assert_property(params: Dictionary) -> Dictionary:
 func qa_wait_for_signal(params: Dictionary) -> Dictionary:
 	# The bridge resolves the wait at min(emission, wall-clock timeout_ms); the
 	# pushed relay budget (server: budget + margins) only covers transit slop.
-	return await _relay("qa_wait_for_signal", params, _relay_timeout(params, LONG_TIMEOUT))
+	if _wait_in_flight:
+		# Refused before the debugger channel — see _wait_in_flight.
+		return _error("QA_ERROR", "wait_already_pending: one wait_for_signal at a time")
+	_wait_in_flight = true
+	var result = await _relay("qa_wait_for_signal", params, _relay_timeout(params, LONG_TIMEOUT))
+	_wait_in_flight = false
+	return result
 
 
 func qa_assert_layout(params: Dictionary) -> Dictionary:

@@ -138,6 +138,39 @@ test('qa wait mutex: wait_already_pending refusal + single deferred completion f
     );
 });
 
+// F-QA-8 residual: the plugin's single response slot per msg_type makes the
+// bridge-side rejection of a second concurrent wait invisible (the first
+// wait's relay consumes the slot and discards the mismatched call_id, so the
+// second starves to its relay [TIMEOUT]). The relay layer must therefore hold
+// its own _wait_in_flight mutex and refuse the second wait BEFORE the
+// debugger channel — nothing is sent for the refused call.
+test('qa wait mutex: relay-layer _wait_in_flight refuses before the debugger channel (F-QA-8 residual)', () => {
+    const relay = read('commands/qa_commands.gd');
+    const fn = relay.slice(
+        relay.indexOf('func qa_wait_for_signal'),
+        relay.indexOf('func qa_assert_layout')
+    );
+    assert(
+        relay.includes('var _wait_in_flight := false'),
+        'relay must own the _wait_in_flight mutex flag'
+    );
+    assert(
+        fn.includes('if _wait_in_flight:'),
+        'qa_wait_for_signal must check the mutex BEFORE entering the relay'
+    );
+    assert(
+        fn.includes('QA_ERROR') && fn.includes('wait_already_pending'),
+        'the refusal must be the documented typed error (QA_ERROR wait_already_pending)'
+    );
+    // The refusal must be a plain return — no _relay/send on the refused path.
+    const refusal = fn.slice(fn.indexOf('if _wait_in_flight:'), fn.indexOf('_wait_in_flight = true'));
+    assert(!refusal.includes('_relay('), 'the refused call must not reach the debugger channel');
+    assert(
+        fn.includes('_wait_in_flight = true') && fn.includes('_wait_in_flight = false'),
+        'the flag must be set before the await and returned after it (response or timeout)'
+    );
+});
+
 function assert(cond, msg) {
     if (!cond) {
         throw new Error(`qa relay wiring broken: ${msg}`);
