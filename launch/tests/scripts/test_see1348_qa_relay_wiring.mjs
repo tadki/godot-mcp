@@ -89,6 +89,55 @@ test('qa relay chain: bridge qa node reuses the sampler resolver + waits resolve
     );
 });
 
+// F-QA-6: the wait timeout tick must live BEFORE the sampling early-returns in
+// the sampler's _process — a wait-only session has _active=false for its whole
+// life, and the old early-return starved the wall-clock accumulation until the
+// relay killed the call ([TIMEOUT] instead of the documented emitted:false).
+test('qa wait timeout: wall-clock tick precedes the _active early-return (F-QA-6)', () => {
+    const sampler = read('game_bridge/mcp_runtime_state_sampler.gd');
+    const fn = sampler.slice(sampler.indexOf('func _process('), sampler.indexOf('func collect('));
+    const waitTick = fn.indexOf('_wait_elapsed_ms += delta');
+    const activeReturn = fn.indexOf('if not _active:');
+    assert(waitTick !== -1, 'sampler _process must tick the wait wall clock');
+    assert(activeReturn !== -1, 'sampler _process keeps the sampling _active gate');
+    assert(waitTick < activeReturn, 'wait tick must run BEFORE the _active early-return (F-QA-6)');
+    // watch_stop resolves a pending wait too (no starved relay after teardown).
+    const stop = sampler.slice(sampler.indexOf('func stop()'), sampler.indexOf('func is_active()'));
+    assert(
+        /_wait_active[\s\S]*?_finish_wait\(\)/.test(stop),
+        'stop() must resolve a pending wait via _finish_wait (teardown path)'
+    );
+    // _finish_wait flips _wait_active BEFORE emitting (re-entrancy safety).
+    const finish = sampler.slice(sampler.indexOf('func _finish_wait()'), sampler.indexOf('func _teardown_wait()'));
+    assert(
+        finish.indexOf('_wait_active = false') < finish.indexOf('qa_wait_finished.emit'),
+        '_finish_wait must flip the active flag before emitting the result'
+    );
+});
+
+// F-QA-8: concurrent waits are refused with the documented typed error, and
+// completions funnel through a single deferred queue so a same-frame second
+// wait cannot race the slot flip.
+test('qa wait mutex: wait_already_pending refusal + single deferred completion funnel (F-QA-8)', () => {
+    const qaNode = read('game_bridge/mcp_qa.gd');
+    assert(
+        qaNode.includes('wait_already_pending'),
+        'second concurrent wait must be refused with the documented error'
+    );
+    assert(
+        qaNode.includes('_finish_wait_queue') && qaNode.includes('_drain_finish_queue'),
+        'completions must funnel through the deferred queue (no direct _send from the signal handler)'
+    );
+    const handler = qaNode.slice(
+        qaNode.indexOf('func _on_wait_finished'),
+        qaNode.indexOf('func _drain_finish_queue')
+    );
+    assert(
+        !handler.includes('_send('),
+        '_on_wait_finished must not _send directly — only the funnel may answer'
+    );
+});
+
 function assert(cond, msg) {
     if (!cond) {
         throw new Error(`qa relay wiring broken: ${msg}`);
