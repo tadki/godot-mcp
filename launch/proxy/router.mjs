@@ -16,6 +16,7 @@ import {
 import { answerUiInspectCall, isUiInspectToolsCall } from './ui-inspect.mjs';
 import { isExecToolsCall, isGameTimeToolsCall, isInputSequenceToolsCall } from './exec.mjs';
 import { execConstraintDigest, precheckExecSource } from '../see1240-exec-constraints.mjs';
+import { execHintsForText } from './exec.mjs';
 import { expandDragInToolsCall } from '../see1240-ui-tools.mjs';
 import { persistGiveUpStatus, spawnFailedDiagnostic, triggerEnsureEditor } from './spawn.mjs';
 import { beginRestartHold, isRestartToolsCall } from './restart.mjs';
@@ -277,10 +278,16 @@ function handleClaudeMessage(line) {
                 const pc = precheckExecSource(execArgs.source);
                 if (!pc.ok) {
                     if (id !== undefined) {
-                        const why = pc.kind === 'NO_CODE'
+                        dropToolsCallId(id);
+                        // SEE-1348 WP5 (§SPEC-005): in-band exec rejections get
+                        // the same hint augmentation as relayed responses — an
+                        // await/denylist rejection is exactly the compile-error
+                        // surface the EXEC_HINTS rules describe.
+                        const baseWhy = pc.kind === 'NO_CODE'
                             ? pc.message
                             : `${pc.message}\nFull constraint list — call godot_exec with {action:"help"}:\n${execConstraintDigest()}`;
-                        sendToClaude(makeErrorResponse(id, why, -32602));
+                        const hints = execHintsForText(baseWhy);
+                        sendToClaude(makeErrorResponse(id, baseWhy + hints, -32602));
                     }
                     return;
                 }

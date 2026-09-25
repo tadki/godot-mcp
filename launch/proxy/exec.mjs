@@ -39,6 +39,23 @@ function isInputSequenceToolsCall(msg) {
 // errors pass through untouched.
 const EXEC_HINTS = [
     {
+        // GDScript has no bare dict shorthand for string keys (`{name: "x"}` is
+        // a Lua-style error) — keys must be quoted: `{"name": "x"}`.
+        match: /Dictionary|dict[\s\S]{0,80}(shorthand|bare key|unquoted)/i,
+        hint: ' [hint: GDScript 字典键必须加引号（`{name: "x"}` 不可用）；写成 `{"name": "x"}`]',
+    },
+    {
+        // A `func` statement at top level of the exec body — the source is
+        // compiled as a FUNCTION BODY, so nested declarations are illegal.
+        match: /Parse Error:.*\bfunc\b|\bfunc\b[\s\S]{0,40}(top-level|function body|nested|cannot declare)/i,
+        hint: ' [hint: exec source 是函数体，不能声明顶层 func/class；回调用 lambda `func(x): ...`，持久行为用 GDScript.new() 挂到 holder]',
+    },
+    {
+        match: /\bawait\b/,
+        hint: ' [hint: exec 是同步执行的（SYNC_ONLY），await 会让脚本挂起；等待游戏状态用 godot_game_time step/step_until，持续行为挂 holder 子节点]',
+    },
+
+    {
         // `[x for x in arr]` — GDScript has no list/dict comprehensions.
         match: /\[[^\]]*\bfor\b[^\]]*\bin\b/,
         hint: ' [hint: GDScript 无列表推导式（`[x for x in arr]` 不可用）；改用 `arr.map(func(x): return ...)` 或普通 for 循环]',

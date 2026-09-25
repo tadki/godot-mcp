@@ -214,6 +214,10 @@ launch_via_schtasks() {
         printf '%s\n' "$log_win"
         printf '%s\n' "$task_name"
         printf '%s\n' "$runtime_id"
+        # SEE-1348 WP5 (§SPEC-004): exec byte cap flows to the GAME process —
+        # the bridge reads GODOT_MCP_EXEC_MAX_BYTES at call time. Empty line =
+        # unset (bridge default).
+        printf '%s\n' "${GODOT_MCP_EXEC_MAX_BYTES:-}"
     } >"$values_file"
 
     cat >"$ps_script" <<'PSEOF'
@@ -226,6 +230,10 @@ $pathWin   = $v[1]
 $logWin    = $v[2]
 $taskName  = $v[3]
 $runtimeId = $v[4]
+# SEE-1348 WP5 (§SPEC-004): optional exec byte cap (empty = unset). The game
+# process inherits it via the cmd `set` prefix so the bridge's env read sees it.
+$execCap = if ($v.Count -gt 5) { $v[5] } else { "" }
+$envPrefix = if ($execCap) { "set GODOT_MCP_EXEC_MAX_BYTES=$execCap&& " } else { "" }
 
 $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 if (-not $user) { exit 1 }
@@ -234,7 +242,7 @@ $userNode = "<UserId>" + [System.Security.SecurityElement]::Escape($user) + "</U
 # (Task Scheduler does not capture child output itself). The whole command
 # is wrapped in one quoted block; the worktree/editor/log paths in this
 # environment contain no spaces, so per-path quoting is unnecessary.
-$rawArgs = "/c `"" + $editorWin + " --editor --path " + $pathWin + " --kol-mcp-lease --kol-mcp-runtime " + $runtimeId + " > " + $logWin + " 2>&1`""
+$rawArgs = "/c `"set GODOT_MCP_EXEC_MAX_BYTES=$execCap&& " + $editorWin + " --editor --path " + $pathWin + " --kol-mcp-lease --kol-mcp-runtime " + $runtimeId + " > " + $logWin + " 2>&1`""
 $argsXml = [System.Security.SecurityElement]::Escape($rawArgs)
 $xml = "<?xml version=`"1.0`" encoding=`"UTF-16`"?>" +
     "<Task xmlns=`"http://schemas.microsoft.com/windows/2004/02/mit/task`">" +

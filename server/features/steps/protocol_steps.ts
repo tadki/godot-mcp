@@ -7,6 +7,7 @@
 // — mock npx on PATH, counting spawn helpers, WS-completing mock editor).
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { After, Given, Then, When } from '@cucumber/cucumber';
 import WebSocket from 'ws';
 import { isEditorBusyError } from '../../../launch/proxy/errors.mjs';
@@ -300,3 +301,73 @@ function metaOf(resp: IdResult): Record<string, unknown> | null {
     }
     return null;
 }
+
+// ============ SEE-1348 WP5: exec structured result (§SPEC-003) ================
+
+// The mock npx answers godot_exec from the sandbox replies file (read per
+// call — startProxyOn wires MOCK_NPX_REPLY_FILE to it) — the proxy forwards
+// the envelope verbatim, so these scenarios pin the contract: result
+// (structured), result_repr (legacy preview), result_truncated (present only
+// when a gate tripped). The bridge-side serialization itself is engine code
+// covered by the headless compile gate + the 9-grid protocol (§SPEC-004).
+interface ExecWorld extends World {
+    execRepliesFile?: string;
+}
+
+// Named fixtures (cucumber-expressions would parse literal braces in step
+// text as parameter placeholders — keep JSON out of the step signatures).
+const EXEC_FIXTURES: Record<string, unknown> = {
+    'flat-dict': { hp: 100, pos: { x: 1, y: 2 } },
+    array: { k: [1, 2, 3] },
+    ok: { ok: true },
+};
+
+async function execWithFixture(w: ExecWorld, fixture: string, truncated?: string): Promise<void> {
+    const result = EXEC_FIXTURES[fixture];
+    assert.ok(result !== undefined, `unknown exec fixture: ${fixture}`);
+    const s = w.session as ProxySession;
+    const envelope = {
+        completed: true, duration_ms: 1, holder_children: 0, result,
+        result_repr: 'preview', ...(truncated ? { result_truncated: truncated } : {}),
+    };
+    writeFileSync(w.sandbox!.repliesFile, JSON.stringify({
+        godot_exec: { content: [{ type: 'text', text: JSON.stringify(envelope) }] },
+    }));
+    s.send(jsonRpcCall(3, 'godot_exec', { action: 'run', source: 'return {}' }));
+    (w as World).result = await s.waitForIdResult(3, BUDGET);
+}
+
+When('the mock npx answers exec_run with the {string} exec fixture', async function (fixture: string) {
+    await execWithFixture(this as ExecWorld, fixture);
+});
+
+When('the mock npx answers exec_run with the {string} exec fixture and truncated {string}', async function (fixture: string, truncated: string) {
+    await execWithFixture(this as ExecWorld, fixture, truncated);
+});
+
+function execEnvelopeOf(w: World): Record<string, unknown> {
+    const resp = w.result as IdResult;
+    assert.ok(!resp.error, `exec errored: ${JSON.stringify(resp.error)}`);
+    const text = resp.result?.content?.map((c) => c.text ?? '').join('') ?? '';
+    return JSON.parse(text) as Record<string, unknown>;
+}
+
+Then('the exec response result matches the {string} exec fixture', function (fixture: string) {
+    const envelope = execEnvelopeOf(this as World);
+    assert.deepEqual(envelope.result, EXEC_FIXTURES[fixture]);
+});
+
+Then('the exec response carries result_repr as a string', function () {
+    const envelope = execEnvelopeOf(this as World);
+    assert.equal(typeof envelope.result_repr, 'string');
+});
+
+Then('the exec response carries result_truncated {string}', function (reason: string) {
+    const envelope = execEnvelopeOf(this as World);
+    assert.equal(envelope.result_truncated, reason);
+});
+
+Then('the exec response does not carry result_truncated', function () {
+    const envelope = execEnvelopeOf(this as World);
+    assert.ok(!('result_truncated' in envelope), 'unexpected result_truncated');
+});
