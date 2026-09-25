@@ -10,7 +10,7 @@ import { initializeConnection, getGodotConnection } from './connection/websocket
 import { registry } from './core/registry.js';
 import { isStructuredResult } from './core/structured.js';
 import { registerAllTools } from './tools/index.js';
-import { GodotCommandError } from './utils/errors.js';
+import { formatError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
 import { getServerVersion } from './version.js';
 
@@ -126,14 +126,12 @@ export async function main(deps: MainDeps = {}) {
         content: [result],
       };
     } catch (error) {
-      let message: string;
-      if (error instanceof GodotCommandError) {
-        message = `[${error.code}] ${error.message}`;
-      } else if (error instanceof Error) {
-        message = error.message;
-      } else {
-        message = String(error);
-      }
+      // SEE-1348 F-QA-5: render through formatError so GodotConnectionClosedError's
+      // code reaches the MCP client ([CLOSE_CODE] Connection closed) — registry
+      // re-throws typed errors as-is, and a bare "Connection closed" hid the
+      // close reason from the caller. Delivery semantics unchanged: no claim of
+      // fixing M5/JSONDecodeError.
+      const message = formatError(error);
       return {
         content: [{ type: 'text', text: `Error: ${message}` }],
         isError: true,
