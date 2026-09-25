@@ -297,6 +297,10 @@ launch/tests/hooks/see1273/test_see1273_t2_chain.sh
 launch/tests/hooks/see1273/test_see1273_t3_chain.sh
 launch/tests/hooks/see1273/test_see1273_t4_chain.sh
 launch/tests/scripts/test_see1134_restart_hold.sh
+// SEE-1344 ⑫+: 5-agent concurrent cold start — real-clock/concurrency-window
+// by nature (configure's async reaper + 15s warmup budget + RECOVERING lane
+// under load), so it is a long-tier entry per §SPEC-120, not drift, not fast.
+launch/tests/scripts/test_see1111_e5_concurrent_5agent.sh
 `;
 
 const parse = (block) => block.trim().split('\n').map((s) => s.trim()).filter(Boolean)
@@ -313,8 +317,8 @@ if (serialEntries.length !== 18) {
 if (serialEntries.length + fastEntries.length !== 90) {
   throw new Error(`fast tier expects 90 entries (serial + parallel; SEE-1344 ⑫ graduated shim_handoff + runtime_held_wait per Owner ruling), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
 }
-if (longEntries.length !== 7) {
-  throw new Error(`long tier expects 7 entries (SEE-1344: see1273 t1/t2/t3/t4 chains + see1134 restart_hold graduate in), resolved ${longEntries.length}`);
+if (longEntries.length !== 8) {
+  throw new Error(`long tier expects 8 entries (SEE-1344 ⑫+: e5_concurrent joins the 7), resolved ${longEntries.length}`);
 }
 
 // Generate one wrapper per entry under .vitest-gen/<bucket>/ (gitignored —

@@ -11,8 +11,9 @@ name: Launch Special (heavy/env tier)
 #             GitHub runner they cannot pass; kept here as documented stubs
 #             (preflight probe proves the requirement, then skips).
 #   drift   — residual entries after the SEE-1344 triage (Atlas final ruling):
-#             drift-maintained greens (2: see1111_e5_concurrent,
-#             see1273_t1_tree_consistency). 27 items
+#             drift LIST CLEARED (⑫/⑫+: 6 handled — 2 FAST graduation after
+#             event-driven hardening, e5→long, t1_tree deleted with the 2
+#             frozen). 29 items
 #             graduated into launch/vitest.config.ts FAST lists (21 fixed +
 #             4 green + ⑫ 2 more), 5 into LONG, 13 documented in the env
 #             bucket, 9 retired files deleted (7 triage + 2 frozen, Owner
@@ -166,11 +167,12 @@ jobs:
           # SEE-1344 ⑫: 冻结 2 件（see1111_gitignore_prepare_worktree /
           # linked_worktree_fixes）经 Owner 2026-09-24 23:04 指令删除（语义过时），
           # SKIP lane 一并移除；残留 drift 清单 = 2 件维持绿项。
-          # SEE-1344 ⑫: shim_handoff + runtime_held_wait 毕业进 FAST（硬断言 90），
-          # 残留 drift 清单 = 2 件（e5_concurrent、t1_tree_consistency）。
+          # SEE-1344 ⑫/⑫+（Owner 2026-09-24 23:04/23:28 指令）：drift 桶清空——
+          # 2 件偶发红事件驱动加固后毕业 FAST，e5_concurrent 迁 long（真实时钟
+          # 并发窗），t1_tree_consistency 删除（retired archive 语义）。
+          # 清单保留为空骨架：未来新漂移回归仍走本 job 逐项 evidence run。
           for t in \
-            launch/tests/scripts/test_see1111_e5_concurrent_5agent.sh \
-            launch/tests/hooks/see1273/test_see1273_t1_tree_consistency.sh \
+            # (intentionally empty — SEE-1344 drift cleared) \
           ; do
             [ -f "$t" ] || { echo "[special:drift] MISSING $t"; continue; }
             echo "::group::$t"
