@@ -122,6 +122,7 @@ const PLACEHOLDER_TOOL_NAMES = [
     'godot_node_read',
     'godot_profiler',
     'godot_project',
+    'godot_qa',
     'godot_resource',
     'godot_runtime_state',
     'godot_scene',

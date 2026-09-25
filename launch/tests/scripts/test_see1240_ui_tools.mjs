@@ -141,8 +141,17 @@ section('DESCRIPTION_PATCHES vs running fork tools/list');
             const tool = list.find((t) => t.name === patch.tool);
             ok(`${patch.tool} present in fork tools/list`, !!tool);
             if (tool) {
-                ok(`${patch.tool} anchor matches running fork`, tool.description.includes(patch.anchor),
-                    `anchor not found in live description (fork may have shipped the fix natively — patch then correctly skips)`);
+                // SEE-1348: the fork natively shipped the Track D truth in
+                // 26eb601 (the stale anchor sentence was removed from
+                // godot_input's description) — the patch now skips silently
+                // by design, so a missing anchor is the expected post-26eb601
+                // state, not a compatibility break. Only a description
+                // REGRESSION back to the stale claim fails.
+                const anchorStillPatched = tool.description.includes(patch.anchor);
+                const nativelyShipped = !tool.description.includes('absolute cursor positioning is not');
+                ok(`${patch.tool} anchor matches running fork (or natively shipped)`,
+                    anchorStillPatched || nativelyShipped,
+                    `anchor gone but stale claim is back — fork regression vs SEE-1348 WP3 (26eb601)`);
                 ok(`${patch.tool} patch replacement mentions SEE`, patch.replace.includes('SEE-1141') || patch.replace.includes('SEE-1240') || patch.tool === 'godot_exec');
             }
         }

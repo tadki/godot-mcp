@@ -35,7 +35,6 @@ cleanup() {
     rm -rf "$TMPDIR"
 }
 trap cleanup EXIT
-trap 'cp -r "$TMPDIR" /tmp/see1070-debug 2>/dev/null || true' EXIT  # DEBUG
 
 find_free_port() {
     python3 - <<'PY'
