@@ -7,6 +7,7 @@ import {
 } from '../helpers/mock-godot.js';
 import { qa } from '../../tools/qa.js';
 import { toInputSchema } from '../../core/schema.js';
+import { deriveTimeouts } from '../../connection/timeouts.js';
 
 describe('qa tool', () => {
   let mock: MockGodotConnection;
@@ -152,13 +153,16 @@ describe('qa tool', () => {
       expect(mock.calls[0].params.checks).toEqual([]);
     });
 
-    it('screenshot_node defaults max_width to 640 and returns the image', async () => {
+    it('screenshot_node defaults max_width to 640, pushes the relay cascade, and returns the image', async () => {
       mock.mockResponse({ image_base64: 'aGk=', width: 100, height: 40, path: '/root/UI', clamped: false, frozen: false });
       const result = await qa.execute(
         { action: 'screenshot_node', path: '/root/UI' } as never,
         createToolContext(mock)
       );
       expect(mock.calls[0].params.max_width).toBe(640);
+      // F-QA-1 rework: capture awaits frame_post_draw game-side → real cascade.
+      expect(mock.calls[0].params.relay_timeout_ms).toBe(deriveTimeouts(5000).relayMs);
+      expect(mock.calls[0].opts?.timeoutMs).toBe(deriveTimeouts(5000).serverMs);
       const image = result as { type: string; data: string; mimeType: string };
       expect(image.type).toBe('image');
       expect(image.mimeType).toBe('image/png');
