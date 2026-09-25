@@ -222,7 +222,9 @@ async function backfillEditorPid() {
     const pid = readLifecyclePidfilePid();
     if (!pid) return;
     const source = existsSync(`/proc/${pid}`) ? 'wsl' : 'windows';
-    if (!editorPidAlive(pid, source)) return; // never land a dead pid
+    // F-QA-3 alignment: land only on a POSITIVE alive verdict — a dead AND
+    // an unprobeable (null/unknown) pid are both skipped here.
+    if (editorPidAlive(pid, source) !== true) return;
     writeRuntimeState(RUNTIME_ID, {
         editor_pid: pid,
         editor_pid_started_at: now,

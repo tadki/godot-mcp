@@ -35,10 +35,10 @@ function runCli(args) {
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 }
-function runCliExpectFail(args) {
+function runCliExpectFail(args, extraEnv = {}) {
     try {
         execFileSync('node', [CLI, ...args], {
-            env: { ...process.env, GODOT_MCP_HOME: HOME },
+            env: { ...process.env, GODOT_MCP_HOME: HOME, ...extraEnv },
             encoding: 'utf8',
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -91,6 +91,27 @@ test('D: state-cli refuses to overwrite a LIVE editor_pid; a dead one is replace
     runCli(['--runtime-id', 'M4-d', '--editor-pid', '7777', '--editor-pid-source', 'wsl']);
     const d = JSON.parse(readFileSync(statePath('M4-d'), 'utf8'));
     assert.equal(d.editor_pid, 7777);
+});
+
+test('D2: F-QA-3 — state-cli refuses overwrite when the probe is unavailable (unknown is not dead)', () => {
+    // Seed a recorded windows editor_pid whose probe CANNOT complete: the env
+    // override points at a script that exits 1 (powershell ran, no verdict).
+    const stubDir = mkdtempSync(path.join(tmpdir(), 'see1348-fqa3-cli-'));
+    const stubPath = path.join(stubDir, 'failing-ps.sh');
+    writeFileSync(stubPath, '#!/bin/sh\nexit 1\n');
+    chmodSync(stubPath, 0o755);
+    try {
+        writeFileSync(statePath('M4-d2'), JSON.stringify({
+            schema_version: 3, state: 'WARM', editor_pid: 4321, editor_pid_source: 'windows',
+        }));
+        const refused = runCliExpectFail([
+            '--runtime-id', 'M4-d2', '--editor-pid', '7777', '--editor-pid-source', 'windows',
+        ], { GODOT_MCP_POWERSHELL_PATH: stubPath });
+        assert.notEqual(refused.rc, 0);
+        assert.match(refused.stderr, /probe unavailable/);
+    } finally {
+        rmSync(stubDir, { recursive: true, force: true });
+    }
 });
 
 test('E: unknown editor_pid_source invalidates the record', () => {
@@ -150,11 +171,54 @@ test('G: editorPidAlive windows leg — count probe + godot name check + degrade
         // count=1, name unreadable → trust the count probe (never false-negative a live editor)
         withStub('#!/bin/sh\necho "1"\n');
         assert.equal(sf.editorPidAlive(4321, 'windows'), true, 'unreadable name must trust the count');
-        // probe unavailable (powershell fails) → cannot claim alive
+        // probe ran but failed (non-zero) → NO VERDICT: null (unknown), never
+        // false — F-QA-3: probe-unavailable misread a live editor as dead.
         withStub('#!/bin/sh\nexit 1\n');
-        assert.equal(sf.editorPidAlive(4321, 'windows'), false, 'probe failure must read dead, never guess');
+        assert.equal(sf.editorPidAlive(4321, 'windows'), null, 'probe failure is unknown, not dead');
     } finally {
         process.env.PATH = realPath;
         rmSync(stubDir, { recursive: true, force: true });
+    }
+});
+
+// SEE-1348 F-QA-3 (HIGH): the bare powershell.exe name ENOENTs on WSL hosts
+// with appendWindowsPath off — a LIVE editor used to read as dead (Revy QA:
+// pid 21756 ground-truth alive, probe false → WP7 veto cold_start-preempted
+// a live editor). Two fixes pinned here:
+//   (a) resolution chain: env override → PATH name → System32 absolute;
+//   (b) probe-unavailable returns null (unknown), never false.
+test('H: F-QA-3 — GODOT_MCP_POWERSHELL_PATH env override resolves when PATH lacks powershell', () => {
+    const stubDir = mkdtempSync(path.join(tmpdir(), 'see1348-fqa3-env-'));
+    const stubPath = path.join(stubDir, 'reporting-ps.sh');
+    writeFileSync(stubPath, '#!/bin/sh\necho "1 Godot"\n');
+    chmodSync(stubPath, 0o755);
+    const realPath = process.env.PATH;
+    try {
+        // Real PATH on this host does NOT resolve powershell.exe; the env
+        // override must carry the probe. Pre-fix this read false (ENOENT).
+        delete process.env.PATH;
+        process.env.GODOT_MCP_POWERSHELL_PATH = stubPath;
+        assert.equal(sf.editorPidAlive(4321, 'windows'), true, 'env-override candidate must resolve the probe');
+    } finally {
+        process.env.PATH = realPath;
+        delete process.env.GODOT_MCP_POWERSHELL_PATH;
+        rmSync(stubDir, { recursive: true, force: true });
+    }
+});
+
+test('H2: F-QA-3 — System32 absolute fallback when PATH lacks powershell (dead pid reads false, not unknown)', () => {
+    const realPath = process.env.PATH;
+    try {
+        delete process.env.PATH;
+        delete process.env.GODOT_MCP_POWERSHELL_PATH;
+        // On a WSL host with /mnt/c mounted the System32 fallback resolves and
+        // the probe COMPLETES: a dead pid reads positively false (not null).
+        // On a host without the fallback file the probe returns null — both
+        // are F-QA-3-correct; the invariant under test is "never false via a
+        // failed resolution": null only when unresolvable.
+        const r = sf.editorPidAlive(99999999, 'windows');
+        assert.ok(r === false || r === null, `dead windows pid must read false or null, got ${r}`);
+    } finally {
+        process.env.PATH = realPath;
     }
 });

@@ -75,8 +75,16 @@ const existing = readRawDoc(args.runtime_id);
 if (patch.editor_pid && existing.editor_pid
     && Number(existing.editor_pid) !== patch.editor_pid
     && existing.editor_pid_source) {
-    if (editorPidAlive(existing.editor_pid, existing.editor_pid_source)) {
+    // F-QA-3 alignment: overwrite requires a POSITIVELY dead predecessor.
+    // true = live → refuse; null = probe unavailable → refuse (unknown is
+    // not dead — a live editor on a PATH-less host must not be clobbered).
+    const alive = editorPidAlive(existing.editor_pid, existing.editor_pid_source);
+    if (alive === true) {
         console.error(`state-cli: refusing to overwrite live editor_pid ${existing.editor_pid} (source ${existing.editor_pid_source}) with ${patch.editor_pid}`);
+        process.exit(1);
+    }
+    if (alive === null) {
+        console.error(`state-cli: refusing to overwrite editor_pid ${existing.editor_pid} — probe unavailable (unknown, not dead); re-run on a host where the probe resolves`);
         process.exit(1);
     }
 }
