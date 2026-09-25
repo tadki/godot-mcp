@@ -26,7 +26,7 @@ import {
 import { decideReuse } from '../see1129-reuse-predicate.mjs';
 import { decideSidecarGuard } from '../see1129-sidecar-guard-predicate.mjs';
 import { maybeEvictStaleHeld } from './stale-proxy.mjs';
-import { writeRuntimeState, readRuntimeState } from './state-file.mjs';
+import { writeRuntimeState, readRuntimeState, editorPidAlive } from './state-file.mjs';
 import { decideReuseSingleSource } from '../see1338-handoff.mjs';
 
 // Extract + verify the holder proxy record from a .state doc (triple check:
@@ -325,14 +325,26 @@ async function ensureEditor(t0) {
                 const st = disk.state;
                 const holder = holderProxyFromState(st);
                 const ourWorktree = await resolveWorktreeForSpawn();
+                // SEE-1348 WP7 (§SPEC-012) claim-time editor liveness: WP4's
+                // editor_pid + source on the record + editorPidAlive's
+                // split-source probe give a CHEAP verdict on whether the
+                // recorded editor is alive. A positively-dead editor (probe
+                // false, not unknown) vetoed the handoff inside the pure
+                // decision (cold_start wins without paying a warmup budget
+                // connecting to a corpse). editorPidAlive is null-safe: absent
+                // / unknown source → undefined → decision keeps legacy shape.
+                const editorAlive = st.editor_pid
+                    ? editorPidAlive(st.editor_pid, st.editor_pid_source)
+                    : undefined;
                 const reuse = decideReuseSingleSource({
                     state: st.state,
                     holderProxyAlive: holder.alive,
                     holderWorktree: st.worktree || '',
                     ourWorktree: ourWorktree || '',
                     samePort: String(st.port || '') === String(GODOT_PORT),
+                    editorAlive,
                 });
-                stageLog('SINGLE_SOURCE_REUSE', `action=${reuse.action} reason=${reuse.reason}`);
+                stageLog('SINGLE_SOURCE_REUSE', `action=${reuse.action} reason=${reuse.reason} editor_pid=${st.editor_pid ?? '-'} editor_alive=${editorAlive ?? 'unknown'}`);
                 if (reuse.action === 'handoff_reuse') {
                     S.lastSpawnReused = true;
                     S.spawnLastFailed = false;

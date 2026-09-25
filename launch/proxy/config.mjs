@@ -75,7 +75,14 @@ const KOL_PROGRESS_PROTOCOL = process.env.GODOT_MCP_PROGRESS_PROTOCOL || process
 const HOT_NPX_RESTART_DEADLINE_MS = parseInt(process.env.GODOT_MCP_NPX_HOT_RESTART_MS || process.env.KOL_NPX_HOT_RESTART_MS || '30000', 10);
 // Backoff between npx respawns while the editor is still warming.
 const NPX_RESTART_BACKOFF_MS = parseInt(process.env.GODOT_MCP_NPX_RESTART_BACKOFF_MS || process.env.KOL_NPX_RESTART_BACKOFF_MS || '1500', 10);
-const RENDER_STABLE_REQUIRED_MS = 4000; // same default as launcher
+// SEE-1348 WP7 (§SPEC-013): env-overridable. Measured floor (stage-log
+// evidence, SEE-1348 WP5.3/WP1 runs): on healthy cold starts the D3D12
+// swap_chain_resize stream goes silent well before 2s, so 2000ms keeps the
+// gate's protective intent at ~half the legacy 4000ms wait; the capture-side
+// stale-detection precedent (175ms) is far below what this gate can prove on
+// a real editor boot, so 2000 — not 1000 — is the conservative tightening.
+const RENDER_STABLE_REQUIRED_MS = parseInt(
+    process.env.GODOT_MCP_RENDER_STABLE_MS || process.env.KOL_RENDER_STABLE_MS || '2000', 10);
 const RENDER_SAMPLE_MS = 2000;
 const RENDER_STABLE_TIMEOUT_MS = 20000;
 // SEE-1070 #2: FAILED_EXIT caps how long the proxy keeps probing after the

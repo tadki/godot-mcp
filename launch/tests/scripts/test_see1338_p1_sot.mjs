@@ -272,6 +272,44 @@ test('§4.2+ T26 spawn.mjs 单源接线：有 .state 记录时先走单源分支
         'single-source branch must run BEFORE the legacy verdict stack');
 });
 
+test('§4.2+ T26b WP7 claim-time：记录的 editor_pid 探活为死 → cold_start 否决 handoff（§SPEC-012）', () => {
+    for (const st of ['WARM', 'WARMING', 'RECOVERING']) {
+        const d = decideReuseSingleSource({
+            state: st, holderProxyAlive: false,
+            holderWorktree: '/tmp/wt', ourWorktree: '/tmp/wt', samePort: true,
+            editorAlive: false,
+        });
+        assert.equal(d.action, 'cold_start', st);
+        assert.equal(d.reason, `${st}_DEAD_HOLDER_EDITOR_DEAD`, st);
+    }
+});
+
+test('§4.2+ T26c WP7 claim-time：editorAlive 未知（null/undefined）不改变历史行为', () => {
+    for (const ea of [null, undefined]) {
+        const d = decideReuseSingleSource({
+            state: 'WARM', holderProxyAlive: false,
+            holderWorktree: '/tmp/wt', ourWorktree: '/tmp/wt', samePort: true,
+            editorAlive: ea,
+        });
+        assert.equal(d.action, 'handoff_reuse');
+        assert.equal(d.reason, 'WARM_DEAD_HOLDER_WORKTREE_MATCH');
+    }
+    // live editor also keeps the handoff (the veto is only for a positive dead)
+    const d2 = decideReuseSingleSource({
+        state: 'WARM', holderProxyAlive: false,
+        holderWorktree: '/tmp/wt', ourWorktree: '/tmp/wt', samePort: true,
+        editorAlive: true,
+    });
+    assert.equal(d2.action, 'handoff_reuse');
+});
+
+test('§4.2+ T26d WP7 spawn.mjs 接线：editorAlive 进决策 + editorPidAlive 导入在位', () => {
+    const src = readSrc('proxy/spawn.mjs');
+    assert.ok(/editorPidAlive\(/.test(src), 'editorPidAlive probe wired');
+    assert.ok(/editorAlive,/.test(src), 'editorAlive passed into decideReuseSingleSource');
+    assert.ok(/editor_alive=/.test(src), 'stageLog carries the editor liveness verdict');
+});
+
 test('§4.2+ T27 reaper executor 模式：--from-state 只执行 REAP_PENDING（裁决权在 proxy）', () => {
     const src = readSrc('reap-stale-leases.sh');
     assert.ok(/--from-state/.test(src));
