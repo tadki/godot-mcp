@@ -16,5 +16,9 @@ export default {
     import: ['features/steps/**/*.ts', 'tsx'],
     strict: true,
     retry: 0,
+    // Step timeout: the warm handshake through the counting seams is budgeted
+    // at 15-20s in the steps (BUDGET) — the 5s cucumber default flakes under
+    // load (SEE-1348 WP5: full-feature run on a busy box hit it on warm Given).
+    timeout: 25_000,
     format: ['summary'],
 };

@@ -27,11 +27,15 @@ const ExecSchema = z.discriminatedUnion('action', [
         'under it for behavior that persists between tool calls (a Timer-driven guard, an autofire ' +
         'bot), then manage them with list/remove/clear. Holder children pause with the tree, so a ' +
         'bot armed under a freeze acts only after thaw/step. Use an explicit `return` to get a ' +
-        'value back (there is no implicit return): primitives (bool/int/float/String) come back ' +
-        'intact; any other type (Array/Dictionary/Object/Vector2) comes back as a str() preview ' +
-        'TRUNCATED to 200 chars — return JSON.stringify(...) yourself when you need structure. ' +
-        'print() output is not returned — use return values (or, when the minimal-godot-mcp ' +
-        'companion server is installed, its get_console_output). Function bodies cannot declare top-level func/class — use lambdas ' +
+        'value back (there is no implicit return): the value comes back STRUCTURED — containers ' +
+        '(Array/Dictionary/packed arrays) and Vector/Color natives serialize recursively to JSON; ' +
+        'Node/Object/Resource come back as compact reference metadata (class + path + repr), never ' +
+        'the object graph. Budget gates: nesting depth 8 and node count 512 (each trips a ' +
+        '`result_truncated` marker naming the reason; a payload over the byte cap GODOT_MCP_EXEC_MAX_BYTES ' +
+        'downgrades to a capped JSON preview with reason "bytes"). `result_repr` carries the legacy ' +
+        'str() preview for transitional consumers. print() output is not returned — use return ' +
+        'values (or, when the minimal-godot-mcp companion server is installed, its ' +
+        'get_console_output). Function bodies cannot declare top-level func/class — use lambdas ' +
         'for callbacks, or build a sub-script with GDScript.new() and set_script() it onto a ' +
         'holder child for _process-driven behavior. No `await` (synchronous-only; compose with ' +
         'godot_game_time to wait). A runtime error or failed assert() breaks the game into the ' +
@@ -72,6 +76,10 @@ interface ExecRunResult {
   result: unknown;
   duration_ms: number;
   holder_children: number;
+  // Legacy str() preview kept through the M2 transition (§SPEC-003).
+  result_repr?: string;
+  // Present only when a budget gate tripped: 'depth' | 'nodes' | 'bytes'.
+  result_truncated?: string;
   // Error lines the game logged during the call (a runtime error aborts the
   // script but the call still completes — the editor relay auto-resumes the
   // debugger break a script error triggers). Window is process-wide, so a

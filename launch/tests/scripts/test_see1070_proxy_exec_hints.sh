@@ -35,6 +35,7 @@ cleanup() {
     rm -rf "$TMPDIR"
 }
 trap cleanup EXIT
+trap 'cp -r "$TMPDIR" /tmp/see1070-debug 2>/dev/null || true' EXIT  # DEBUG
 
 find_free_port() {
     python3 - <<'PY'
@@ -94,6 +95,12 @@ rl.on('line', (line) => {
             env = { completed: false, result: '', runtime_errors: ['Override return type "-> void" conflicts with parent signature -> bool'] };
         } else if (src.includes('truncateme')) {
             env = { completed: true, result: longArr, runtime_errors: [] };
+        } else if (src.includes('dictshorthand')) {
+            env = { completed: false, result: '', runtime_errors: ['Parse Error: Dictionary key must have a name (shorthand not allowed)'] };
+        } else if (src.includes('topfunc')) {
+            env = { completed: false, result: '', runtime_errors: ['Parse Error: Cannot declare a top-level func in a function body (nested declaration)'] };
+        } else if (src.includes('waitsleep')) {
+            env = { completed: false, result: '', runtime_errors: ['SYNC_ONLY: exec source is synchronous-only; await is not allowed'] };
         } else {
             // clean — primitive return, no pitfall, no hint expected.
             env = { completed: true, result: '42', runtime_errors: [] };
@@ -193,17 +200,13 @@ errs = []
 items = (msg.get('result') or {}).get('content') or []
 text = next((c.get('text') for c in items if c.get('type') == 'text'), '')
 envelope, suffix = text, ''
-# Walk from the end: the last balanced '}' closes the envelope; anything after is the appended hint.
-depth = 0; last_close = -1
-for i, ch in enumerate(text):
-    if ch == '{': depth += 1
-    elif ch == '}':
-        depth -= 1
-        if depth == 0: last_close = i
-if last_close != -1:
-    envelope, suffix = text[:last_close+1], text[last_close+1:]
+# SEE-1348 WP5: hints themselves contain balanced braces, so a brace-walk
+# split mis-lands. Use JSONDecoder.raw_decode: the envelope is the FIRST
+# JSON value in the text; everything after it is the appended hint.
 try:
-    env = json.loads(envelope)
+    dec = json.JSONDecoder()
+    env, end = dec.raw_decode(text.lstrip())
+    suffix = text.lstrip()[end:]
 except Exception:
     env = {}
 for c in checks:
@@ -224,12 +227,19 @@ for c in checks:
         if env.get('result') != '42': errs.append("primitive result not preserved: %r" % env.get('result'))
     elif c.startswith('hint='):
         want = c.split('=', 1)[1]
-        if want not in suffix: errs.append("hint %r not appended (suffix=%r)" % (want, suffix[:80]))
+        # SEE-1348 WP5: in-band exec rejections carry hints appended to the
+        # MCP error message, not to a result text suffix.
+        err_blob = json.dumps(msg.get('error') or {}, ensure_ascii=False)
+        if want not in suffix and want not in err_blob:
+            errs.append("hint %r not appended (suffix=%r err=%r)" % (want, suffix[:80], err_blob[:120]))
+    elif c == 'is_inband_sync_only':
+        if msg.get('error') is None or 'SYNC_ONLY' not in (msg['error'].get('message') or ''):
+            errs.append("expected in-band SYNC_ONLY error: %r" % (msg.get('error')))
     elif c == 'no_hint':
         if suffix.strip() != '': errs.append("unexpected hint on clean path: %r" % suffix[:80])
     elif c == 'no_hint_anywhere':
         blob = json.dumps(msg.get('result'))
-        if any(k in blob for k in ['GDScript 无列表推导', 'JSON.stringify(value)', 'override 的返回类型']):
+        if any(k in blob for k in ['GDScript 无列表推导', 'JSON.stringify(value)', 'override 的返回类型', '字典键必须加引号', '不能声明顶层 func', 'exec 是同步执行的']):
             errs.append("non-exec/clean result wrongly carries a hint")
 if errs:
     print("FAIL: " + "; ".join(errs))
@@ -299,6 +309,35 @@ if wait_for "$PROXY_OUT" '"id":6' 4000; then
     [[ "$R" == PASS ]] && ok "T5.1: id=6 non-exec → passed through, no hint" || ko "T5.1: $R"
 else
     ko "T5.1: no id=6 response on stdout"
+fi
+
+# SEE-1348 WP5 (§SPEC-005): compile-hint rules — dict shorthand / top-level
+# func / await. Each: hint appended, envelope preserved.
+sep "T7: exec dict-shorthand compile error → hint + envelope preserved"
+send_line '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"godot_exec","arguments":{"action":"run","source":"# dictshorthand\nreturn {name: \"x\"}"}}}'
+if wait_for "$PROXY_OUT" '"id":8' 4000; then
+    R=$(check_id 8 is_result completed_false runtime_errors_intact 'hint=GDScript 字典键')
+    [[ "$R" == PASS ]] && ok "T7.1: id=8 dictshorthand → hint appended, envelope intact" || ko "T7.1: $R"
+else
+    ko "T7.1: no id=8 response on stdout"
+fi
+
+sep "T8: exec top-level func compile error → hint + envelope preserved"
+send_line '{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"godot_exec","arguments":{"action":"run","source":"# topfunc\nfunc helper(): pass"}}}'
+if wait_for "$PROXY_OUT" '"id":9' 4000; then
+    R=$(check_id 9 is_result completed_false runtime_errors_intact 'hint=不能声明顶层 func')
+    [[ "$R" == PASS ]] && ok "T8.1: id=9 topfunc → hint appended, envelope intact" || ko "T8.1: $R"
+else
+    ko "T8.1: no id=9 response on stdout"
+fi
+
+sep "T9: exec await compile error → hint + envelope preserved"
+send_line '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"godot_exec","arguments":{"action":"run","source":"# waitsleep\nawait tree.create_timer(1.0).timeout"}}}'
+if wait_for "$PROXY_OUT" '"id":10' 4000; then
+    R=$(check_id 10 is_inband_sync_only 'hint=exec 是同步执行的')
+    [[ "$R" == PASS ]] && ok "T9.1: id=10 await → hint appended, envelope intact" || ko "T9.1: $R"
+else
+    ko "T9.1: no id=10 response on stdout"
 fi
 
 # T6 — non-JSON npx output forwarded VERBATIM; proxy survives.

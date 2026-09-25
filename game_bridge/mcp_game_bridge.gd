@@ -2606,12 +2606,125 @@ func _build_predicate_context() -> Dictionary:
 
 
 func _sanitize_value(v: Variant) -> Variant:
-	# Report values ride back over the debugger channel. Pass primitives through;
-	# never try to serialize Objects/containers — a short string stand-in is
-	# enough for the agent to see what an expression evaluated to.
+	# Report values ride back over the debugger channel. Primitives pass through;
+	# everything else gets a short string stand-in — the old single-layer shape,
+	# kept for report/state paths (SEE-1348 WP5 moved the EXEC return value to
+	# exec_serialize below).
 	match typeof(v):
 		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING, TYPE_STRING_NAME:
 			return v
+		_:
+			return str(v).substr(0, 200)
+
+
+# SEE-1348 WP5 (M2, §SPEC-003): recursive JSON-safe serialization for the
+# godot_exec return value. Dual budget gate (depth + node count) with a
+# {"$truncated": reason} marker so the caller sees WHY; Node/Object become
+# compact reference metadata (the object graph never leaves the process).
+# Budgets are env-overridable (§SPEC-004): GODOT_MCP_EXEC_DEPTH / _NODES.
+# The byte backstop cap (§SPEC-004, env GODOT_MCP_EXEC_MAX_BYTES) is the
+# final wall in front of the transport; its default tracks the measured
+# lossless tier (SEE-1348 WP5.3 measurement protocol).
+const EXEC_DEPTH_BUDGET := 8
+const EXEC_NODES_BUDGET := 512
+const EXEC_MAX_BYTES_DEFAULT := 65536
+const EXEC_PACKED_ARRAY_TYPES := [
+	TYPE_PACKED_BYTE_ARRAY,
+	TYPE_PACKED_INT32_ARRAY,
+	TYPE_PACKED_INT64_ARRAY,
+	TYPE_PACKED_FLOAT32_ARRAY,
+	TYPE_PACKED_FLOAT64_ARRAY,
+	TYPE_PACKED_STRING_ARRAY,
+	TYPE_PACKED_VECTOR2_ARRAY,
+	TYPE_PACKED_VECTOR3_ARRAY,
+	TYPE_PACKED_COLOR_ARRAY,
+]
+
+
+func _exec_serialize(v: Variant) -> Variant:
+	var ctx := {"nodes": 0}
+	return _serialize_json_value(v, ctx, 0, EXEC_DEPTH_BUDGET, EXEC_NODES_BUDGET)
+
+
+func _exec_max_result_bytes() -> int:
+	var raw := OS.get_environment("GODOT_MCP_EXEC_MAX_BYTES")
+	if raw.is_empty():
+		return EXEC_MAX_BYTES_DEFAULT
+	var parsed := int(raw)
+	return parsed if parsed > 0 else EXEC_MAX_BYTES_DEFAULT
+
+
+func _serialize_json_value(
+	v: Variant, ctx: Dictionary, depth: int, depth_budget: int, nodes_budget: int
+) -> Variant:
+	# Depth gate fires BEFORE descending past the budget: the parent container
+	# carries the marker, so a too-deep value never silently vanishes.
+	if depth > depth_budget:
+		return {"$truncated": "depth", "reason": "nesting exceeded depth budget %d" % depth_budget}
+	if int(ctx["nodes"]) >= nodes_budget:
+		return {"$truncated": "nodes", "reason": "node count exceeded budget %d" % nodes_budget}
+	var v_arr: Variant = Array(v) if typeof(v) in EXEC_PACKED_ARRAY_TYPES else v
+	var out: Variant = null
+	if typeof(v_arr) == TYPE_ARRAY:
+		var arr: Array = []
+		ctx["nodes"] = int(ctx["nodes"]) + 1
+		for item in v_arr:
+			arr.append(_serialize_json_value(item, ctx, depth + 1, depth_budget, nodes_budget))
+		out = arr
+	elif typeof(v_arr) == TYPE_DICTIONARY:
+		var dict := {}
+		ctx["nodes"] = int(ctx["nodes"]) + 1
+		for key in v_arr.keys():
+			dict[str(key)] = _serialize_json_value(
+				v_arr[key], ctx, depth + 1, depth_budget, nodes_budget
+			)
+		out = dict
+	elif typeof(v_arr) == TYPE_OBJECT:
+		out = _serialize_object_ref(v_arr)
+	elif typeof(v_arr) in [TYPE_VECTOR2, TYPE_VECTOR2I, TYPE_VECTOR3, TYPE_VECTOR3I]:
+		out = _serialize_vector(v_arr)
+	elif typeof(v_arr) == TYPE_COLOR:
+		out = {"r": v_arr.r, "g": v_arr.g, "b": v_arr.b, "a": v_arr.a}
+	elif (
+		typeof(v_arr) in [TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING, TYPE_STRING_NAME]
+	):
+		out = v_arr
+	else:
+		# Callable/Signal/etc — non-JSON-natives without reference semantics
+		# worth exposing; a short preview preserves debuggability.
+		out = str(v_arr).substr(0, 200)
+	return out
+
+
+func _serialize_object_ref(v: Variant) -> Variant:
+	if v == null:
+		return null
+	# Compact reference metadata only — never the object graph. A Resource
+	# exposes its path (a useful handle); a Node its path within the tree;
+	# anything else class + preview.
+	if v is Resource:
+		return {
+			"$ref": "Resource",
+			"class": v.get_class(),
+			"path": str(v.resource_path),
+			"repr": str(v).substr(0, 200),
+		}
+	if v is Node:
+		return {
+			"$ref": "Node",
+			"class": v.get_class(),
+			"path": str(v.get_path()),
+			"repr": str(v).substr(0, 200),
+		}
+	return {"$ref": "Object", "class": v.get_class(), "repr": str(v).substr(0, 200)}
+
+
+func _serialize_vector(v: Variant) -> Variant:
+	match typeof(v):
+		TYPE_VECTOR2, TYPE_VECTOR2I:
+			return {"x": v.x, "y": v.y}
+		TYPE_VECTOR3, TYPE_VECTOR3I:
+			return {"x": v.x, "y": v.y, "z": v.z}
 		_:
 			return str(v).substr(0, 200)
 
@@ -3022,9 +3135,22 @@ func _handle_exec_run(data: Array) -> void:
 		)
 		return
 
+	# SEE-1348 WP5 (M2): structured recursive serialization + transitional
+	# result_repr (the legacy str() preview) so old consumers keep working.
+	# Byte gate as the BACKSTOP (depth/nodes are the primary gates): a payload
+	# whose JSON exceeds the env-cap is downgraded to a capped preview of the
+	# JSON itself, with result_truncated naming the reason ("bytes").
+	var serialized: Variant = _exec_serialize(result)
+	var truncated_reason := ""
+	var max_bytes := _exec_max_result_bytes()
+	var rendered := JSON.stringify(serialized)
+	if rendered.length() > max_bytes:
+		serialized = rendered.substr(0, max_bytes)
+		truncated_reason = "bytes"
 	var out: Dictionary = {
 		"completed": true,
-		"result": _sanitize_value(result),
+		"result": serialized,
+		"result_repr": str(result).substr(0, 200),
 		"duration_ms": duration,
 		"holder_children":
 		(
@@ -3033,6 +3159,8 @@ func _handle_exec_run(data: Array) -> void:
 			else 0
 		),
 	}
+	if truncated_reason != "":
+		out["result_truncated"] = truncated_reason
 	var errs := _exec_logger_delta(mark)
 	if not errs.is_empty():
 		out["runtime_errors"] = errs
