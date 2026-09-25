@@ -86,6 +86,7 @@ export const S = {
     stageNotified: '',
     resolvedGodotMcpCmd: null,
     lastRegistryRefreshMs: 0,
+    lastEditorPidBackfillMs: 0,   // SEE-1348 WP4: heartbeat editor_pid backfill throttle
     proxyPidRegistered: false,
     warmProbeFailures: 0,
     recoveryRound: 0,

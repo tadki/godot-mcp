@@ -266,11 +266,13 @@ launch/tests/scripts/test_see1111_worktree_isolation.sh
 launch/tests/scripts/test_see1152_reaper_held_sweep.sh
 launch/tests/scripts/test_see1240_exec_constraints_proxy.sh
 launch/tests/scripts/test_see1240_proxy_integration.sh
+launch/tests/scripts/test_see1348_m4_gate_matrix.sh
 `;
 
 // FAST_NODE — same binning evidence as the shell bucket above (mkdtemp
 // GODOT_MCP_HOME redirects or pure-logic assertions; see the family notes).
 const FAST_NODE = `
+launch/tests/scripts/test_see1348_m4_editor_pid_state.mjs
 launch/tests/scripts/see1129/selftest_integration_combined.mjs
 launch/tests/scripts/see1129/test_anchor_passthrough.mjs
 launch/tests/scripts/see1129/test_release_after_start_race.mjs
@@ -314,8 +316,8 @@ const longEntries = parse(LONG);
 if (serialEntries.length !== 18) {
   throw new Error(`fast serial bucket expects 16 entries (8 + SEE-1344's 8 load-fragile graduates: tight internal timing windows proven to flake under 4-way load in r7-r9 sweeps), resolved ${serialEntries.length} — update the bucket in sync with the SEE-1291 graduation flow`);
 }
-if (serialEntries.length + fastEntries.length !== 90) {
-  throw new Error(`fast tier expects 90 entries (serial + parallel; SEE-1344 ⑫ graduated shim_handoff + runtime_held_wait per Owner ruling), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
+if (serialEntries.length + fastEntries.length !== 92) {
+  throw new Error(`fast tier expects 92 entries (serial + parallel; SEE-1344 ⑫ graduates + SEE-1348 WP4 m4_gate_matrix + m4_editor_pid_state), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
 }
 if (longEntries.length !== 8) {
   throw new Error(`long tier expects 8 entries (SEE-1344 ⑫+: e5_concurrent joins the 7), resolved ${longEntries.length}`);

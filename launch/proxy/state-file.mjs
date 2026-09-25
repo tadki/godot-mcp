@@ -15,20 +15,35 @@
 // recorded here — components must not each hold private judgments that no
 // one else can read. The state file IS the shared record.
 import { mkdirSync, openSync, closeSync, readFileSync, renameSync, writeFileSync, appendFileSync, existsSync, rmSync, readlinkSync, statSync, fsyncSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 import { GODOT_MCP_HOME } from './config.mjs';
 
-export const STATE_SCHEMA_VERSION = 2;
+// SEE-1348 WP4 (§SPEC-008): 2→3 — editor_pid becomes a POPULATED field
+// (backfilled at the start-godot-editor PID-resolution site + heartbeat
+// fallback) with an explicit editor_pid_source. v2 records invalidate to
+// NO STATE (cold start) — the designed degradation; every field is
+// reconstructable on the next spawn/handoff.
+export const STATE_SCHEMA_VERSION = 3;
 
 // Full per-record field set (spec §3.1). Unknown/extra fields survive
 // round-trips (readState keeps them; writeState merges).
 export const STATE_FIELDS = [
     'schema_version', 'state', 'port', 'editor_pid', 'editor_pid_started_at',
-    'proxy_pid', 'proxy_pid_started_at', 'agent', 'issue_id', 'worktree',
-    'lease_id', 'heartbeat_at', 'spawn_attempts', 'last_error',
-    'warm_at', 'updated_at',
+    'editor_pid_source', 'proxy_pid', 'proxy_pid_started_at', 'agent',
+    'issue_id', 'worktree', 'lease_id', 'heartbeat_at', 'spawn_attempts',
+    'last_error', 'warm_at', 'updated_at',
 ];
+
+// editor_pid_source values (SEE-1348 WP4, carried EXPLICITLY with the write —
+// a bare kill(0) from WSL misjudges Windows PIDs as dead, so every consumer
+// must know which side the number belongs to before probing):
+//   'wsl'     — a WSL-side pid (interop wrapper); kill(pid,0) is authoritative
+//   'windows' — a Windows pid resolved via CIM; Get-Process count probe
+//   'pending' — launch triggered, real PID not yet resolved (schema keeps the
+//               numeric slot null in this case; the source marks the intent)
+export const EDITOR_PID_SOURCES = new Set(['wsl', 'windows', 'pending']);
 
 const VALID_STATES = new Set(['COLD', 'WARMING', 'WARM', 'RECOVERING', 'FAILED_CLEAN']);
 
@@ -134,6 +149,9 @@ function validateStateDoc(o) {
     }
     if (!VALID_STATES.has(o.state)) {
         return { ok: false, reason: 'unknown-state', state: String(o.state) };
+    }
+    if (o.editor_pid_source && !EDITOR_PID_SOURCES.has(String(o.editor_pid_source))) {
+        return { ok: false, reason: 'unknown-editor-pid-source', editor_pid_source: String(o.editor_pid_source) };
     }
     return null;
 }
@@ -280,6 +298,56 @@ export function heartbeatFresh(state, { maxAgeMs = 10 * 60 * 1000, nowMs = Date.
     const t = Date.parse(state.heartbeat_at);
     if (!Number.isFinite(t)) return false;
     return (nowMs - t) <= maxAgeMs;
+}
+
+// editorPidAlive(pid, source): SEE-1348 WP4 (§SPEC-008) split-source liveness
+// probe — the .state twin of the reaper's pid_alive (reap-stale-leases.sh).
+// A bare kill(pid,0) from WSL answers "No such process" for LIVE Windows
+// PIDs, so the probe is chosen by the recorded source, never guessed:
+//   'wsl'     → kill(pid,0) (EPERM counts as alive: the process exists but is
+//               owned by another user)
+//   'windows' → Get-Process count probe (windowsPidAlive — name-checked, so a
+//               reused PID belonging to a non-Godot process reads dead — the
+//               Windows-side twin of the launcher's /proc/<pid>/exe check)
+//   any other → false (an unknown source must not fall back to a wrong probe)
+export function editorPidAlive(pid, source) {
+    const p = Number(pid);
+    if (!Number.isInteger(p) || p <= 0) return false;
+    if (source === 'wsl') {
+        try {
+            process.kill(p, 0);
+            return true;
+        } catch (e) {
+            return e && e.code === 'EPERM';
+        }
+    }
+    if (source === 'windows') return windowsPidAlive(p);
+    return false;
+}
+
+// Get-Process count probe (the reaper's D5b shape): $? is unusable with
+// -ErrorAction SilentlyContinue, so the "1 <name>" / "0" count is the probe.
+// Degrades to count-only when the process name is unreadable (Access Denied
+// on a real editor), so a live editor is never false-negatived.
+function windowsPidAlive(p) {
+    let out;
+    try {
+        out = execFileSync(
+            'powershell.exe',
+            ['-NoProfile', '-Command',
+                '$p = Get-Process -Id ' + p + ' -ErrorAction SilentlyContinue; '
+                + 'if ($p) { Write-Output ("1 " + $p.ProcessName) } else { Write-Output "0" }'],
+            { encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] },
+        );
+    } catch {
+        return false; // powershell unavailable/failed — cannot claim alive
+    }
+    const line = String(out).trim().split(/\r?\n/)[0] || '';
+    const [n, ...nameParts] = line.split(' ');
+    if (n !== '1') return false;
+    const name = nameParts.join(' ').trim();
+    if (name) return /^godot/i.test(name);
+    return true; // count=1, name unreadable — trust the count probe
 }
 
 export {

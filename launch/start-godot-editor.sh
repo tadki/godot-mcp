@@ -108,6 +108,23 @@ _sge_stage_log() {
     echo "[start-godot-editor] [stage=${stage}] [t=+${rel_ms}ms] [ts=${iso}]${extra:+ $extra}" >&2
 }
 
+# SEE-1348 WP4 (§SPEC-008): land the resolved editor PID on the .state slots —
+# the pidfile alone is never read by the proxy's handoff decision layer; the
+# state file is. Source is carried EXPLICITLY ('windows' for a CIM-resolved
+# Win32 pid, 'wsl' for an interop wrapper pid): a bare kill(0) from WSL
+# misjudges Windows PIDs as dead. Best-effort: a write failure must not fail
+# the spawn path (the proxy's steady-state heartbeat backfills).
+_sge_state_editor_pid() {
+    local pid="$1" source="$2"
+    [[ -n "${KOL_RUNTIME_ID:-}" && -n "$pid" ]] || return 0
+    node "$SCRIPT_DIR/proxy/state-cli.mjs" \
+        --runtime-id "$KOL_RUNTIME_ID" \
+        --editor-pid "$pid" \
+        --editor-pid-source "$source" \
+        >>"${LOG_FILE:-/dev/null}.state-cli.err" 2>&1 || \
+        echo "[start-godot-editor] WARNING: editor_pid .state backfill failed (pid=$pid source=$source)" >&2
+}
+
 # Is the TCP port already bound? The editor is a Windows process, so we ask
 # Windows first. Get-NetTCPConnection is more reliable than netstat.exe under
 # WSL interop (netstat -ano frequently returns an empty connection list). We
@@ -505,6 +522,7 @@ if [[ "$GODOT_EDITOR" == *.exe ]] && [[ -n "$POWERSHELL" ]]; then
                     2>/dev/null | tr -d '\r' | tail -n 1)"
                 if [[ -n "$pid" ]]; then
                     echo "$pid" >"$PID_FILE"
+                    _sge_state_editor_pid "$pid" windows
                     exit 0
                 fi
                 sleep 1
@@ -513,6 +531,7 @@ if [[ "$GODOT_EDITOR" == *.exe ]] && [[ -n "$POWERSHELL" ]]; then
         disown 2>/dev/null || true
         EDITOR_PID="pending"
         PID_KIND="schtasks"
+        _sge_state_editor_pid pending pending
         _sge_stage_log EDITOR_LAUNCH_TRIGGERED "pid_kind=schtasks pid=pending"
     else
         SCHTASKS_RC=$?
@@ -533,6 +552,7 @@ if [[ "$PID_KIND" == "interop" || "$PID_KIND" == "" ]]; then
     disown "$INTEROP_PID" 2>/dev/null || true
     EDITOR_PID="$INTEROP_PID"
     PID_KIND="interop"
+    _sge_state_editor_pid "$INTEROP_PID" wsl
     _sge_stage_log EDITOR_LAUNCH_TRIGGERED "pid_kind=interop pid=${INTEROP_PID}"
 fi
 
@@ -548,6 +568,7 @@ if [[ "$GODOT_EDITOR" == *.exe ]] && [[ -n "$POWERSHELL" ]] && [[ "$PID_KIND" ==
                 2>/dev/null | tr -d '\r' | tail -n 1)"
             if [[ -n "$pid" ]]; then
                 echo "$pid" >"$PID_FILE"
+                _sge_state_editor_pid "$pid" windows
                 exit 0
             fi
             sleep 1

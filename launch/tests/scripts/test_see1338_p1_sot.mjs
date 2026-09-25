@@ -36,7 +36,7 @@ const NOW = Date.now();
 
 function baseState(over = {}) {
     return Object.assign({
-        schema_version: 2,
+        schema_version: sf.STATE_SCHEMA_VERSION,
         state: 'WARM',
         port: 6579,
         proxy_pid: null,
@@ -54,7 +54,7 @@ function baseState(over = {}) {
 test('§3 D2 T1 write+read round-trip；merge 保未知字段', () => {
     const m1 = sf.writeRuntimeState(RID, baseState({ last_error: null }), { event: 'PROXY_START', detail: 't1' });
     assert.equal(m1.state, 'WARM');
-    assert.equal(m1.schema_version, 2);
+    assert.equal(m1.schema_version, sf.STATE_SCHEMA_VERSION);
     sf.writeRuntimeState(RID, { state: 'RECOVERING', extra_field: 'kept' }, { event: 'STATE_TRANSITION', fromState: 'WARM', detail: 'w->r' });
     const r = sf.readRuntimeState(RID);
     assert.equal(r.ok, true);

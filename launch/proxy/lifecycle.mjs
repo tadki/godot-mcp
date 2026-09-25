@@ -2,19 +2,20 @@
 // godot-mcp-proxy.mjs, SEE-1334 Phase 0a): clean-exit release markers, dynamic
 // port release, steady-state registry heartbeat, proxy self-registration.
 import { execFile, execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { S } from './state.mjs';
 import {
-    GODOT_PORT, HEARTBEAT_INTERVAL_MS, PORT_ARBITER_ENABLED, PORT_ARBITER_LIB,
-    REGISTRY_LOCK_PATH, REGISTRY_PATH, RUNTIME_ID,
+    GODOT_MCP_HOME, GODOT_PORT, HEARTBEAT_INTERVAL_MS, PORT_ARBITER_ENABLED,
+    PORT_ARBITER_LIB, REGISTRY_LOCK_PATH, REGISTRY_PATH, RUNTIME_ID,
 } from './config.mjs';
 import { log } from './log.mjs';
 import { maybeProgressLog, rejectQueue } from './router.mjs';
 import { finishRestartHold } from './restart.mjs';
-import { writeRuntimeState, releaseRuntimeLock } from './state-file.mjs';
+import { editorPidAlive, readRuntimeState, writeRuntimeState, releaseRuntimeLock } from './state-file.mjs';
 
 function shutdown() {
     S.shutdownRequested = true;
@@ -74,6 +75,13 @@ function markIntentionalRelease() {
             set -euo pipefail
             sidecar="$(dirname "$1")/.godot/mcp-lease.json"
             [[ -f "$sidecar" ]] || exit 0
+            # SEE-1348 WP4 (§SPEC-007): all sidecar writers serialize on
+            # <sidecar>.lock — the same flock the sidecar lib's sidecar_mutate
+            # holds. -w 5 + skip on contention: this is a best-effort shutdown
+            # marker, never worth blocking exit for (the next heartbeat tick of
+            # the reaper falls back to the grace path).
+            exec 9>"$sidecar.lock"
+            flock -w 5 9 || exit 0
             RID="$2" SIDE="$sidecar" node -e '
                 const fs = require("fs");
                 let o;
@@ -191,7 +199,48 @@ function startHeartbeat() {
         maybeProgressLog();
         refreshRegistryHeartbeat().catch(() => {});
         selfRegisterProxyPid().catch(() => {});
+        backfillEditorPid().catch(() => {});
     }, HEARTBEAT_INTERVAL_MS);
+}
+
+// SEE-1348 WP4 (§SPEC-008) heartbeat 兜底: start-godot-editor.sh backfills
+// editor_pid at its CIM-resolution site, but editors launched by an OLDER
+// script (or a failed CLI write) leave the slot null. While WARM, adopt the
+// lifecycle pidfile's numeric pid once — the same file kol_lifecycle_path
+// maintains and godot-status reads. Source is inferred (documented, not
+// guessed silently): a pid visible under /proc is WSL-side; anything else in
+// this deployment is a Windows editor pid. A dead pid is never landed.
+async function backfillEditorPid() {
+    if (!RUNTIME_ID || S.stage !== 'WARM') return;
+    const now = Date.now();
+    if (now - S.lastEditorPidBackfillMs < HEARTBEAT_INTERVAL_MS) return;
+    S.lastEditorPidBackfillMs = now;
+    const st = readRuntimeState(RUNTIME_ID);
+    // no state / schema mismatch → not ours to fix; populated pid or a
+    // non-WARM record → the primary write point owns it / it doesn't matter.
+    if (!st.ok || st.state.editor_pid || st.state.state !== 'WARM') return;
+    const pid = readLifecyclePidfilePid();
+    if (!pid) return;
+    const source = existsSync(`/proc/${pid}`) ? 'wsl' : 'windows';
+    if (!editorPidAlive(pid, source)) return; // never land a dead pid
+    writeRuntimeState(RUNTIME_ID, {
+        editor_pid: pid,
+        editor_pid_started_at: now,
+        editor_pid_source: source,
+    }, { event: 'EDITOR_PID_BACKFILL', detail: `heartbeat fallback pid=${pid} source=${source}` });
+    log(`editor_pid backfilled from lifecycle pidfile: pid=${pid} source=${source}`);
+}
+
+// Lifecycle pidfile (dir form only — the legacy flat name predates the
+// per-runtime layout and has no runtime_id to key on from the proxy side).
+function readLifecyclePidfilePid() {
+    const p = path.join(GODOT_MCP_HOME, 'godot-editor', `${RUNTIME_ID}.pid`);
+    try {
+        const v = readFileSync(p, 'utf8').trim();
+        return /^\d+$/.test(v) ? Number(v) : null;
+    } catch {
+        return null;
+    }
 }
 
 // SEE-1316 (hardener) — reaper contract closure, proxy self-registration: stamp
