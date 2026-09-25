@@ -80,6 +80,12 @@ Observe live game entity state as structured JSON — positions, velocities, ani
 
 - `godot_runtime_state` - Observe live game state as structured data. Use digest for a one-shot entity snapshot (replaces most godot_editor_read screenshot_game calls). Use watch_start → watch_collect for state-over-time without context blowup.
 
+## [QA Assertions](qa.md)
+
+Live-game QA assertion primitives: property assertions, one-shot signal waits with predicates, layout geometry checks, and per-node screenshot crops. All read-only; drives the RUNNING game (freeze included) — not a GUT replacement (GUT owns repo test suites).
+
+- `godot_qa` - Live-game QA assertion primitives for the RUNNING game — the act/observe/verify loop with real-machine oracles: assert_property (node property vs expected, tolerance-aware), wait_for_signal (one-shot signal listen with an optional predicate over declared args; timeout is a clean emitted:false, never an error), assert_layout (visible/onscreen/within_parent/min_size geometry checks as cheap text), and screenshot_node (lossless PNG cropped to one node). All read-only. NOT a GUT replacement: GUT owns repo test suites; godot_qa drives the running game, freeze included (freeze note: gameplay signals do not fire under godot_game_time freeze — waits resolve emitted:false there).
+
 ## [Game Time Control](game-time.md)
 
 Deterministic game-clock control: freeze the running game, step a bounded slice of game time (or step until a condition holds) with inputs riding inside the window, then thaw — so observation is not racing ahead between tool calls.

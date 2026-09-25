@@ -16,6 +16,7 @@ import { docsTools } from '../src/tools/docs.js';
 import { inputTools } from '../src/tools/input.js';
 import { profilerTools } from '../src/tools/profiler.js';
 import { runtimeStateTools } from '../src/tools/runtime-state.js';
+import { qaTools } from '../src/tools/qa.js';
 import { gameTimeTools } from '../src/tools/game-time.js';
 import { execTools } from '../src/tools/exec.js';
 import { validateMeshesTools } from '../src/tools/validate-meshes.js';
@@ -54,6 +55,7 @@ const categories: ToolCategory[] = [
   { name: 'Input', filename: 'input', description: 'Input injection for testing running games: named actions, joypad buttons, analog axes and stick vectors, raw keyboard keys with modifier combos, relative mouse-look, absolute mouse positioning (mouse_move/mouse_button), and text typing. Absolute entries drive the event path only — the polled OS cursor deliberately does not move (DECIDED: docs/design/mouse-input-spike.md); cooperative games adopt MCPCursor/MousePos instead (migration: docs/design/mouse-cursor-coop.md).', tools: inputTools },
   { name: 'Profiler', filename: 'profiler', description: 'Performance profiling: snapshots, per-frame time series with spike detection, active process inspection, signal connections', tools: profilerTools },
   { name: 'Runtime State', filename: 'runtime-state', description: 'Observe live game entity state as structured JSON — positions, velocities, animation state, and custom _mcp_state() data. Works out of the box for both 2D and 3D scenes (the auto fallback surfaces visible 3D world nodes — meshes, gridmaps, cameras, lights, physics bodies and areas — not just UI). Much cheaper than screenshots.', tools: runtimeStateTools },
+  { name: 'QA Assertions', filename: 'qa', description: 'Live-game QA assertion primitives: property assertions, one-shot signal waits with predicates, layout geometry checks, and per-node screenshot crops. All read-only; drives the RUNNING game (freeze included) — not a GUT replacement (GUT owns repo test suites).', tools: qaTools },
   { name: 'Game Time Control', filename: 'game-time', description: 'Deterministic game-clock control: freeze the running game, step a bounded slice of game time (or step until a condition holds) with inputs riding inside the window, then thaw — so observation is not racing ahead between tool calls.', tools: gameTimeTools },
   { name: 'Game Script Execution', filename: 'exec', description: 'Run GDScript inside the running game for test scenario setup: one-shot state mutations plus persistent holder-managed nodes, behind a denylist accident guard.', tools: execTools },
   { name: 'Mesh Validation', filename: 'validate-meshes', description: 'Detect silently corrupt procedurally generated mesh data (inside-out winding, dropped triangles, degenerate UVs, NaN normals/tangents) that renders without errors and masquerades as lighting problems. Findings carry their likely cause and fix; a cheap scene-load sniff also attaches one-line warnings to game screenshots.', tools: validateMeshesTools },
@@ -563,6 +565,13 @@ function generateNpmReadme(): string {
   // npmjs.com resolves relative links against the repo root, not server/, so
   // every relative link must become an absolute GitHub URL. Images need raw
   // URLs (a blob URL is an HTML page and will not render as an image).
+  //
+  // SEE-1348 §SPEC-015: this fork's root README is fork-authored (tadki fork
+  // positioning, launch/ control plane) and is NOT npm-appropriate; upstream
+  // npm publish is gated off (release.yml SEE-1291) and server/README.md is
+  // the frozen upstream npm README (authored e64a0e0). The generator therefore
+  // does NOT rewrite server/README.md — writing the fork root content there
+  // was the source of the recurring "fork title" drift (cf68bf4, 8aa6fff).
   return rootReadme.replace(
     /(!?)\[([^\]]*)\]\((?!https?:\/\/|#)([^)\s]+)\)/g,
     (_match, bang: string, text: string, path: string) => {
@@ -593,8 +602,10 @@ function main(): void {
     console.log(`  Created docs/tools/${category.filename}.md`);
   }
 
-  writeFileSync(NPM_README, generateNpmReadme());
-  console.log('  Created server/README.md (synced from root with adjusted paths)');
+  // SEE-1348 §SPEC-015: server/README.md is the frozen upstream npm README
+  // (upstream publish is gated off in this fork); the generator does not
+  // rewrite it — see generateNpmReadme's comment for the drift history.
+  console.log('  Skipped server/README.md (frozen upstream npm README, SEE-1348 §SPEC-015)');
 
   console.log(`\nGenerated documentation for ${categories.reduce((sum, c) => sum + c.tools.length, 0)} tools.`);
 }
