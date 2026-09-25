@@ -50,7 +50,7 @@ Capture a lossless PNG of the running game. Each frame persists in context every
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `max_width` | integer | No | Maximum width in pixels. Default when omitted: 900 (a proportional downsize — a deliberate token-cost control, ~600 tokens per 900px 16:9 frame vs ~2700 for a native 1080p frame). `max_width` is an UPPER BOUND, not a target: it is never upscaled or re-encoded to reach the requested width. Values ≥ the native width return the native frame byte-identical; to capture at full native resolution pass a large value or 0. Only a value below the native width produces a proportional downsize. Cost scales with resolution (~1 visual token per 28x28px patch). 640 is the legibility floor for chip-dense UI — still crisp; 512 is the edge and 384 breaks fine print — so drop toward 640 to roughly halve per-frame cost when you do not need the finest text, and raise above 900 only when detail is genuinely unreadable. |
+| `max_width` | integer | No | Maximum width in pixels (default: 900). Cost scales with resolution (~1 visual token per 28x28px patch; a 900px 16:9 frame ≈ 600 tokens, a native 1080p frame ≈ 2700 on Opus). 640 is the legibility floor for chip-dense UI — still crisp; 512 is the edge and 384 breaks fine print — so drop toward 640 to roughly halve per-frame cost when you do not need the finest text, and raise above 900 only when detail is genuinely unreadable. |
 
 #### `screenshot_editor`
 
@@ -59,7 +59,7 @@ Capture a lossless PNG of an editor viewport. Same context cost as screenshot_ga
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `viewport` | `2d`, `3d` | No | Which editor viewport to capture |
-| `max_width` | integer | No | Maximum width in pixels. Default when omitted: 900 (a proportional downsize — deliberate token-cost control, ~600 tokens per 900px 16:9 frame). `max_width` is an UPPER BOUND, not a target: values ≥ the native width return the native frame byte-identical; to capture at full native resolution pass a large value or 0. Only a value below the native width downsizes (proportionally). |
+| `max_width` | integer | No | Maximum width in pixels (default: 900). Cost scales with resolution (~1 visual token per 28x28px patch; a 900px 16:9 frame ≈ 600 tokens). 640 is the legibility floor for chip-dense UI (512 is the edge, 384 breaks fine print), so drop toward 640 to roughly halve per-frame cost when you do not need the finest text; raise above 900 only when detail is unreadable. |
 
 ### Examples
 
