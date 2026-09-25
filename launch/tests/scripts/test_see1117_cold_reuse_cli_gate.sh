@@ -80,7 +80,7 @@ chmod +x "$MOCK_CLI"
 
 CFG="$TMPDIR/cfg.count"; START="$TMPDIR/start.count"
 : > "$CFG"; : > "$START"
-CFG_SH=$(make_configure_mock "$CFG" 0)
+CFG_SH=$(make_configure_mock "$CFG" 0 "$MOCK_WORKTREE")
 # start mock does NOT spawn a listener — the listener is pre-bound below to
 # simulate the fresh auto-checkout where start-godot-editor.sh ran BEFORE the
 # first tools/call (so the port is already listening at ensureEditor's tcpProbe).

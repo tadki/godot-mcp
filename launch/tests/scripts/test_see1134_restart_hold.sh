@@ -124,7 +124,7 @@ EDITOR_LOG="$TMPDIR/editor.log"; : > "$EDITOR_LOG"   # empty → renderStable fl
 CFG="$TMPDIR/cfg.count"; START="$TMPDIR/start.count"
 WS_COUNTER="$TMPDIR/ws.count"
 : > "$CFG"; : > "$START"; : > "$WS_COUNTER"
-CFG_SH=$(make_configure_mock "$CFG" 0)
+CFG_SH=$(make_configure_mock "$CFG" 0 "$MOCK_WORKTREE")
 MOCK_RECONNECT_MS=600
 
 # Custom start mock: spawns the WS-completing mock listener (spawn=1) AND
@@ -305,6 +305,15 @@ if wait_for "$PROXY_OUT" '"id":11' 2000; then
     ok "F2.e: held id=11 flushed after restart completed"
 else
     ko "F2.e: held id=11 not flushed after restart"
+fi
+
+# SEE-1344 flake fix: F2's respawn setTimeout and F3's NEVER arming raced —
+# arming NEVER (daemon clears RESPAWN for the in-flight F2 restart) could
+# suppress the F2 relaunch → F2.d/F4.c saw {restarted:false} spuriously.
+# Fence: wait for F2's respawn to complete (id=11 answered = flush done) before
+# arming NEVER.
+if wait_for "$PROXY_OUT" '"id":11' 4000; then
+    :
 fi
 
 # F3 — restart timeout path: enable NEVER_RECONNECT and send a second restart.

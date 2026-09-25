@@ -106,7 +106,10 @@ EOF
     # ever runs. B1 reaches the exec, so the real proxy must be present too.
     cp "$LAUNCH_DIR/agent-ports.lib.sh" "$dir/agent-ports.lib.sh"
     cp "$LAUNCH_DIR/agent-ports.json" "$dir/agent-ports.json"
-    cp "$LAUNCH_DIR/godot-mcp-proxy.mjs" "$dir/godot-mcp-proxy.mjs"
+    # SEE-1344: the launcher sources $SCRIPT_DIR/env.sh (SEE-1292 K5 alias
+    # chain) before exec; vendor the full launch top-level + proxy/ tree so
+    # the stub never goes stale and env.sh is present at source time.
+    (cd "$LAUNCH_DIR" && find . -maxdepth 1 -type f -exec cp {} "$dir/" \; && cp -r proxy "$dir/")
     # The proxy statically imports ./godot-mcp-resolve.mjs and
     # ./warmup-stage-parser.mjs; both must be present or the exec'd proxy dies
     # at module load (ERR_MODULE_NOT_FOUND) before the gate ever runs.
@@ -387,10 +390,23 @@ STUB_DIR="$(make_stubbed_wrapper_dir)"
 STUB_WRAPPER="$STUB_DIR/godot-mcp-launcher.sh"
 MOCK_NPX_DIR="$(make_mock_npx)"
 
+# SEE-1344: pin an explicit scratch project.godot for every launcher run —
+# the 120s WORKTREE_WAIT tier (shared/SEE-1342 sync) preempts these short
+# handoff windows when resolution falls through; the asserted contract is the
+# Stage-1b exec handoff, not worktree resolution.
+mk990scratch() {  # per-case scratch: same-worktree contention is worktree-granular
+    local d="$TMPDIR/scratch-$1"; mkdir -p "$d"
+    printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$d/project.godot"
+    echo "$d"
+}
+
 # Force the probe onto the loopback interface where the mock server binds. The
 # real launcher resolves the WSL gateway (the Windows editor binds the vEthernet
 # IP); in tests we point at 127.0.0.1 directly.
-WRAP_ENV=(env "GODOT_HOST=127.0.0.1" "PATH=$MOCK_NPX_DIR:$PATH" "KOL_GODOT_MCP_CMD=npx")
+# B1 runs against a healthy listener — give it its own scratch (contention
+# granularity is the worktree, and A1's handoff runtime still holds theirs).
+SCRATCH_B1="$(mk990scratch b1)"
+WRAP_ENV=(env "GODOT_HOST=127.0.0.1" "PATH=$MOCK_NPX_DIR:$PATH" "KOL_GODOT_MCP_CMD=npx" "KOL_PROJECT_GODOT=$SCRATCH_B1/project.godot" "KOL_WORKTREE=$SCRATCH_B1")
 
 # A1: nothing listening on the port — the launcher must STILL exec the proxy
 # (Stage 1b contract). Shorten the handed-off proxy's warmup/exit windows so it
@@ -398,8 +414,10 @@ WRAP_ENV=(env "GODOT_HOST=127.0.0.1" "PATH=$MOCK_NPX_DIR:$PATH" "KOL_GODOT_MCP_C
 # stdin is held open briefly (sleep) so the proxy runs long enough to log.
 PORT_A=$(find_free_port)
 A1_OUT="$TMPDIR/A1_out.$$"; A1_ERR="$TMPDIR/A1_err.$$"
+SCRATCH_A1="$(mk990scratch a1)"
 A1_ENV=(env "GODOT_HOST=127.0.0.1" "PATH=$MOCK_NPX_DIR:$PATH" \
     "KOL_GODOT_MCP_CMD=npx" \
+    "KOL_PROJECT_GODOT=$SCRATCH_A1/project.godot" "KOL_WORKTREE=$SCRATCH_A1" \
     "KOL_WARMUP_TIMEOUT_MS=2000" "KOL_FAILED_EXIT_MS=3000" "KOL_PROBE_INTERVAL_MS=500")
 start_ts=$(date +%s)
 ( sleep 7 ) | timeout 20s "${A1_ENV[@]}" bash "$STUB_WRAPPER" --port "$PORT_A" >"$A1_OUT" 2>"$A1_ERR"

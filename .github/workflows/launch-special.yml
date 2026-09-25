@@ -10,12 +10,14 @@ name: Launch Special (heavy/env tier)
 #             `npx @satelliteoflove/godot-mcp` against a bound addon. On a
 #             GitHub runner they cannot pass; kept here as documented stubs
 #             (preflight probe proves the requirement, then skips).
-#   drift   — suites that are currently RED in a clean checkout on main
-#             (pre-existing, recorded in the SEE-1291 drift ledger): timing
-#             flaky on runners, SEE-1287 path-drift fixtures, or KOL-coupled
-#             by design. Refacty's drift workstream owns the fix/retire
-#             decision; once an entry is green it graduates into
-#             launch-ci.yml.
+#   drift   — residual entries after the SEE-1344 triage (Atlas final ruling):
+#             drift LIST CLEARED (⑫/⑫+: 6 handled — 2 FAST graduation after
+#             event-driven hardening, e5→long, t1_tree deleted with the 2
+#             frozen). 29 items
+#             graduated into launch/vitest.config.ts FAST lists (21 fixed +
+#             4 green + ⑫ 2 more), 5 into LONG, 13 documented in the env
+#             bucket, 9 retired files deleted (7 triage + 2 frozen, Owner
+#             2026-09-24 23:04); residual RED must stay 0 (§SPEC-114).
 #
 # Manual dispatch runs everything runnable headless and reports per-entry
 # status without failing the workflow (continue-on-error evidence runs) —
@@ -102,6 +104,18 @@ jobs:
           echo "  launch/tests/e2e/see1240/, see1240_qa/        (real-machine clients, KOL_ROOT)"
           echo "  launch/tests/e2e/godot-mcp/test_see1070_ws_single_client_4001.mjs (live editor; outside run_all's tests/ scan)"
           echo "  launch/test_see1273_t2_param.sh               (runs green headless — see long bucket note)"
+          # SEE-1344 归置（Atlas 终裁 env 桶 13 项 documented-skip）：
+          echo "  launch/tests/scripts/test_see1117_live_e2e_editor_port.sh   (live editor)"
+          echo "  launch/tests/scripts/test_see1117_live_sidecar_e2e.sh       (real Godot editor + .godot/mcp-lease.json)"
+          echo "  launch/tests/scripts/test_see1117_suite_f_prime_6agents.sh  (6-agent live sidecar)"
+          echo "  launch/tests/scripts/test_see1117_cold_reuse_cli_gate.sh    (green but live-family semantics)"
+          echo "  launch/tests/scripts/test_see990_live_gate_6port_sweep.sh   (vacuous on runner: SKIP=6 without live editors)"
+          echo "  launch/tests/scripts/test_see1009_multi_port_addon_version.sh (multi-port live editor handshake)"
+          echo "  launch/tests/scripts/test_see1009_mcp_tool_visibility_e2e.sh  (real npx + live display editor)"
+          echo "  launch/tests/scripts/test_see1152_mcp_daily_call_stability.sh (live registry/log oracle, Revy runtime)"
+          echo "  launch/tests/scripts/test_see986_autopilot_descriptions.sh    (Multica API credentials)"
+          echo "  launch/tests/scripts/test_see1170_channel1.sh / _fix_round2.sh   (KOL_ROOT hook)"
+          echo "  launch/tests/scripts/test_see1170_channel2.py / _fix_round.py    (KOL_ROOT hook, python — .py branch fixed in drift loop)"
 
   drift-watch:
     # 目标2：drift（10-20min 档）与 long 同迁每日 cron（§SPEC-110）。
@@ -150,67 +164,21 @@ jobs:
           set -uo pipefail
           RED_LOG="drift-red-${{ github.run_id }}.txt"
           : > "$RED_LOG"
+          # SEE-1344 ⑫: 冻结 2 件（see1111_gitignore_prepare_worktree /
+          # linked_worktree_fixes）经 Owner 2026-09-24 23:04 指令删除（语义过时），
+          # SKIP lane 一并移除；残留 drift 清单 = 2 件维持绿项。
+          # SEE-1344 ⑫/⑫+（Owner 2026-09-24 23:04/23:28 指令）：drift 桶清空——
+          # 2 件偶发红事件驱动加固后毕业 FAST，e5_concurrent 迁 long（真实时钟
+          # 并发窗），t1_tree_consistency 删除（retired archive 语义）。
+          # 清单保留为空骨架：未来新漂移回归仍走本 job 逐项 evidence run。
           for t in \
-            launch/tests/scripts/test_see1045_stdio_proxy.sh \
-            launch/tests/scripts/test_see1070_host_mirror_parity.sh \
-            launch/tests/scripts/test_see1070_proxy_exec_hints.sh \
-            launch/tests/scripts/test_see1070_proxy_screenshot_hint.sh \
-            launch/tests/scripts/test_see1070_warmup_self_heal.sh \
-            launch/tests/scripts/test_see1077_edge_cases.sh \
-            launch/tests/scripts/test_see1134_restart_hold.sh \
-            launch/tests/scripts/test_see1085_t6_editor_busy.sh \
-            launch/tests/scripts/test_see1085_t7_resolver.mjs \
-            launch/tests/scripts/test_see1085_t8_direct_node.sh \
-            launch/tests/scripts/test_see1085_t9_editor_gone.sh \
-            launch/tests/scripts/test_see1110_e1_cold_warmup_timeline.sh \
-            launch/tests/scripts/test_see1117_cold_reuse_cli_gate.sh \
-            launch/tests/scripts/test_see1085_t10_takeover_success.sh \
-            launch/tests/scripts/test_see1085_t11_takeover_timeout.sh \
-            launch/tests/scripts/test_see1110_e2_editor_busy_channelA.sh \
-            launch/tests/scripts/test_see1110_e3_lease_exit_channelA.sh \
-            launch/tests/scripts/test_see1110_stage_parser.mjs \
-            launch/tests/scripts/test_see1111_e5_concurrent_5agent.sh \
-            launch/tests/scripts/test_see1111_fork_wiring.sh \
-            launch/tests/scripts/test_see1111_gitignore_prepare_worktree.sh \
-            launch/tests/scripts/test_see1111_linked_worktree_fixes.sh \
-            launch/tests/scripts/test_see1111_warmup_hint.sh \
-            launch/tests/scripts/test_see1111_worktree_isolation.sh \
-            launch/tests/scripts/test_see1117_live_e2e_editor_port.sh \
-            launch/tests/scripts/test_see1117_suite_f_prime_6agents.sh \
-            launch/tests/scripts/test_see1152_mcp_daily_call_stability.sh \
-            launch/tests/scripts/test_see1152_reaper_held_sweep.sh \
-            launch/tests/scripts/test_see1244_shim_handoff.mjs \
-            launch/tests/scripts/test_see986_autopilot_descriptions.sh \
-            launch/tests/scripts/test_see1170_channel1.sh \
-            launch/tests/scripts/test_see1170_fix_round2.sh \
-            launch/tests/scripts/test_see1170_channel2.py \
-            launch/tests/scripts/test_see1170_fix_round.py \
-            launch/tests/scripts/test_see1240_exec_constraints_proxy.sh \
-            launch/tests/scripts/test_see1240_proxy_integration.sh \
-            launch/tests/scripts/test_see1244_cache_closure.mjs \
-            launch/tests/scripts/test_see1244_proxy_tools_cache.mjs \
-            launch/tests/scripts/test_see1244_runtime_held_wait.sh \
-            launch/tests/scripts/test_see976_mcp_multi_port.sh \
-            launch/tests/scripts/test_see986_autopilots_doc.sh \
-            launch/tests/scripts/test_see990_live_gate_6port_sweep.sh \
-            launch/tests/scripts/test_see990_mcp_ready_gate.sh \
-            launch/tests/scripts/test_see1117_live_sidecar_e2e.sh \
-            launch/tests/scripts/test_see1148_p3_reclaim.sh \
-            launch/tests/hooks/see1273/test_see1273_t1_import.sh \
-            launch/tests/hooks/see1273/test_see1273_t1_tree_consistency.sh \
-            launch/tests/hooks/see1273/test_see1273_t2_chain.sh \
-            launch/tests/hooks/see1273/test_see1273_t3_chain.sh \
-            launch/tests/hooks/see1273/test_see1273_t4_chain.sh \
-            launch/tests/hooks/test_see1091_reconfigure_after_stop_converges.sh \
-            launch/tests/hooks/test_see1070_stop_hook_projectgodot_isolation.sh \
-            launch/tests/hooks/test_see1111_stop_hook_sanitizes_master.sh \
-            launch/tests/abtest/test_see1009_ws_vs_tcp_gate_ab.sh \
-            launch/tests/e2e/test_see1009_multi_port_addon_version.sh \
-            launch/tests/e2e/test_see1009_mcp_tool_visibility_e2e.sh \
-            ; do
+            # (intentionally empty — SEE-1344 drift cleared) \
+          ; do
             [ -f "$t" ] || { echo "[special:drift] MISSING $t"; continue; }
             echo "::group::$t"
             case "$t" in
+              *.py)  timeout 180 python3 "$t" </dev/null && echo "[special:drift] PASS (drift fixed → graduate)" \
+                     || { echo "::warning::[special:drift] RED $t"; echo "$t" >> "$RED_LOG"; } ;;
               *.mjs) timeout 180 node "$t" </dev/null && echo "[special:drift] PASS (drift fixed → graduate)" \
                      || { echo "::warning::[special:drift] RED $t"; echo "$t" >> "$RED_LOG"; } ;;
               *.sh)  timeout 180 bash "$t" </dev/null && echo "[special:drift] PASS (drift fixed → graduate)" \

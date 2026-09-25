@@ -38,7 +38,7 @@ START_COUNTER="$TMPDIR/start.count"
 : > "$CFG_COUNTER"; : > "$START_COUNTER"
 
 # Mock configure: succeed silently.
-CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0)
+CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0 "$MOCK_WORKTREE")
 
 # Mock start: emit a stderr block that EXCEEDS 500 chars before the trailing
 # die marker, then exit 1. Early line proves the head is preserved; late line

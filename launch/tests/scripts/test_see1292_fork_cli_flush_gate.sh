@@ -45,7 +45,7 @@ PORT=$(find_free_port)
 EDITOR_LOG="$TMPDIR/editor.log"; : > "$EDITOR_LOG"
 CFG="$TMPDIR/cfg.count"; START="$TMPDIR/start.count"
 : > "$CFG"; : > "$START"
-CFG_SH=$(make_configure_mock "$CFG" 0)
+CFG_SH=$(make_configure_mock "$CFG" 0 "$MOCK_WORKTREE")
 START_SH=$(make_start_mock "$START" 0 1)             # spawn=1 → WS listener on GODOT_PORT
 
 # Mock fork CLI: answers JSON-RPC on stdio (like mock-npx-stable.mjs) AND emits

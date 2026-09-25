@@ -62,17 +62,12 @@ exit 0
 EOF
     chmod +x "$dir"/*.sh
     cp "$PROXY" "$dir/godot-mcp-proxy.mjs"
-    # The proxy statically imports ./godot-mcp-resolve.mjs (SEE-1085 direct-node
-    # launch) and ./warmup-stage-parser.mjs (SEE-1110 progress protocol), so the
-    # stub dir must carry them too or the proxy fails at module load.
-    cp "$RESOLVE" "$dir/godot-mcp-resolve.mjs"
-    cp "$LAUNCH_DIR/warmup-stage-parser.mjs" "$dir/warmup-stage-parser.mjs"
-    # SEE-1070 cleanup item 6: the launcher sources $SCRIPT_DIR/agent-ports.lib.sh
-    # and reads agent-ports.json. The awk above rewrites SCRIPT_DIR to this stub
-    # dir, so both must exist here or `source` at launcher line ~64 fails and the
-    # whole chain dies before the proxy is ever exec'd.
-    cp "$LAUNCH_DIR/agent-ports.lib.sh" "$dir/agent-ports.lib.sh"
-    cp "$LAUNCH_DIR/agent-ports.json" "$dir/agent-ports.json"
+        # SEE-1344: the proxy was decomposed (SEE-1334 Phase 0a) into launch/proxy/
+    # modules plus top-level predicate modules — per-file copies go stale
+    # silently. Vendor the full launch tree (top-level files + proxy/) so the
+    # stub dir always carries the current module surface.
+    (cd "$LAUNCH_DIR" && find . -maxdepth 1 -type f -exec cp {} "$dir/" \; && cp -r proxy "$dir/")
+    # Keep the mock helpers deterministic: the real configure/start must not run.
     echo "$dir"
 }
 
@@ -103,15 +98,12 @@ EOF
 exit 0
 EOF
     chmod +x "$dir"/*.sh
-    cp "$PROXY" "$dir/godot-mcp-proxy.mjs"
-    cp "$RESOLVE" "$dir/godot-mcp-resolve.mjs"
-    cp "$LAUNCH_DIR/warmup-stage-parser.mjs" "$dir/warmup-stage-parser.mjs"
-    # SEE-1070 cleanup item 6: the launcher sources $SCRIPT_DIR/agent-ports.lib.sh
-    # and reads agent-ports.json. The awk above rewrites SCRIPT_DIR to this stub
-    # dir, so both must exist here or `source` at launcher line ~64 fails and the
-    # whole chain dies before the proxy is ever exec'd.
-    cp "$LAUNCH_DIR/agent-ports.lib.sh" "$dir/agent-ports.lib.sh"
-    cp "$LAUNCH_DIR/agent-ports.json" "$dir/agent-ports.json"
+    # SEE-1344: the proxy was decomposed (SEE-1334 Phase 0a) into launch/proxy/
+    # modules plus top-level predicate modules — per-file copies go stale
+    # silently. Vendor the full launch tree (top-level files + proxy/) so the
+    # stub dir always carries the current module surface.
+    (cd "$LAUNCH_DIR" && find . -maxdepth 1 -type f -exec cp {} "$dir/" \; && cp -r proxy "$dir/")
+    # Keep the mock helpers deterministic: the real configure/start must not run.
     echo "$dir"
 }
 
@@ -148,7 +140,19 @@ run_case() {
     err="$TMPDIR/${name}.err"
     # Give slow orphan-gate / setup cases enough time to exec proxy and respond.
     wait_after=$(( delay + 3 ))
+    # SEE-1344: the stub launcher's spawn chain gained a prepare-worktree step
+    # (SEE-1342 sync) — under fast-par 4-way load its in-flight wait window
+    # can push exec past delay+3s; the asserted chain (launcher→proxy→npx
+    # stdio) is unchanged, only the observation window widens.
+    wait_after=$(( delay + 6 ))
 
+    # SEE-1344: the launcher now waits up to KOL_WORKTREE_WAIT_S=120s for a
+    # private worktree to resolve; this chain test only needs the stdio path,
+    # so pin an explicit scratch project.godot (skips the WORKTREE_WAIT tier
+    # entirely — the asserted chain is launcher→proxy→npx, not resolution).
+    local scratch="$TMPDIR/${name}-scratch"
+    mkdir -p "$scratch"
+    printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$scratch/project.godot"
     (
         printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}'
         sleep 5
@@ -157,6 +161,8 @@ run_case() {
         "GODOT_HOST=127.0.0.1" \
         "PATH=$MOCK_NPX_DIR:$PATH" \
         "KOL_GODOT_MCP_CMD=npx" \
+        "KOL_PROJECT_GODOT=$scratch/project.godot" \
+        "KOL_WORKTREE=$scratch" \
         bash "$wrapper_dir/godot-mcp-launcher.sh" --port "$port" \
         >"$out" 2>"$err" &
     pid=$!

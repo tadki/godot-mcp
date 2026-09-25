@@ -38,7 +38,7 @@ PORT=$(find_free_port)
 EDITOR_LOG="$TMPDIR/editor.log"; : > "$EDITOR_LOG"   # readable, empty → renderStable flips in ~4s
 CFG="$TMPDIR/cfg.count"; START="$TMPDIR/start.count"
 : > "$CFG"; : > "$START"
-CFG_SH=$(make_configure_mock "$CFG" 0)
+CFG_SH=$(make_configure_mock "$CFG" 0 "$MOCK_WORKTREE")
 START_SH=$(make_start_mock "$START" 0 1)             # spawn=1 → listener on GODOT_PORT
 
 sep "SEE-1111 缺陷 #10 + hold-to-warm: first call held until WS handshake; gate opens after WARM (port=$PORT)"

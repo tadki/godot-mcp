@@ -52,7 +52,7 @@ START_COUNTER="$TMPDIR/start.count"
 WS_COUNT="$TMPDIR/ws.count"
 : > "$CFG_COUNTER"; : > "$START_COUNTER"; : > "$WS_COUNT"
 
-CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0)
+CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0 "$MOCK_WORKTREE")
 # spawn=1 → the start mock nohup's the WS-completing mock listener on GODOT_PORT.
 # The nohup `env "LISTEN_PORT=..." node ...` preserves the inherited environment,
 # so WS_COUNT_FILE set in the proxy env reaches the listener; every completed

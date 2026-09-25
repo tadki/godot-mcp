@@ -32,7 +32,7 @@ CFG_COUNTER="$TMPDIR/cfg.count"
 START_COUNTER="$TMPDIR/start.count"
 : > "$CFG_COUNTER"; : > "$START_COUNTER"
 
-CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0)
+CFG_SH=$(make_configure_mock "$CFG_COUNTER" 0 "$MOCK_WORKTREE")
 # Start mock ALWAYS fails → every spawn attempt fails with spawn_failed_start;
 # 3 consecutive attempts (streak) hit the SPAWN_MAX_ATTEMPTS terminal.
 START_SH=$(make_start_mock "$START_COUNTER" 1 0)
@@ -198,7 +198,7 @@ sep "R3: second give-up round → backoff doubles (giveup_count=2)"
 PORT2=$(find_free_port)
 CFG2="$TMPDIR/cfg2.count"; START2="$TMPDIR/start2.count"
 : > "$CFG2"; : > "$START2"
-CFG_SH2=$(make_configure_mock "$CFG2" 0)
+CFG_SH2=$(make_configure_mock "$CFG2" 0 "$MOCK_WORKTREE")
 START_SH2=$(make_start_mock "$START2" 1 0)
 start_proxy \
     "GODOT_PORT=$PORT2" \
@@ -264,7 +264,7 @@ sep "R5: legacy seam KOL_GIVEUP_REARM=0 → process-exits on terminal"
 PORT3=$(find_free_port)
 CFG3="$TMPDIR/cfg3.count"; START3="$TMPDIR/start3.count"
 : > "$CFG3"; : > "$START3"
-CFG_SH3=$(make_configure_mock "$CFG3" 0)
+CFG_SH3=$(make_configure_mock "$CFG3" 0 "$MOCK_WORKTREE")
 START_SH3=$(make_start_mock "$START3" 1 0)
 start_proxy \
     "GODOT_PORT=$PORT3" \
