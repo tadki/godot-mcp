@@ -1,5 +1,72 @@
 # Changelog
 
+## [5.0.0](https://github.com/tadki/godot-mcp/compare/godot-mcp-v4.1.0...godot-mcp-v5.0.0) (2026-09-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* restructure main — addon at repo root, drop upstream test/ (SEE-1268 T1)
+* restructure main — addon at repo root, drop upstream test/ (SEE-1268 T1)
+
+### Features
+
+* **addon:** SEE-1268 ① 组装——KOL 生产 vendored addon 增量并入 fork ([469e162](https://github.com/tadki/godot-mcp/commit/469e16299a9103058989f80288c71593b227cdd1))
+* **connection:** make QUICK_TIMEOUT_MS env-configurable via GODOT_MCP_QUICK_TIMEOUT_MS ([f62c9c3](https://github.com/tadki/godot-mcp/commit/f62c9c34a5621b0b6f38b3f6025911b517f05710))
+* **input:** SEE-1141 Track D — absolute mouse_move/mouse_button viewport-space entries ([c812dce](https://github.com/tadki/godot-mcp/commit/c812dce59a0bf7d6517ae6cee34332bf56dcab54))
+* **launch:** SEE-1268 ① 组装——KOL .dev/godot-mcp/launch 控制面收入运行库 ([a429416](https://github.com/tadki/godot-mcp/commit/a4294163860f662a9bdd108ac6517048fd83a4f9))
+* **launch:** SEE-1325 H2 config-validate 双轨 fail-fast guard（shim+launcher 双入口） ([e8a4755](https://github.com/tadki/godot-mcp/commit/e8a4755c4d3c10cfbbbb17873977ba6716c32991))
+* **launch:** SEE-1328 B-code — §SPEC-014/015/016 截图链路补差实现 ([d5af03b](https://github.com/tadki/godot-mcp/commit/d5af03b8c7ac50b71d34c0c4dffb497c7c1a730d))
+* **launch:** SEE-1328 C-code — 阶段三 H1 主实现（recovery 模块 + 恢复轮 + 探针收敛 + configure 加固 + 阻断项修复） ([85e6198](https://github.com/tadki/godot-mcp/commit/85e6198aade7d9353b4e1656878f8840a17e3315))
+* **lint:** SEE-1334 P1 ESLint 静态质量层 — 双规则集 + 复杂度门 + baseline ([3b3e993](https://github.com/tadki/godot-mcp/commit/3b3e99393e2a5406761e0e0456f679b52443a2c2))
+* **proxy:** SEE-1338 P0 — spec v2.1 R2 hard-cap backstop + §4.2 AMEND-1 takeover guard ([0d0f5b8](https://github.com/tadki/godot-mcp/commit/0d0f5b8bf5cb786eeede2842812d1843777bff6c))
+* **proxy:** SEE-1338 P1 — D1 issue-keyed identity + D2 on-disk state SoT + D3 handoff tree ([7152e28](https://github.com/tadki/godot-mcp/commit/7152e287f62d04ac9553bbd2076551638d74e8c1))
+* **proxy:** SEE-1338 P1 convergence — linear single-source lanes, reaper executor, counters on disk ([6f7a43c](https://github.com/tadki/godot-mcp/commit/6f7a43cb8d7494d85a2db780f1e9d6f187896da8))
+* **qa:** SEE-1334 100% 目标升级（SPEC-061..064）— mutation 有效 kill rate 100 + 新代码 coverage 100 ([fec0eea](https://github.com/tadki/godot-mcp/commit/fec0eea37e7327c3076130c1c4961cc47f7a32d5))
+
+
+### Bug Fixes
+
+* **ci:** SEE-1342 FR3 rework — numeric prev-run selection + cache restore observability ([5a6699d](https://github.com/tadki/godot-mcp/commit/5a6699d26aebb4395afd603f5eabe951b2f7e717))
+* **coverage:** gate vitest run 加 --retry 1 — coverage job 马拉松下 timing 敏感套件抖动治理 ([a63b5fb](https://github.com/tadki/godot-mcp/commit/a63b5fbec8f3faa7a5588c49e58a6c847b6f54a6))
+* **coverage:** gate 收敛 fast tier + CI job 补 godot 安装（CI 实测返修） ([32cfdac](https://github.com/tadki/godot-mcp/commit/32cfdac655f6e73dd3761a0c0c2f726fb16ad755))
+* **coverage:** SEE-1334 D1 返工 — launch coverage 门禁仓库内可复现（SPEC-021 修订） ([fa527a4](https://github.com/tadki/godot-mcp/commit/fa527a42b53c7301df2d2401b3640d6bafc0b117))
+* **deps:** 根级 zod 钉 4.4.3 对齐 server — mutation sandbox 版本偏差修复 ([1eba2a4](https://github.com/tadki/godot-mcp/commit/1eba2a43cbba0ce3e8de64cec85e9cd35de6c0ba))
+* **docs:** SEE-1328 B-fix — max_width 文案回归规格原句（D2 裁决） ([a50d088](https://github.com/tadki/godot-mcp/commit/a50d088b3f20c2c65cd4c750a734a21e5815e349))
+* **editor:** read run_project bridge_ready from top-level result ([6293883](https://github.com/tadki/godot-mcp/commit/62938831a76fffb331ebc3ac1714471878556f53))
+* **launch:** SEE-1273 AC-M3REORG-013 — shell 孪生守卫空值修复 + KOL 注入链接通 ([bd8f99a](https://github.com/tadki/godot-mcp/commit/bd8f99a51b0a5a9941da274d55192a1076297ddd))
+* **launch:** SEE-1273 T2 — decouple fork CLI path (resolve.mjs/shim) + doc literal ([bb4615d](https://github.com/tadki/godot-mcp/commit/bb4615dddbb55fe2e961d64391df581af1297536))
+* **launch:** SEE-1273 T2 follow-up — set -u env guard + proxy 3-location isGodotWorktree ([59c7baf](https://github.com/tadki/godot-mcp/commit/59c7baf1db4c7e631a7d1d75de5f3de952768899))
+* **launch:** SEE-1273 T2-M1 — export resolved GODOT_MCP_* vars for child processes ([8be66eb](https://github.com/tadki/godot-mcp/commit/8be66eb3eb820632c4d4184c65a525de8b2ba1ac))
+* **launch:** SEE-1273 T4 前置 — submodule shim launcher 路径指自身目录 ([00d9c77](https://github.com/tadki/godot-mcp/commit/00d9c776e98a4e3a9df259bd28b61fa763200d7e))
+* **launch:** SEE-1273 T5-F 前置 — 补 launch 脚本执行位（100644→100755） ([dcf33d1](https://github.com/tadki/godot-mcp/commit/dcf33d10c17de0eafa0d14c93dc86d1d080cefd1))
+* **launch:** SEE-1288 MEDIUM-1 — persist fork CLI build failure log to ~/.multica ([b7429ce](https://github.com/tadki/godot-mcp/commit/b7429ceef761f00c45c055c45d0723333406ec74))
+* **launch:** SEE-1288 submodule checkout restores fork CLI wiring via build fallback ([15e9703](https://github.com/tadki/godot-mcp/commit/15e970364eef41ec652c7a75f28a2a0040291e8e))
+* **launch:** SEE-1316 editor/lease 生命周期回收契约闭环（proxy_pid 归属 + 有界自愈 + 探测工具路径） ([892eafc](https://github.com/tadki/godot-mcp/commit/892eafca7be88b81350e504958fc1400deace2e2))
+* **launch:** SEE-1328 A-fix D1 — LAUNCHER_STAGE_LINE 去除 escape 占位符，消除 launcher glob 误命中 ([f750d0d](https://github.com/tadki/godot-mcp/commit/f750d0d04b62830d9a5c9e89666fc256e572fb85))
+* **launch:** SEE-1328 C-fix — port-probe ss/netstat 层 fail-open 语义区分（命令失败/空输出 → UNDETERMINED） ([c40f69c](https://github.com/tadki/godot-mcp/commit/c40f69c45ebb264d3f7555c13194ef0b74b121c6))
+* **launch:** SEE-1328 C0 收讫修正 — 证据文件补齐入库 + 套件证据缺失 skip-with-reason ([d77398b](https://github.com/tadki/godot-mcp/commit/d77398beb879fba8ef6f979889f2377f5aa4e6b9))
+* **mutation:** SEE-1334 D2 返工 — mutate 面恢复 SPEC-040 原白名单 + 台账逐条对账 + F3 --coverage ([04817c5](https://github.com/tadki/godot-mcp/commit/04817c5985096e2e39fbc671331d94d04ba59bfc))
+* **nightly:** speed-audit 补 server 构建 + vitest 失败日志留痕 ([5a2652a](https://github.com/tadki/godot-mcp/commit/5a2652ab92eec94b370db4f489fc4d6423b3ba9b))
+* **proxy:** SEE-1273 AC-M3REORG-011 — isSharedMasterWorktree 空值守卫（JS 版补同步） ([8d51b13](https://github.com/tadki/godot-mcp/commit/8d51b131eec1450894977a9c1761d8882f4c8259))
+* **proxy:** SEE-1338 §GM1a/GM1b — stale-proxy takeover + recovery-lane undeclared-id fixes ([9d2caa5](https://github.com/tadki/godot-mcp/commit/9d2caa5ad8558c002994daace5a710661d02edf8))
+* **proxy:** SEE-1338 P1 QA defect [#1](https://github.com/tadki/godot-mcp/issues/1) — acquireRuntimeLock async→sync (startup handoff no longer bypassed) ([23812c6](https://github.com/tadki/godot-mcp/commit/23812c6b78298b83a0b9ddb6efaa17f4f4e5548e))
+* **proxy:** SEE-1338 QA defects [#1](https://github.com/tadki/godot-mcp/issues/1) (HIGH) + [#2](https://github.com/tadki/godot-mcp/issues/2) (LOW) — warm-gate CLI-slot bypass, HANDOFF reuse, reaper quarantine gate ([3778ce5](https://github.com/tadki/godot-mcp/commit/3778ce5a57a4eff86e2cbc8b5eaefaaaa612d452))
+* **proxy:** SEE-1338 review MEDIUM-1/LOW-1 — rearm warmup clock + ws5 harness determinism ([0d7bd7d](https://github.com/tadki/godot-mcp/commit/0d7bd7d14395270ee7bb71cf492f3a6775bf5639))
+* **qa:** SEE-1342 Phase B — see1273 migration prep + shim flake root-cause fixes ([5d3b42a](https://github.com/tadki/godot-mcp/commit/5d3b42a28e2c64aed433a2164b57ef937aff4b47))
+* **review:** FR 二轮 LOW 订正 — ratchet 头注释 ≥95→100% + 台账计数订正为实测 303/303 ([1cadf38](https://github.com/tadki/godot-mcp/commit/1cadf381c2f87c43423ddff334f597c3162b24cb))
+* **types:** killer 测试补 MockInstance 显式类型 — 修复 CI tsc noImplicitAny ([f6264a1](https://github.com/tadki/godot-mcp/commit/f6264a144398e33c5e46938c4548b4c8ca0cebb7))
+
+
+### Performance Improvements
+
+* **ci:** SEE-1342 Phase A — D1 build gate + D3 fast-tier parallel split ([4f6fbf4](https://github.com/tadki/godot-mcp/commit/4f6fbf4fab3084d05c398c6a56a5fe21f2019101))
+
+
+### Code Refactoring
+
+* restructure main — addon at repo root, drop upstream test/ (SEE-1268 T1) ([e649597](https://github.com/tadki/godot-mcp/commit/e6495971b49bf263758d4756c670ad023e511057))
+* restructure main — addon at repo root, drop upstream test/ (SEE-1268 T1) ([91295ce](https://github.com/tadki/godot-mcp/commit/91295ceb3fe0a0f70579e168654e327443d6b4d9))
+
 ## [4.1.0](https://github.com/satelliteoflove/godot-mcp/compare/godot-mcp-v4.0.1...godot-mcp-v4.1.0) (2026-06-20)
 
 
