@@ -191,9 +191,10 @@ func resolve_node(path: String) -> Node:
 ## Expression over the signal's DECLARED argument names (e.g. "value > 10" for
 ## `signal value_changed(value: int)`); an emission that fails or errors the
 ## predicate is rejected and the wait keeps running (rejected count is
-## reported). Game-time window: resolves emitted:false when the window elapses
-## without a passing emission — never an error. Disconnect is guaranteed on
-## every exit path (hit, timeout, restart, tree exit).
+## reported). WALL-clock timeout: resolves emitted:false when the budget
+## elapses without a passing emission — never an error (the timeout tick runs
+## in _process BEFORE the sampling early-returns; F-QA-6). Disconnect is
+## guaranteed on every exit path (hit, timeout, restart, tree exit).
 func start_signal_wait(
 	path: String, sig_name: String, timeout_ms: int, predicate_src: String
 ) -> Dictionary:
@@ -279,6 +280,7 @@ func _on_wait_emission(args: Array) -> void:
 func _finish_wait() -> void:
 	if not _wait_active:
 		return
+	_wait_active = false  # flip FIRST: a re-entrant call must see the wait as done
 	var result := {
 		"emitted": _wait_emitted,
 		"elapsed_ms": int(_wait_elapsed_ms),
@@ -390,30 +392,30 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	# SEE-1348 M3 / F-QA-6: the one-shot wait runs FIRST, before both early
+	# returns below. `_active` is the SAMPLING flag — false for the whole life
+	# of a wait-only usage, and the early return used to make the wall-clock
+	# timeout accumulate zero deltas, so a solo wait hung past its budget until
+	# the relay killed it ([TIMEOUT] instead of the documented emitted:false).
+	# The wait resolves on WALL time under a game-layer pause and a
+	# godot_game_time freeze alike: gameplay signals cannot fire in frozen
+	# time, and the wall clock is what produces the clean negative there
+	# instead of a suspended relay. (The pause skip below serves game-time
+	# SAMPLING only — sampling must not log stale values during a freeze.)
+	if _wait_active and not _wait_emitted:
+		_wait_elapsed_ms += delta * 1000.0
+		if _wait_elapsed_ms >= float(_wait_timeout_ms):
+			_finish_wait()
+
 	if not _active:
 		return
 
-	# Measure the window in GAME time and only sample while it actually advances.
-	# The sampler inherits PROCESS_MODE_ALWAYS, so _process keeps firing under a
-	# godot_game_time freeze (tree paused) even though gameplay is static. Counting
-	# those frames would (1) fill the window with stale values and (2) run the
-	# auto-stop down during frozen idle, so a later step lands outside the window.
-	# Skipping while paused makes the window span only live gameplay / step time.
+	# Game-time SAMPLING only advances while the tree is live: under a freeze
+	# (or a game-layer pause) counting frames would fill the window with stale
+	# values and run the auto-stop down during frozen idle. The one-shot wait
+	# above deliberately does NOT share this skip (it resolves on wall time).
 	var tree := get_tree()
 	if tree != null and tree.paused:
-		return
-	# SEE-1348 M3: the one-shot wait shares this _process but runs on WALL time
-	# (before the pause skip): a wait must resolve under a game-layer pause too
-	# (UI/pause-menu signals that do fire there), and under a godot_game_time
-	# freeze the wall clock is what produces the documented clean negative —
-	# gameplay signals cannot fire in frozen time, so a frozen wait times out
-	# to emitted:false instead of suspending the relay. Predicate execution
-	# itself only sees emissions, which under freeze simply never arrive.
-	_wait_elapsed_ms += delta * 1000.0
-	if _wait_active and not _wait_emitted and _wait_elapsed_ms >= float(_wait_timeout_ms):
-		_finish_wait()
-	if not _active:
-		# Sampling not armed (wait-only usage): nothing else to do this frame.
 		return
 	_elapsed_ms += delta * 1000.0  # time_scale-scaled, unpaused-only == game time
 
@@ -478,6 +480,12 @@ func stop() -> Dictionary:
 	# _elapsed_ms already holds the game-time window and freezes once _active is
 	# false, so a late manual stop can't inflate window_ms past the real window end.
 	_active = false
+	# A pending one-shot wait must also resolve here (watch_stop tears down the
+	# whole sampler session): resolve with emitted:false so the relay gets an
+	# answer instead of hanging to its timeout. set_process(false) below would
+	# otherwise starve the wall-clock tick.
+	if _wait_active:
+		_finish_wait()
 	set_process(false)
 	_disconnect_all()
 	return collect()

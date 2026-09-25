@@ -2448,18 +2448,22 @@ func _inject_timeline_event(ev: Dictionary) -> int:
 			# (default-sync inside the coop contract, warp untouched). The raw
 			# delta is SCREEN pixels; the game integrates the ENGINE-SCALED
 			# delivered relative (input-transform = final-transform inverse), so
-			# the virtual cursor must accumulate the SAME canvas-space unit —
-			# final_transform().affine_inverse() * delta (F-QA-2: raw
-			# accumulation drifted 2x at canvas_items stretch scale 0.5).
-			# Identity at scale 1, exactly the pre-rework path. Seed from the
-			# physical cursor before the first absolute entry, as a physical
-			# mouse would. No MCPCursor in the tree (addon absent / third-party
+			# the virtual cursor must accumulate the SAME canvas-space unit.
+			# basis_xform (F-QA-7): delta is a VECTOR — only the linear part of
+			# the inverse transform applies; the `*` operator would be a POINT
+			# transform and its origin translation polluted the accumulation
+			# on maximized windows (final transform non-identity). Identity at
+			# scale 1, stretch-corrected at scale != 1. Seed from the physical
+			# cursor before the first absolute entry, as a physical mouse
+			# would. No MCPCursor in the tree (addon absent / third-party
 			# game): zero behavior change, identical to pre-sync look.
 			if is_instance_valid(_mcp_cursor) and vp != null:
 				var canvas_pos: Vector2 = vp.get_mouse_position()
 				if _mcp_cursor.has_virtual():
 					canvas_pos = _mcp_cursor.get_global_position(vp)
-				var canvas_delta: Vector2 = vp.get_final_transform().affine_inverse() * delta
+				var canvas_delta: Vector2 = vp.get_final_transform().affine_inverse().basis_xform(
+					delta
+				)
 				_mcp_cursor.set_virtual_global(canvas_pos + canvas_delta)
 			mm.position = pos
 			mm.global_position = pos

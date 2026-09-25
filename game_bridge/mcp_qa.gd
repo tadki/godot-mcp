@@ -18,9 +18,11 @@ var sampler: MCPRuntimeStateSampler = null
 # wait_for_signal is a one-shot single slot: a second wait while one is live is
 # answered with an error instead of silently stealing the first call's result
 # (the response is keyed by msg_type in the editor plugin, so two live waits
-# of the same type could not be told apart).
+# of the same type could not be told apart). Completions funnel through a
+# deferred queue so same-frame second waits cannot race the slot flip (F-QA-8).
 var _wait_pending := false
 var _wait_pending_params: Dictionary = {}
+var _finish_wait_queue: Array = []
 
 
 func _ready() -> void:
@@ -243,12 +245,22 @@ func handle_wait_for_signal(data: Array) -> void:
 
 
 func _on_wait_finished(result: Dictionary) -> void:
-	if not _wait_pending:
-		return  # a stale wait from a torn-down call — nothing to answer
-	_wait_pending = false
-	var params := _wait_pending_params
-	_wait_pending_params = {}
-	_send("qa_wait_for_signal", result.duplicate(true), params)
+	# Queued (deferred) so a second wait_for_signal arriving in the same frame
+	# as the first wait's completion cannot slip past the mutex (F-QA-8: the
+	# slot must flip to free exactly once, via this single funnel).
+	_finish_wait_queue.append(result)
+	_drain_finish_queue.call_deferred()
+
+
+func _drain_finish_queue() -> void:
+	while not _finish_wait_queue.is_empty():
+		var result: Dictionary = _finish_wait_queue.pop_front()
+		if not _wait_pending:
+			continue  # a stale wait from a torn-down call — nothing to answer
+		_wait_pending = false
+		var params := _wait_pending_params
+		_wait_pending_params = {}
+		_send("qa_wait_for_signal", result.duplicate(true), params)
 
 
 func handle_screenshot_node(data: Array) -> void:
