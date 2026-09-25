@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { defineTool } from '../core/define-tool.js';
 import { structured } from '../core/structured.js';
+import { deriveTimeouts } from '../connection/timeouts.js';
 import type { AnyToolDefinition, ImageContent, ToolContext, ToolExecuteResult } from '../core/types.js';
 
 // ── Godot response shapes ────────────────────────────────────────────────────
@@ -226,10 +227,16 @@ export const qa = defineTool({
       }
 
       case 'screenshot_node': {
-        const result = await godot.sendCommand<QaScreenshotNodeResponse>('qa_screenshot_node', {
-          path: args.path,
-          max_width: args.max_width ?? 640,
-        });
+        // F-QA-1 rework: the capture awaits frame_post_draw game-side, so it
+        // gets a real relay cascade (5s budget) — a stalled render degrades to
+        // a typed TIMEOUT instead of a socket kill, like the other
+        // long-running actions.
+        const t = deriveTimeouts(5000);
+        const result = await godot.sendCommand<QaScreenshotNodeResponse>(
+          'qa_screenshot_node',
+          { path: args.path, max_width: args.max_width ?? 640, relay_timeout_ms: t.relayMs },
+          { timeoutMs: t.serverMs }
+        );
         return screenshotNodeResult(result);
       }
     }

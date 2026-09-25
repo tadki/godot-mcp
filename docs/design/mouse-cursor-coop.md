@@ -28,7 +28,11 @@ polled readers, by design rather than by bug.
 - The bridge owns an `MCPCursor` node under `/root` (class in
   `game_bridge/mcp_cursor.gd`). Every absolute `mouse_move` / `mouse_button`
   updates it via `set_virtual_global(viewport_pos)` — **in viewport coordinates**,
-  same convention as `Viewport.get_mouse_position()`.
+  same convention as `Viewport.get_mouse_position()`. Relative `look` entries
+  keep it in sync too: the raw screen delta is mapped through
+  `get_final_transform().affine_inverse()` before accumulating, so the virtual
+  cursor moves in the same canvas-space unit the game integrates from the
+  delivered `event.relative` at any stretch scale (F-QA-2).
 - `clear_virtual()` exists but is **intentionally never called** — last-position
   semantics are useful: once an absolute entry has set the cursor, the
   cooperative reader keeps reporting that position for the rest of the session
@@ -103,6 +107,7 @@ addon-internal logo hover). No action items.
 
 - Absolute entries (`mouse_move`/`mouse_button`) → event path **+** MCPCursor
   update (when the game adopted the contract, polled readers see it too).
+  `look` entries also update it (canvas-space delta, stretch-corrected).
 - Absolute entries with **no** MCPCursor in the tree → event path only; polled
   readers see nothing (this is the documented ceiling, not a bug).
 - The **polled OS cursor** itself never moves, in every configuration.

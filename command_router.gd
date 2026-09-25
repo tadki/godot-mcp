@@ -24,6 +24,8 @@ func setup(plugin: EditorPlugin) -> void:
 	_register_handler(MCPGameTimeCommands.new(), plugin)
 	_register_handler(MCPExecCommands.new(), plugin)
 	_register_handler(MCPMeshCommands.new(), plugin)
+	# SEE-1348 WP6 (M3, §SPEC-006): godot_qa relay leg — F-QA-1 rework.
+	_register_handler(MCPQACommands.new(), plugin)
 
 
 func _register_handler(handler: MCPBaseCommand, plugin: EditorPlugin) -> void:

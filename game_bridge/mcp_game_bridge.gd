@@ -2445,18 +2445,22 @@ func _inject_timeline_event(ev: Dictionary) -> int:
 			var vp := get_viewport()
 			var pos := vp.get_mouse_position() if vp != null else Vector2.ZERO
 			# SEE-1348 M1: keep the cooperative cursor in sync with look motion
-			# (default-sync inside the coop contract, warp untouched). The
-			# delivered delta is the same canvas-space unit a physical mouse
-			# produces (the input-transform scaling above), so accumulating it
-			# onto the last virtual position — or the physical cursor before the
-			# first absolute entry seeds one — mirrors a real mouse exactly.
-			# No MCPCursor in the tree (addon absent / third-party game): zero
-			# behavior change, identical to pre-sync look.
+			# (default-sync inside the coop contract, warp untouched). The raw
+			# delta is SCREEN pixels; the game integrates the ENGINE-SCALED
+			# delivered relative (input-transform = final-transform inverse), so
+			# the virtual cursor must accumulate the SAME canvas-space unit —
+			# final_transform().affine_inverse() * delta (F-QA-2: raw
+			# accumulation drifted 2x at canvas_items stretch scale 0.5).
+			# Identity at scale 1, exactly the pre-rework path. Seed from the
+			# physical cursor before the first absolute entry, as a physical
+			# mouse would. No MCPCursor in the tree (addon absent / third-party
+			# game): zero behavior change, identical to pre-sync look.
 			if is_instance_valid(_mcp_cursor) and vp != null:
 				var canvas_pos: Vector2 = vp.get_mouse_position()
 				if _mcp_cursor.has_virtual():
 					canvas_pos = _mcp_cursor.get_global_position(vp)
-				_mcp_cursor.set_virtual_global(canvas_pos + delta)
+				var canvas_delta: Vector2 = vp.get_final_transform().affine_inverse() * delta
+				_mcp_cursor.set_virtual_global(canvas_pos + canvas_delta)
 			mm.position = pos
 			mm.global_position = pos
 			Input.parse_input_event(mm)
