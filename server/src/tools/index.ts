@@ -11,6 +11,7 @@ import { docsTools } from './docs.js';
 import { inputTools } from './input.js';
 import { profilerTools } from './profiler.js';
 import { runtimeStateTools } from './runtime-state.js';
+import { qaTools } from './qa.js';
 import { gameTimeTools } from './game-time.js';
 import { execTools } from './exec.js';
 import { validateMeshesTools } from './validate-meshes.js';
@@ -35,6 +36,7 @@ export function registerAllTools(options: RegisterOptions = {}): void {
     ...inputTools,
     ...profilerTools,
     ...runtimeStateTools,
+    ...qaTools,
     ...gameTimeTools,
     ...execTools,
     ...validateMeshesTools,
@@ -57,6 +59,7 @@ export { docsTools } from './docs.js';
 export { inputTools } from './input.js';
 export { profilerTools } from './profiler.js';
 export { runtimeStateTools } from './runtime-state.js';
+export { qaTools } from './qa.js';
 export { gameTimeTools } from './game-time.js';
 export { execTools } from './exec.js';
 export { validateMeshesTools } from './validate-meshes.js';

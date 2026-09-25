@@ -30,6 +30,7 @@ const BRIDGE_READY_IDLE_CAP_MS := 8000  # never delay run past this waiting for 
 var _logger: _MCPGameLogger
 var _profiler: MCPFrameProfiler
 var _sampler: MCPRuntimeStateSampler
+var _qa: MCPQa
 
 # Set once the bridge has told the editor the game is ready to drive. Guards the
 # announcement against firing twice and lets the headless test observe it.
@@ -63,6 +64,11 @@ func _ready() -> void:
 	EngineDebugger.register_profiler("mcp_frame_profiler", _profiler)
 	_sampler = MCPRuntimeStateSampler.new()
 	add_child(_sampler)
+	# SEE-1348 M3: qa primitives live in a child node so they inherit
+	# PROCESS_MODE_ALWAYS (waits resolve, captures happen, under pause/freeze).
+	_qa = MCPQa.new()
+	_qa.sampler = _sampler
+	add_child(_qa)
 	# SEE-1142: expose the virtual cursor under /root so game-side MousePos can
 	# find it by path; game code stays addon-optional (fallback to physical cursor).
 	_mcp_cursor = MCPCursor.new()
@@ -445,12 +451,6 @@ var _active_axes: Dictionary = {}
 # release only fires when it returns to zero. Stores primitives only ({count,
 # physical, code, mask}) so the cleanup loop never touches a freed instance.
 var _held_keys: Dictionary = {}
-# SEE-1141 Track D: last virtual mouse position (window space) for move/click/
-# drag entries. The polled OS cursor does not move when we inject motion (see
-# docs/design/mouse-input-spike.md), so we track the position ourselves and use
-# it as `position`/`global_position` on every mouse event we emit.
-var _virtual_mouse_position: Vector2 = Vector2.ZERO
-var _has_virtual_mouse_position: bool = false
 # SEE-1142: cooperative virtual cursor exposed to game code. Added to /root at
 # _ready so the game's MousePos helper can find it via has_node("/root/MCPCursor").
 var _mcp_cursor: MCPCursor = null
@@ -586,6 +586,18 @@ func _on_debugger_message(message: String, data: Array) -> bool:
 			return true
 		"validate_meshes":
 			_handle_validate_meshes(data)
+			return true
+		"qa_assert_property":
+			_qa.handle_assert_property(data)
+			return true
+		"qa_wait_for_signal":
+			_qa.handle_wait_for_signal(data)
+			return true
+		"qa_assert_layout":
+			_qa.handle_assert_layout(data)
+			return true
+		"qa_screenshot_node":
+			_qa.handle_screenshot_node(data)
 			return true
 	return false
 
@@ -2432,6 +2444,19 @@ func _inject_timeline_event(ev: Dictionary) -> int:
 			mm.screen_relative = delta
 			var vp := get_viewport()
 			var pos := vp.get_mouse_position() if vp != null else Vector2.ZERO
+			# SEE-1348 M1: keep the cooperative cursor in sync with look motion
+			# (default-sync inside the coop contract, warp untouched). The
+			# delivered delta is the same canvas-space unit a physical mouse
+			# produces (the input-transform scaling above), so accumulating it
+			# onto the last virtual position — or the physical cursor before the
+			# first absolute entry seeds one — mirrors a real mouse exactly.
+			# No MCPCursor in the tree (addon absent / third-party game): zero
+			# behavior change, identical to pre-sync look.
+			if is_instance_valid(_mcp_cursor) and vp != null:
+				var canvas_pos: Vector2 = vp.get_mouse_position()
+				if _mcp_cursor.has_virtual():
+					canvas_pos = _mcp_cursor.get_global_position(vp)
+				_mcp_cursor.set_virtual_global(canvas_pos + delta)
 			mm.position = pos
 			mm.global_position = pos
 			Input.parse_input_event(mm)
@@ -2442,19 +2467,28 @@ func _inject_timeline_event(ev: Dictionary) -> int:
 			# event with the ABSOLUTE position and zero relative (this is a
 			# cursor SET, not a drag). Hover/gui_get_hovered_control update; the
 			# POLLED get_mouse_position() does NOT (documented ceiling).
+			# SEE-1348 M1: moves carry button_mask (the press registry), so an
+			# injected drag's intermediate moves read as held-button motion to
+			# mask-driven games; with no button held the mask is 0, as before.
 			var target := _virtual_mouse_window_pos(Vector2(float(ev.x), float(ev.y)))
 			var move_ev := InputEventMouseMotion.new()
 			move_ev.position = target
 			move_ev.global_position = target
+			move_ev.button_mask = _injected_mouse_mask()
 			Input.parse_input_event(move_ev)
 		"mouse_button":
 			# SEE-1141 Track D: absolute click. The button event carries the same
 			# virtual window position; press/release parity and cleanup ride the
 			# _held_mouse_buttons registry exactly like held actions/keys.
+			# SEE-1348 M1: the press event itself also carries the mask of the
+			# OTHER buttons still held (multi-button drags), keeping the mask and
+			# the registry in one source of truth.
 			var btn_pos := _virtual_mouse_window_pos(Vector2(float(ev.x), float(ev.y)))
 			var btn := InputEventMouseButton.new()
 			btn.button_index = int(ev.button) as MouseButton
 			btn.pressed = bool(ev.is_press)
+			var next_mask: int = _injected_mouse_mask_with(int(ev.button), bool(ev.is_press))
+			btn.button_mask = next_mask
 			btn.position = btn_pos
 			btn.global_position = btn_pos
 			Input.parse_input_event(btn)
@@ -2466,19 +2500,52 @@ func _inject_timeline_event(ev: Dictionary) -> int:
 	return int(ev.get("complete", 0))
 
 
+# SEE-1348 M1: the button_mask carried by injected mouse events — derived from
+# the held-button registry, so mask and release parity stay one source of truth.
+func _injected_mouse_mask() -> int:
+	var mask := 0
+	for mkey in _held_mouse_buttons:
+		mask |= _mouse_button_mask_bit(int(_held_mouse_buttons[mkey]["button"]))
+	return mask
+
+
+# Mask for a button transition BEFORE the registry update: replaces the bit for
+# this button with the post-transition state so the event reports the state the
+# game will hold once the event lands.
+func _injected_mouse_mask_with(button_index: int, is_press: bool) -> int:
+	var mask := _injected_mouse_mask()
+	var bit := _mouse_button_mask_bit(button_index)
+	if is_press:
+		mask |= bit
+	else:
+		mask &= ~bit
+	return mask
+
+
+func _mouse_button_mask_bit(button_index: int) -> int:
+	match button_index:
+		MOUSE_BUTTON_LEFT:
+			return MOUSE_BUTTON_MASK_LEFT
+		MOUSE_BUTTON_RIGHT:
+			return MOUSE_BUTTON_MASK_RIGHT
+		MOUSE_BUTTON_MIDDLE:
+			return MOUSE_BUTTON_MASK_MIDDLE
+		# Wheel events have no mask bit: they are transient scrolls, never held.
+		_:
+			return 0
+
+
 ## SEE-1141 Track D: canvas/viewport coords -> window-client coords via the
-## viewport's final transform, and record the virtual cursor. First use seeds
-## from the physical cursor so a click without a prior move still has a sane
-## position.
+## viewport's final transform. SEE-1348 M1: the separate write-only window-space
+## tracker (_virtual_mouse_position) is gone — MCPCursor (viewport space) is the
+## single record of the virtual cursor, and last-position semantics keep it set
+## for the session (clear_virtual is intentionally never called; docs/design/
+## mouse-cursor-coop.md). First-use seeding still reads the physical cursor.
 func _virtual_mouse_window_pos(canvas_pos: Vector2) -> Vector2:
 	var vp := get_viewport()
 	if vp == null:
 		return canvas_pos
-	if not _has_virtual_mouse_position:
-		_virtual_mouse_position = vp.get_mouse_position()
-		_has_virtual_mouse_position = true
 	var window_pos: Vector2 = vp.get_final_transform() * canvas_pos
-	_virtual_mouse_position = window_pos
 	# SEE-1142: keep the cooperative cursor in viewport space — game code reads
 	# viewport/global coords (same convention as Viewport.get_mouse_position),
 	# not window-client. Inverse of the transform we just applied.

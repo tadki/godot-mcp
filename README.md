@@ -26,7 +26,7 @@ The fork carries a patch layer on top of upstream: multi-agent port isolation (S
 
 ## What the server does
 
-21 tools, 86 actions. Full API docs in the [Tools Reference](docs/tools/README.md). Highlights:
+22 tools, 90 actions. Full API docs in the [Tools Reference](docs/tools/README.md). Highlights:
 
 | Tool | What it does |
 |------|--------------|
@@ -34,6 +34,7 @@ The fork carries a patch layer on top of upstream: multi-agent port isolation (S
 | `godot_editor_read` / `godot_editor_edit` | Editor state, selection, screenshots, error log; run/stop/restart |
 | `godot_input` | Inject input into the running game: actions, joypad, raw keys, mouse-look, text |
 | `godot_runtime_state` | Live game state as JSON: digests, watch windows, signal timelines |
+| `godot_qa` | Live-game QA assertions: property checks, one-shot signal waits with predicates, layout checks, per-node screenshot crops |
 | `godot_game_time` | Freeze, step, and step-until on the game clock — deterministic observation |
 | `godot_exec` | Run GDScript inside the running game for test scenario setup |
 | `godot_profiler` | Metric snapshots and per-frame time series with spike detection |
@@ -93,7 +94,7 @@ The vendored addon (`commands/`, `core/`, addon root scripts) is consumed as-is 
 - [Installation Guide](INSTALL.md) — MCP client configs (Claude Desktop, Claude Code, VSCode/Copilot, and more)
 - [Architecture Guide](docs/architecture.md) — how the server, addon, and game bridge fit together
 - [Runtime State Guide](docs/runtime-state-guide.md) — expose game state to agents via `mcp_watch` and `_mcp_state()`
-- [Tools Reference](docs/tools/README.md) — all 21 tools with full API docs
+- [Tools Reference](docs/tools/README.md) — all 22 tools with full API docs
 - [Troubleshooting](docs/troubleshooting.md) — connection checklist, CLI smoke test, common fixes
 - [Migrating to v4](docs/migrating-to-v4.md) — renamed tools, removed actions, allowlist updates
 - [Contributing](CONTRIBUTING.md) — dev setup, adding tools, release process

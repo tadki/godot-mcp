@@ -4,7 +4,7 @@ MCP (Model Context Protocol) server for Godot Engine integration.
 
 ## Overview
 
-This server provides **21 tools** for AI-assisted Godot development.
+This server provides **22 tools** for AI-assisted Godot development.
 
 ## Quick Links
 
@@ -29,6 +29,7 @@ This server provides **21 tools** for AI-assisted Godot development.
 | [Input](tools/input.md) | 1 | Input injection for testing running games: named actions, joypad buttons, analog axes and stick vectors, raw keyboard keys with modifier combos, relative mouse-look, absolute mouse positioning (mouse_move/mouse_button), and text typing. Absolute entries drive the event path only — the polled OS cursor deliberately does not move (DECIDED: docs/design/mouse-input-spike.md); cooperative games adopt MCPCursor/MousePos instead (migration: docs/design/mouse-cursor-coop.md). |
 | [Profiler](tools/profiler.md) | 1 | Performance profiling: snapshots, per-frame time series with spike detection, active process inspection, signal connections |
 | [Runtime State](tools/runtime-state.md) | 1 | Observe live game entity state as structured JSON — positions, velocities, animation state, and custom _mcp_state() data. Works out of the box for both 2D and 3D scenes (the auto fallback surfaces visible 3D world nodes — meshes, gridmaps, cameras, lights, physics bodies and areas — not just UI). Much cheaper than screenshots. |
+| [QA Assertions](tools/qa.md) | 1 | Live-game QA assertion primitives: property assertions, one-shot signal waits with predicates, layout geometry checks, and per-node screenshot crops. All read-only; drives the RUNNING game (freeze included) — not a GUT replacement (GUT owns repo test suites). |
 | [Game Time Control](tools/game-time.md) | 1 | Deterministic game-clock control: freeze the running game, step a bounded slice of game time (or step until a condition holds) with inputs riding inside the window, then thaw — so observation is not racing ahead between tool calls. |
 | [Game Script Execution](tools/exec.md) | 1 | Run GDScript inside the running game for test scenario setup: one-shot state mutations plus persistent holder-managed nodes, behind a denylist accident guard. |
 | [Mesh Validation](tools/validate-meshes.md) | 1 | Detect silently corrupt procedurally generated mesh data (inside-out winding, dropped triangles, degenerate UVs, NaN normals/tangents) that renders without errors and masquerades as lighting problems. Findings carry their likely cause and fix; a cheap scene-load sniff also attaches one-line warnings to game screenshots. |

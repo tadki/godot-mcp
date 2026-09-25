@@ -5,12 +5,12 @@ const MAX_FIELDS := 32
 const MAX_SAMPLES_PER_FIELD := 200
 const MAX_SIGNALS := 16
 const MAX_EVENTS := 200
-const MAX_ARGS_CHARS := 100    # total stringified-args cap per event
-const MAX_ARG_CHARS := 40      # per-arg cap before joining
+const MAX_ARGS_CHARS := 100  # total stringified-args cap per event
+const MAX_ARG_CHARS := 40  # per-arg cap before joining
 const MAX_SIGNAL_ARITY := 5
 
 var _active: bool = false
-var _specs: Array = []       # [{node, fields: [{key, resolver}]}]
+var _specs: Array = []  # [{node, fields: [{key, resolver}]}]
 var _hz: int = 20
 var _duration_ms: int = 1000
 # GAME time accumulated (unpaused, time_scale-scaled), NOT wall clock: under a
@@ -20,14 +20,40 @@ var _elapsed_ms: float = 0.0
 var _frame_index: int = 0
 var _sample_interval: int = 1  # sample every N frames
 var _samples: Dictionary = {}  # field_key -> Array of {t_ms, value}
-var _events: Array = []        # [{t_ms, source, signal, args?}] -- signal emissions this window
+var _events: Array = []  # [{t_ms, source, signal, args?}] -- signal emissions this window
 var _events_truncated: bool = false
-var _events_dropped: int = 0   # total signal emissions dropped (per-signal cap or global cap)
+var _events_dropped: int = 0  # total signal emissions dropped (per-signal cap or global cap)
 var _per_signal_cap: int = MAX_EVENTS  # equal share of the budget, set once connections are known
-var _signal_counts: Dictionary = {}    # "source:signal" -> kept count (enforces the per-signal cap)
-var _signal_dropped: Dictionary = {}   # "source:signal" -> dropped count (reported to the agent)
+var _signal_counts: Dictionary = {}  # "source:signal" -> kept count (enforces the per-signal cap)
+var _signal_dropped: Dictionary = {}  # "source:signal" -> dropped count (reported to the agent)
 var _field_truncated: Dictionary = {}  # full_key -> true once MAX_SAMPLES_PER_FIELD was hit
-var _connections: Array = []   # [{node, sig_name, callable}] -- live connections to tear down
+var _connections: Array = []  # [{node, sig_name, callable}] -- live connections to tear down
+
+# ── SEE-1348 M3: one-shot signal wait (godot_qa wait_for_signal) ────────────
+# Reuses the watch timeline's connection machinery — arity-matched recorder
+# lambda, main-thread-only emissions, guaranteed teardown — as a one-shot:
+# first emission passing the optional predicate resolves the wait; the timeout
+# elapsing resolves emitted:false (never an error — "no signal in the window"
+# is a legitimate QA verdict). The timeout counts WALL time deliberately: under
+# a godot_game_time freeze gameplay signals cannot fire, and a wall-clock
+# timeout is what turns that into the documented clean negative (emitted:false)
+# instead of a suspended relay — see the freeze note in _process.
+signal qa_wait_finished(result: Dictionary)
+
+const WAIT_TIMEOUT_MAX_MS := 30000
+
+var _wait_active := false
+var _wait_emitted := false
+var _wait_rejected := 0
+var _wait_predicate_failed := false
+var _wait_node: Node = null
+var _wait_sig_name := ""
+var _wait_callable: Callable = Callable()
+var _wait_predicate: Expression = null
+var _wait_timeout_ms := 0
+var _wait_elapsed_ms := 0.0
+var _wait_result_args: Array = []
+var _wait_hit_ms := 0
 
 
 func start(specs: Array, hz: int, duration_ms: int, signal_specs: Array = []) -> Dictionary:
@@ -45,7 +71,11 @@ func start(specs: Array, hz: int, duration_ms: int, signal_specs: Array = []) ->
 	_duration_ms = clampi(duration_ms, 100, 5000)
 	_elapsed_ms = 0.0
 	_frame_index = 0
-	_sample_interval = max(1, int(Engine.get_frames_per_second() / _hz)) if Engine.get_frames_per_second() > 0 else max(1, int(60.0 / _hz))
+	_sample_interval = (
+		max(1, int(Engine.get_frames_per_second() / _hz))
+		if Engine.get_frames_per_second() > 0
+		else max(1, int(60.0 / _hz))
+	)
 
 	var field_count := 0
 	for spec in specs:
@@ -150,16 +180,156 @@ func _signal_arg_count(node: Node, sig_name: String) -> int:
 	return -1
 
 
+## SEE-1348 M3: public node resolution for the qa handlers — same absolute-path
+## then scene-relative resolution the watch timeline uses, so qa paths and
+## watch paths are interchangeable.
+func resolve_node(path: String) -> Node:
+	return _resolve_node(path)
+
+
+## SEE-1348 M3: wait for ONE emission of a signal. The optional predicate is an
+## Expression over the signal's DECLARED argument names (e.g. "value > 10" for
+## `signal value_changed(value: int)`); an emission that fails or errors the
+## predicate is rejected and the wait keeps running (rejected count is
+## reported). Game-time window: resolves emitted:false when the window elapses
+## without a passing emission — never an error. Disconnect is guaranteed on
+## every exit path (hit, timeout, restart, tree exit).
+func start_signal_wait(
+	path: String, sig_name: String, timeout_ms: int, predicate_src: String
+) -> Dictionary:
+	_teardown_wait()  # a restart while a wait is live tears the old one down
+	var node := _resolve_node(path)
+	if node == null:
+		return {"error": "node_not_found: %s" % path}
+	var arg_count := _signal_arg_count(node, sig_name)
+	if arg_count < 0:
+		return {"error": "signal_not_found: %s on %s" % [sig_name, path]}
+	if arg_count > MAX_SIGNAL_ARITY:
+		return {
+			"error":
+			"unsupported_arity: %s has %d args (max %d)" % [sig_name, arg_count, MAX_SIGNAL_ARITY]
+		}
+	var predicate: Expression = null
+	var src := predicate_src.strip_edges()
+	if not src.is_empty():
+		var names := PackedStringArray()
+		for info in node.get_signal_list():
+			if str(info.get("name", "")) == sig_name:
+				for a in info.get("args", []):
+					names.append(str(a.get("name", "")))
+		predicate = Expression.new()
+		if predicate.parse(src, names) != OK:
+			return {"error": "predicate parse error: %s" % predicate.get_error_text()}
+	_wait_node = node
+	_wait_sig_name = sig_name
+	_wait_predicate = predicate
+	_wait_predicate_failed = false
+	_wait_timeout_ms = clampi(timeout_ms, 100, WAIT_TIMEOUT_MAX_MS)
+	_wait_elapsed_ms = 0.0
+	_wait_emitted = false
+	_wait_rejected = 0
+	_wait_active = true
+	set_process(true)
+	var cb := _make_wait_recorder(arg_count)
+	if node.connect(StringName(sig_name), cb) != OK:
+		_wait_active = false
+		_wait_node = null
+		_wait_predicate = null
+		return {"error": "connect_failed: %s:%s" % [path, sig_name]}
+	_wait_callable = cb
+	return {"connected": true, "arg_count": arg_count, "timeout_ms": _wait_timeout_ms}
+
+
+func _make_wait_recorder(arg_count: int) -> Callable:
+	match arg_count:
+		0:
+			return func() -> void: _on_wait_emission([])
+		1:
+			return func(a1) -> void: _on_wait_emission([a1])
+		2:
+			return func(a1, a2) -> void: _on_wait_emission([a1, a2])
+		3:
+			return func(a1, a2, a3) -> void: _on_wait_emission([a1, a2, a3])
+		4:
+			return func(a1, a2, a3, a4) -> void: _on_wait_emission([a1, a2, a3, a4])
+		_:
+			return func(a1, a2, a3, a4, a5) -> void: _on_wait_emission([a1, a2, a3, a4, a5])
+
+
+func _on_wait_emission(args: Array) -> void:
+	if not _wait_active or _wait_emitted:
+		return
+	if _wait_predicate != null:
+		var v: Variant = _wait_predicate.execute(args, self)
+		if _wait_predicate.has_execute_failed():
+			_wait_predicate_failed = true
+			_wait_rejected += 1
+			return
+		if not bool(v):
+			_wait_rejected += 1
+			return
+	_wait_emitted = true
+	_wait_hit_ms = int(_wait_elapsed_ms)
+	_wait_result_args = args.duplicate()
+	# Deferred: the emission may ride a physics callback; the bridge answers the
+	# relay over the debugger channel, which should not run mid-callback.
+	_finish_wait.call_deferred()
+
+
+func _finish_wait() -> void:
+	if not _wait_active:
+		return
+	var result := {
+		"emitted": _wait_emitted,
+		"elapsed_ms": int(_wait_elapsed_ms),
+		"timeout_ms": _wait_timeout_ms,
+		"rejected": _wait_rejected,
+		"predicate_supplied": _wait_predicate != null,
+	}
+	if _wait_predicate_failed:
+		result["predicate_failed"] = true
+	if _wait_emitted:
+		result["t_ms"] = _wait_hit_ms
+		result["args"] = _stringify_args(_wait_result_args)
+	_teardown_wait()
+	qa_wait_finished.emit(result)
+
+
+func _teardown_wait() -> void:
+	_wait_active = false
+	# Same untyped guards as _disconnect_all: a freed emitter must not abort the
+	# teardown before the disconnect check runs.
+	var node = _wait_node
+	if (
+		node != null
+		and is_instance_valid(node)
+		and _wait_sig_name != ""
+		and node.is_connected(StringName(_wait_sig_name), _wait_callable)
+	):
+		node.disconnect(StringName(_wait_sig_name), _wait_callable)
+	_wait_node = null
+	_wait_sig_name = ""
+	_wait_callable = Callable()
+	_wait_predicate = null
+
+
 func _make_recorder(path: String, sig_name: String, arg_count: int) -> Callable:
 	# connect() requires the Callable arity to match the signal's; lambdas capture
 	# path/sig_name by value so no get_path() happens at record time.
 	match arg_count:
-		0: return func() -> void: _record_event(path, sig_name, [])
-		1: return func(a1) -> void: _record_event(path, sig_name, [a1])
-		2: return func(a1, a2) -> void: _record_event(path, sig_name, [a1, a2])
-		3: return func(a1, a2, a3) -> void: _record_event(path, sig_name, [a1, a2, a3])
-		4: return func(a1, a2, a3, a4) -> void: _record_event(path, sig_name, [a1, a2, a3, a4])
-		_: return func(a1, a2, a3, a4, a5) -> void: _record_event(path, sig_name, [a1, a2, a3, a4, a5])
+		0:
+			return func() -> void: _record_event(path, sig_name, [])
+		1:
+			return func(a1) -> void: _record_event(path, sig_name, [a1])
+		2:
+			return func(a1, a2) -> void: _record_event(path, sig_name, [a1, a2])
+		3:
+			return func(a1, a2, a3) -> void: _record_event(path, sig_name, [a1, a2, a3])
+		4:
+			return func(a1, a2, a3, a4) -> void: _record_event(path, sig_name, [a1, a2, a3, a4])
+		_:
+			return func(a1, a2, a3, a4, a5) -> void:
+				_record_event(path, sig_name, [a1, a2, a3, a4, a5])
 
 
 func _record_event(source: String, sig_name: String, args: Array) -> void:
@@ -216,6 +386,7 @@ func _disconnect_all() -> void:
 
 func _exit_tree() -> void:
 	_disconnect_all()
+	_teardown_wait()
 
 
 func _process(delta: float) -> void:
@@ -230,6 +401,19 @@ func _process(delta: float) -> void:
 	# Skipping while paused makes the window span only live gameplay / step time.
 	var tree := get_tree()
 	if tree != null and tree.paused:
+		return
+	# SEE-1348 M3: the one-shot wait shares this _process but runs on WALL time
+	# (before the pause skip): a wait must resolve under a game-layer pause too
+	# (UI/pause-menu signals that do fire there), and under a godot_game_time
+	# freeze the wall clock is what produces the documented clean negative —
+	# gameplay signals cannot fire in frozen time, so a frozen wait times out
+	# to emitted:false instead of suspending the relay. Predicate execution
+	# itself only sees emissions, which under freeze simply never arrive.
+	_wait_elapsed_ms += delta * 1000.0
+	if _wait_active and not _wait_emitted and _wait_elapsed_ms >= float(_wait_timeout_ms):
+		_finish_wait()
+	if not _active:
+		# Sampling not armed (wait-only usage): nothing else to do this frame.
 		return
 	_elapsed_ms += delta * 1000.0  # time_scale-scaled, unpaused-only == game time
 
