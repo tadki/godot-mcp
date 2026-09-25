@@ -55,6 +55,44 @@ SIDECAR_REL_PATH=".godot/${SIDECAR_FILENAME}"
 SIDECAR_STATE_ACTIVE="active"
 SIDECAR_STATE_RELEASED="released"
 
+# SEE-1348 WP4 (§SPEC-007, SEE-1326 §3-M4): all sidecar WRITERS converge on
+# sidecar_mutate — flock fd9 on <sidecar>.lock + tmp+mv, the same protocol as
+# port-registry.lib.sh:port_registry_upsert (blocking flock; critical section
+# short; queue depth bounded by write time). Before this, the three writers
+# did bare mktemp+mv: two concurrent read-modify-writes could interleave and
+# the later rename would silently discard the earlier writer's update.
+#
+# 红线读法 (SEE-1326 §6 Atlas ruling): "单文件" = the sidecar JSON is the
+# single DATA file; the empty-inode .lock is bookkeeping, not a second data
+# file (port-registry .lock precedent anchored in the lib's own comments).
+#
+# Usage: sidecar_mutate <sidecar_path> <writer_function>
+#   The writer function runs with SIDE=<sidecar_path> in its environment and
+#   performs its complete read-modify-write (mktemp → node → chmod → mv)
+#   inside the critical section. Readers are NOT locked (single-writer
+#   exclusion only — atomic rename guarantees readers see old-or-new).
+sidecar_mutate() {
+    local sidecar="$1" writer_fn="$2"
+    [[ -n "$sidecar" ]] || die "sidecar_mutate: sidecar path required."
+    [[ "$(declare -f "$writer_fn" 2>/dev/null)" ]] || die "sidecar_mutate: writer function '$writer_fn' is not defined."
+    mkdir -p "$(dirname "$sidecar")"
+    local lock_path="${sidecar}.lock"
+    # Stable inode for unambiguous release semantics on shared filesystems
+    # (registry protocol comment, port-registry.lib.sh).
+    : > "$lock_path" 2>/dev/null || true
+    exec 9>"$lock_path"
+    # BLOCKING flock — serialize concurrent writers; contention never dies
+    # (a lease write is part of the allocation path; registry precedent).
+    flock 9 || {
+        exec 9>&-
+        die "sidecar_mutate: flock on ${lock_path} failed (filesystem error)."
+    }
+    SIDE="$sidecar" "$writer_fn"
+    local rc=$?
+    exec 9>&-
+    return $rc
+}
+
 # Resolve the sidecar path for a given project.godot path (file or dir).
 # Echoes <dir>/.godot/mcp-lease.json. Does NOT require the file to exist.
 sidecar_path_for() {
@@ -113,12 +151,10 @@ sidecar_write_active() {
     local project_godot="$1" port="$2" agent="${3:-}"
     [[ -n "$project_godot" ]] || die "sidecar_write_active: project.godot path required."
     [[ -n "$port" ]] || die "sidecar_write_active: port required."
-    local sidecar worktree tmp
+    local sidecar worktree
     sidecar="$(sidecar_path_for "$project_godot")"
     worktree="$(dirname "$sidecar")"          # the worktree root (= dirname of project.godot)
     worktree="${worktree%/.godot}"            # strip the /.godot suffix
-    mkdir -p "$(dirname "$sidecar")"
-    tmp="$(mktemp)"
     SIDE_WORKTREE="$worktree" SIDE_PORT="$port" SIDE_AGENT="$agent" \
     SIDE_PID="$$" SIDE_NOTES="$SIDECAR_NOTES" \
     SIDE_RUNTIME_ID="${KOL_RUNTIME_ID:-}" SIDE_TASK_ID="${KOL_TASK_ID:-}" \
@@ -126,7 +162,16 @@ sidecar_write_active() {
     SIDE_KEEP_LEASE_ID="${KOL_KEEP_LEASE_ID:-}" \
     SIDE_PREDECESSOR_LEASE_ID="${SIDE_PREDECESSOR_LEASE_ID:-}" \
     SIDE_WORKTREE_FIELD="${SIDE_WORKTREE_FIELD:-}" \
-    node -e '
+    sidecar_mutate "$sidecar" _sidecar_write_active_locked
+    echo "$sidecar"
+}
+
+# Writer for sidecar_write_active — runs inside the sidecar_mutate critical
+# section (SIDE = sidecar path).
+_sidecar_write_active_locked() {
+    local tmp
+    tmp="$(mktemp "${SIDE}.tmp.XXXXXX")"
+    SIDE_TMP="$tmp" node -e '
         const crypto = require("crypto");
         const env = process.env;
         const out = {
@@ -157,11 +202,10 @@ sidecar_write_active() {
         // （/mnt/d 宿主归一，D:/... == Godot 项目目录形态）。
         if (env.SIDE_PREDECESSOR_LEASE_ID) out.predecessor_lease_id = env.SIDE_PREDECESSOR_LEASE_ID;
         if (env.SIDE_WORKTREE_FIELD) out.worktree = env.SIDE_WORKTREE_FIELD;
-        process.stdout.write(JSON.stringify(out, null, 2) + "\n");
-    ' > "$tmp"
+        require("fs").writeFileSync(env.SIDE_TMP, JSON.stringify(out, null, 2) + "\n", "utf8");
+    ' || { rm -f "$tmp"; return 1; }
     chmod 0644 "$tmp"
-    mv "$tmp" "$sidecar"
-    echo "$sidecar"
+    mv "$tmp" "$SIDE"
 }
 
 # Atomically transition the sidecar to RELEASED state. Idempotent: no-op
@@ -176,37 +220,41 @@ sidecar_write_released() {
     if [[ "$state" == "$SIDECAR_STATE_RELEASED" ]]; then
         return 0                       # already released
     fi
-    local tmp
-    tmp="$(mktemp)"
     REL_NOW="$(node -e 'process.stdout.write(new Date().toISOString())' 2>/dev/null || printf '%s' '')" \
+    sidecar_mutate "$sidecar" _sidecar_write_released_locked
+}
+
+# Writer for sidecar_write_released — runs inside the sidecar_mutate critical
+# section (SIDE = sidecar path).
+_sidecar_write_released_locked() {
+    local tmp
+    tmp="$(mktemp "${SIDE}.tmp.XXXXXX")"
+    REL_NOW="${REL_NOW:-}" SIDE_TMP="$tmp" \
     node -e '
+        const fs = require("fs");
         let raw = "";
-        process.stdin.on("data", c => raw += c);
-        process.stdin.on("end", () => {
-            try {
-                const o = JSON.parse(raw);
-                o.state = "released";
-                o.released_at = process.env.REL_NOW || new Date().toISOString();
-                process.stdout.write(JSON.stringify(o, null, 2) + "\n");
-            } catch (e) {
-                // Malformed sidecar — write a minimal released record so the
-                // file still reflects lease-end. configure will overwrite it
-                // on the next active lease.
-                const minimal = {
-                    schema_version: 2, port: 0, agent: "", label: "",
-                    state: "released", lease_id: "",
-                    worktree: "", configured_at: "",
-                    runtime_id: "", task_id: "",
-                    configured_by_pid: null,
-                    released_at: process.env.REL_NOW || new Date().toISOString(),
-                    notes: "SEE-1117 sidecar lease (restored from malformed)"
-                };
-                process.stdout.write(JSON.stringify(minimal, null, 2) + "\n");
-            }
-        });
-    ' < "$sidecar" > "$tmp"
+        try { raw = fs.readFileSync(process.env.SIDE, "utf8"); } catch (e) { process.exit(0); }
+        let o = null;
+        try { o = JSON.parse(raw); } catch (e) { o = null; }
+        if (o === null || typeof o !== "object") {
+            // Malformed sidecar — write a minimal released record so the
+            // file still reflects lease-end. configure will overwrite it
+            // on the next active lease.
+            o = {
+                schema_version: 2, port: 0, agent: "", label: "",
+                state: "released", lease_id: "",
+                worktree: "", configured_at: "",
+                runtime_id: "", task_id: "",
+                configured_by_pid: null,
+                notes: "SEE-1117 sidecar lease (restored from malformed)"
+            };
+        }
+        o.state = "released";
+        o.released_at = process.env.REL_NOW || new Date().toISOString();
+        fs.writeFileSync(process.env.SIDE_TMP, JSON.stringify(o, null, 2) + "\n", "utf8");
+    ' || { rm -f "$tmp"; return 1; }
     chmod 0644 "$tmp"
-    mv "$tmp" "$sidecar"
+    mv "$tmp" "$SIDE"
 }
 
 # Convenience: echo "active" / "released" / "" (absent or malformed).
@@ -230,16 +278,25 @@ sidecar_set_proxy_pid() {
     local sidecar
     sidecar="$(sidecar_path_for "$project_godot")"
     [[ -f "$sidecar" ]] || return 0
+    PROXY_PID="$proxy_pid" RID="${KOL_RUNTIME_ID:-}" \
+    sidecar_mutate "$sidecar" _sidecar_set_proxy_pid_locked
+    return 0
+}
+
+# Writer for sidecar_set_proxy_pid — runs inside the sidecar_mutate critical
+# section (SIDE = sidecar path). The read-modify-write races this fixes are
+# exactly the ones §SPEC-007 targets: an unlocked concurrent configure or
+# release could interleave between the node read and renameSync.
+_sidecar_set_proxy_pid_locked() {
     local tmp
-    tmp="$(mktemp)"
-    PROXY_PID="$proxy_pid" \
-    RID="${KOL_RUNTIME_ID:-}" SIDE="$sidecar" \
+    tmp="$(mktemp "${SIDE}.tmp.XXXXXX")"
+    PROXY_PID="${PROXY_PID:-}" RID="${RID:-}" SIDE_TMP="$tmp" \
     node -e '
         const fs = require("fs");
         let o;
         try { o = JSON.parse(fs.readFileSync(process.env.SIDE, "utf8")); } catch (e) { process.exit(0); }
         // Only our runtime active lease; concurrent-slot protection mirrors
-        // markIntentionalRelease (proxy.mjs): a DIFFERENT runtime_id is never
+        // markIntentionalRelease (lifecycle.mjs): a DIFFERENT runtime_id is never
         // touched, an empty one (legacy) is accepted.
         if (o.runtime_id && o.runtime_id !== process.env.RID) process.exit(0);
         if (o.state !== "active") process.exit(0);
@@ -250,11 +307,10 @@ sidecar_set_proxy_pid() {
             try { if (process.kill(cur, 0)) process.exit(0); } catch (e) { /* dead — proceed */ }
         }
         o.proxy_pid = Number(process.env.PROXY_PID);
-        const tmp = process.env.SIDE + ".tmp." + process.pid;
-        fs.writeFileSync(tmp, JSON.stringify(o, null, 2) + "\n", "utf8");
-        fs.renameSync(tmp, process.env.SIDE);
-    ' || { rm -f "$tmp"; return 0; }
-    rm -f "$tmp"
+        fs.writeFileSync(process.env.SIDE_TMP, JSON.stringify(o, null, 2) + "\n", "utf8");
+        fs.renameSync(process.env.SIDE_TMP, process.env.SIDE);
+    '
+    rm -f "$tmp"   # no-op after a successful rename; cleans up no-op exits
     return 0
 }
 

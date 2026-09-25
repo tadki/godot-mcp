@@ -191,8 +191,60 @@ out.dir_form = form === "dir_form";
 out.legacy_flat = form === "legacy_flat";
 out.editor_pid = pid;
 if (pid && /^\d+$/.test(pid)) {
-    try { process.kill(Number(pid), 0); out.editor_pid_alive = true; }
-    catch (e) { out.editor_pid_alive = e.code === "EPERM"; }
+    // SEE-1348 WP4 (§SPEC-008) 判活链路核验结论 + 修复：历史上这里用裸
+    // process.kill(pid,0) 判定 pidfile 里的 PID——但该 PID 可能是 Windows
+    // editor pid（schtasks/interop CIM 解析路径写入），WSL 侧 kill(0) 对
+    // 活着的 Windows 进程恒报 ESRCH，"活" 被误判为 "死"。修复 = 按来源
+    // 分流：powershell.exe 可用时走 Get-Process 计数探针（reaper pid_alive
+    // 同款），否则回退 kill(0)（仅对确知的 WSL pid 可靠）。
+    const n = Number(pid);
+    let alive = null;
+    try {
+        if (process.platform === "win32") {
+            alive = true; // native Windows caller: kill(0) is authoritative
+            try { process.kill(n, 0); } catch (e) { alive = e.code === "EPERM"; }
+        } else if (fs.existsSync("/proc/" + n)) {
+            // /proc hit = a WSL-side pid (interop wrapper) — kill(0) is the
+            // authoritative probe for those. Checked FIRST: the Windows probe
+            // below can never see a WSL pid and would misreport it dead.
+            try { process.kill(n, 0); alive = true; }
+            catch (e) { alive = e.code === "EPERM"; }
+        } else {
+            const { execFileSync } = require("child_process");
+            // powershell.exe may be missing from PATH in minimal WSL shells —
+            // fall through to the well-known System32 location (same two-step
+            // resolution the launcher uses).
+            let psh = null;
+            for (const cand of ["powershell.exe", "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"]) {
+                try { execFileSync(cand, ["-NoProfile", "-Command", "exit 0"], { timeout: 10000, stdio: "ignore" }); psh = cand; break; } catch (e) { /* next */ }
+            }
+            if (!psh) {
+                alive = null; // probe unavailable — degrade, do not misjudge
+            } else try {
+                const res = execFileSync(
+                    psh,
+                    ["-NoProfile", "-Command",
+                     "$p = Get-Process -Id " + n + " -ErrorAction SilentlyContinue; " +
+                     "if ($p) { Write-Output (\"1 \" + $p.ProcessName) } else { Write-Output \"0\" }"],
+                    { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"] }
+                ).trim().split(/\r?\n/)[0] || "";
+                const parts = res.split(" ");
+                if (parts[0] === "1") {
+                    const name = parts.slice(1).join(" ").trim();
+                    // Name check guards PID reuse; unreadable name trusts count.
+                    alive = !name || /^godot/i.test(name);
+                } else if (parts[0] === "0") {
+                    alive = false;
+                } else {
+                    alive = null; // powershell failed entirely — unknown
+                }
+            } catch (e) {
+                alive = null; // no powershell / timeout — degrade, do not misjudge
+            }
+        }
+    } catch (e) { alive = null; }
+    out.editor_pid_alive = alive;
+    if (alive === null) out.editor_pid_alive_degraded = "probe-unavailable";
 } else if (pid === "pending") {
     out.editor_pid_alive = null; // start-godot-editor 写 "pending" 直到 CIM 解析出真实 Windows PID
 } else {
