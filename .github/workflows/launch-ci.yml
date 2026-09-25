@@ -72,7 +72,7 @@ jobs:
         run: npm ci --no-audit --no-fund
       # SEE-1334 SPEC-023: the fast tier's speed promise is checked nightly by
       # launch-special.yml's speed-audit job; PR runs stay plain.
-      - name: Run fast-tier shell harnesses via vitest (68 .sh entries of 88 total; SEE-1344 triage)
+      - name: Run fast-tier shell harnesses via vitest (69 .sh entries of 90 total; SEE-1344 triage)
         # Budget note (SEE-1344 ④): job budget unchanged at 10min; local CI-shape
         # sampling (Revy ③ r1-r3) measured 723-772s on the shared 8-core box —
         # CI-runner wall evidence is collected via PR #16 runs (Revy ③b).
@@ -106,7 +106,7 @@ jobs:
       # launch-special.yml's coverage-launch job (Wed+Sun cron); here it is
       # collected so any single job can be re-run with --coverage without a
       # code change.
-      - name: Run fast-tier node unit tests via vitest (20 .mjs entries of 88 total; SEE-1344 triage)
+      - name: Run fast-tier node unit tests via vitest (21 .mjs entries of 90 total; SEE-1344 triage)
         timeout-minutes: 4
         run: npx vitest run launch/tests/.vitest-gen/fast --testNamePattern "\.mjs$"
         working-directory: launch
