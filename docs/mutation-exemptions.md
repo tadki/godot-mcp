@@ -41,3 +41,32 @@
 - 每处豁免必须：① inline `// Stryker disable next-line <mutators>: <理由>`（冒号紧跟 mutator 列表——`--` 与 ` : ` 分隔符会导致解析失配，见 D2 过程）或 stryker.config.json 的精确 mutate range；② 本表登记 ids+理由；③ issue 上对 Revy 可见并经对抗复核。
 - 禁止：file 级/range 级整体切除、把"难测"登记为"等效"、写空转测试凑 kill rate。
 - LATENT BUG（describeValidationError 根级非对象 args 崩溃）维持 drift 清单登记，本单不修。
+
+
+## SEE-1348 补单 A 扩面记录（2026-09-26）
+
+新增严格门面（全部实测 kill rate 100%，无豁免）：
+- `server/src/utils/errors.ts` — 25 mutants killed（formatError 分支臂 + 构造器；补 kill 测试见 `src/__tests__/utils/errors.test.ts`）
+- `server/src/tools/exec.ts` — 82 killed（描述/schema 面零逻辑存活）
+- `server/src/tools/qa.ts` — 146 killed（tolerance/检查数组/错误优先于图像/join 分隔符/wire 命令字面量等极性补 kill）
+- `server/src/index.ts` — 114 mutants killed（CallTool 结果形状全分支、readOnly 门双臂 + toLowerCase、指令串 exact-equality、gracefulShutdown 锁存 + 延迟 exit、SIGTERM/SIGINT 字面量、ctx.godot 透传、ListTools verbatim、createTransport 默认臂）
+
+### websocket.ts 整面暂缓（登记）
+
+`server/src/connection/websocket.ts`（628 行）本轮**未入严格门白名单**，登记理由（scope-down 披露）：
+- 定向 run 实测（scoped run）：113 mutants 中 killed 66，residual = ①logger 文本字面量（等效类：日志文案变更可观察性等价）②reconnect/ping 真实时钟时序类（无 fake-timer socket harness 时属 timeout/等效类）③诊断文案（已被 exact-string diagnostics 套件在行级 re-gate：`src/__tests__/connection/diagnostics.test.ts` 逐臂逐行 pin）。
+- 全量 kill 需要专用 fake-timer socket harness（独立硬化工作项），本轮补单范围内强行凑数违反台账原则（"不死凑数"）。
+- 覆盖率留证（v8，全套件）：websocket.ts lines 61.56% / branches 47.61%——真实 socket 生命周期面，行覆盖缺口集中在 ping/heartbeat 与 module-tail 单例布线。
+- 后续：该面入白名单的前置条件 = fake-timer socket harness 落地；在此之前由 diagnostics exact-string 套件 + startup 套件承担行为护栏。
+
+### 逐文件覆盖率留证（v8, vitest --coverage, 2026-09-26）
+
+| 文件 | Stmts | Branch | Funcs | Lines |
+|---|---|---|---|---|
+| tools/qa.ts | 100 | 96.15 | 100 | 100 |
+| tools/exec.ts | 100 | 100 | 100 | 100 |
+| utils/errors.ts | 84.21 | 62.5 | 100 | 84.21 |
+| connection/websocket.ts | 61.56 | 47.61 | 59.57 | 61.65 |
+| index.ts | 42.22 | 32 | 25 | 45.23 |
+
+（errors.ts/index.ts 行覆盖率数字为全套件直接运行值；二者的变异 kill 已 100%，行覆盖缺口为防御性分支。）
