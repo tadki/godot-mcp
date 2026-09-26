@@ -38,6 +38,8 @@ export default tseslint.config(
       'server/dist/**',
       'server/addon/**',
       'coverage/**',
+      'server/coverage/**',
+      '.stryker-tmp/**',
       'launch/tests/**',
     ],
   },

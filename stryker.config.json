@@ -35,7 +35,11 @@
     "server/src/utils/connection-strategy.ts",
     "server/src/utils/wsl-detection.ts",
     "server/src/utils/logger.ts",
-    "server/src/core/schema.ts"
+    "server/src/core/schema.ts",
+    "server/src/utils/errors.ts",
+    "server/src/tools/exec.ts",
+    "server/src/tools/qa.ts",
+    "server/src/index.ts"
   ],
   "vitest": {
     "configFile": "server/vitest.config.ts"

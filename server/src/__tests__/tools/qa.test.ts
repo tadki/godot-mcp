@@ -190,6 +190,68 @@ describe('qa tool', () => {
       );
       expect(structuredOf(result).error).toContain('not_canvas_item');
     });
+
+    // ── SEE-1348 补单 A (mutation kill): the survivors from the first stryker
+    // run were all conditional/optional arms whose polarity is observable only
+    // when BOTH sides differ — pin each with its negative.
+    it('assert_property OMITS tolerance when not supplied (spread gate polarity)', async () => {
+      mock.mockResponse({ path: '/root/G', property: 'wave', op: 'approx', expected: 3, actual: 3, passed: true });
+      await qa.execute({ action: 'assert_property', path: '/root/G', property: 'wave', expected: 3 } as never, createToolContext(mock));
+      expect('tolerance' in mock.calls[0].params).toBe(false);
+    });
+
+    it('assert_property forwards a SUPPLIED tolerance (spread gate other arm)', async () => {
+      mock.mockResponse({ path: '/root/G', property: 'wave', op: 'approx', expected: 3, actual: 3, passed: true });
+      await qa.execute({ action: 'assert_property', path: '/root/G', property: 'wave', expected: 3, tolerance: 0.5 } as never, createToolContext(mock));
+      expect(mock.calls[0].params.tolerance).toBe(0.5);
+    });
+
+    it('wait_for_signal omits predicate when absent; assert_layout forwards a non-empty checks array', async () => {
+      mock.mockResponse({ path: '/root/G', signal: 'wave_changed', emitted: false });
+      await qa.execute({ action: 'wait_for_signal', path: '/root/G', signal: 'wave_changed' } as never, createToolContext(mock));
+      expect('predicate' in mock.calls[0].params).toBe(false);
+
+      mock.mockResponse({ path: '/root/UI', checks: [{ type: 'within' }], passed: true });
+      await qa.execute({ action: 'assert_layout', path: '/root/UI', checks: [{ type: 'within' }] } as never, createToolContext(mock));
+      expect(mock.calls[1].params.checks).toEqual([{ type: 'within' }]);
+    });
+
+    it('screenshot_node: image WITHOUT caveats returns the bare image (meta gate polarity)', async () => {
+      mock.mockResponse({ image_base64: 'aGk=', width: 100, height: 40, path: '/root/UI', clamped: false, frozen: false });
+      const result = await qa.execute({ action: 'screenshot_node', path: '/root/UI' } as never, createToolContext(mock));
+      const image = result as { type: string };
+      expect(image.type).toBe('image');
+    });
+
+    it('screenshot_node: error WITH a fake image still prefers the structured error (error gate polarity)', async () => {
+      mock.mockResponse({ error: 'stale: node gone', image_base64: 'aGk=' });
+      const result = await qa.execute({ action: 'screenshot_node', path: '/root/G' } as never, createToolContext(mock));
+      expect(structuredOf(result).error).toContain('stale');
+    });
+
+    it('wire command names are pinned verbatim (mutation-kill: command string literals)', async () => {
+      mock.mockResponse({ path: '/root/UI', checks: [], passed: true });
+      await qa.execute({ action: 'assert_layout', path: '/root/UI' } as never, createToolContext(mock));
+      expect(mock.calls[0].command).toBe('qa_assert_layout');
+
+      mock.mockResponse({ image_base64: 'aGk=', width: 1, height: 1, path: '/root/UI', clamped: false, frozen: false });
+      await qa.execute({ action: 'screenshot_node', path: '/root/UI' } as never, createToolContext(mock));
+      expect(mock.calls[1].command).toBe('qa_screenshot_node');
+    });
+
+    it('screenshot_node caveat annotation joins with the exact "; " separator (mutation-kill: join literal)', async () => {
+      mock.mockResponse({ image_base64: 'aGk=', width: 100, height: 40, path: '/root/UI', clamped: true, frozen: true });
+      const result = await qa.execute({ action: 'screenshot_node', path: '/root/UI' } as never, createToolContext(mock));
+      const multi = result as Array<{ type: string; text?: string }>;
+      const text = multi.find((part) => part.type === 'text')?.text ?? '';
+      expect(text).toBe('node rect extended past the viewport — image covers the on-screen part only; captured under a frozen game (godot_game_time)');
+    });
+
+    it('screenshot_node: missing image_base64 is the structured-error path too', async () => {
+      mock.mockResponse({ path: '/root/G' });
+      const result = await qa.execute({ action: 'screenshot_node', path: '/root/G' } as never, createToolContext(mock));
+      expect(structuredOf(result).image_base64).toBeUndefined();
+    });
   });
 
   // ── Annotations ──────────────────────────────────────────────────────────
