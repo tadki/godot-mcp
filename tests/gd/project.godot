@@ -1,0 +1,17 @@
+config_version=5
+
+[application]
+config/name="godot-mcp-gd-guards"
+run/main_scene=""
+
+[editor_plugins]
+enabled=PackedStringArray("res://addons/gut/plugin.cfg")
+
+[debug]
+gdscript/warnings/untyped_declaration=0
+gdscript/warnings/inference_on_variant=0
+
+[gut]
+watch_errors=false
+include_subdirs=true
+dirs=PackedStringArray("res://tests/gut")
