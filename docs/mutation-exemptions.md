@@ -70,3 +70,25 @@
 | index.ts | 42.22 | 32 | 25 | 45.23 |
 
 （errors.ts/index.ts 行覆盖率数字为全套件直接运行值；二者的变异 kill 已 100%，行覆盖缺口为防御性分支。）
+
+## SEE-1348 §SPEC-016 GD 面台账（tests/gd 夹具，2026-09-27 Revy）
+
+### mcp_qa.gd — dispatch-leg 豁免（17 个，机制性）
+- 位置：l31×3（ROR !=→==/</>，_ready connect 条件）/ l36×12（handle_* 参数提取
+  TERNARY×2、boundary 0→±1×8、LOGICAL and→or、ROR >→<=/==/>=）/ l47×2（ROR
+  ==→<=/>=，node==null guard）
+- kill 测试已存在并 RED-验证：tests/dispatch/test_qa_dispatch.gd（commit 96e4819，
+  disk-mutant 实测 + pristine GREEN 70/70）
+- 豁免理由：dispatch 套件 SpyQa extends 被测文件，与 gqt take_over 变异注入机制
+  不兼容（r6/r9/r13 实证 46/50 timeout；Leader 验证 r26 确认 17 survived 与
+  pre- exemption 口径一致）。行为护栏 = dispatch coverage 测试 + wiring 门
+  （test_see1348_qa_relay_wiring.mjs）。
+
+### mcp_runtime_state_sampler.gd — 等效类豁免（2 个，双闸防御）
+- l86 LOGICAL or→and（start() 空 path/fields 守卫）：or→and 后空 path 仍被
+  _resolve_node 返回 null → continue（l90 node==null 双闸兜底），行为等效。
+  kill 测试无法区分（三组 or/and 输入全部经双闸收敛到同一结果）。
+- l95 ROR >=→==（内层 field_count cap）：count 以 1 递增，== 与 >= 在此不变式下
+  break 时机完全相同（第 33 个 field 到达时 count==32==cap），行为等效。
+- 相关生产缺口（非变异，记录）：start_signal_wait 不重置 _wait_hit_ms（仅命中时
+  赋值）——语义上无害（hit_ms 仅在 emitted:true 时读取），不建议改生产。
