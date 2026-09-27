@@ -50,8 +50,10 @@ func test_compare_numeric_exact_ops() -> void:
 	assert_false(qa._compare(4, 3, "eq", 0.01), "eq asym (4,3) false - kills eq to gte")
 	assert_false(qa._compare(5, 5, "gt", 0.01), "gt boundary (5,5) false - kills gt to gte")
 	assert_false(qa._compare(4, 5, "gte", 0.01), "gte asym (4,5) false - kills gte to eq")
+	assert_true(qa._compare(5, 4, "gte", 0.01), "gte asym (5,4) true - distinguishes gte from eq")
 	assert_false(qa._compare(5, 5, "lt", 0.01), "lt boundary (5,5) false - kills lt to lte")
 	assert_false(qa._compare(6, 5, "lte", 0.01), "lte asym (6,5) false - kills lte to eq")
+	assert_true(qa._compare(4, 5, "lte", 0.01), "lte asym (4,5) true - distinguishes lte from eq")
 	assert_true(qa._compare(3, 4, "ne", 0.01))
 	assert_false(qa._compare(3, 3, "ne", 0.01))
 	assert_true(qa._compare(5, 3, "ne", 0.01), "ne asym (5,3) true - distinguishes ne from lt/eq")
@@ -93,6 +95,7 @@ func test_compare_mixed_types_kills_and_or() -> void:
 	# false (generic arm), `or` yields true (numeric arm → float("str") crash). The
 	# generic arm's == on string vs int logs an engine error (documented prod behavior
 	# at _compare:97) — mark handled.
+	assert_false(qa._compare("abc", 0.0, "approx", 0.01), "string vs 0.0: generic arm must return false (and), not numeric-parse (or)")
 	assert_false(qa._compare("abc", 5, "approx", 0.01))
 	for e in get_errors():
 		e.handled = true
