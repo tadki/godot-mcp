@@ -497,3 +497,106 @@ func test_collect_no_aliasing() -> void:
 	var after: int = (c1.get("fields")[full_key] as Array).size()
 	assert_true(after == before, "collect returned a copy — caller's array does not grow")
 	n.queue_free()
+
+# ── SEE-1348 §SPEC-016 micro-bucket 2: kill tests for 38 sampler survivors ──
+
+func test_mb2_init_values_fresh_instance() -> void:
+	# kills l20/21/24/25/45/46/47/48/53/56 var-init flips: every counter/flag must
+	# start at its documented zero/empty state
+	assert_true(int(s._frame_index) == 0, "_frame_index starts 0")
+	assert_true(int(s._sample_interval) == 1, "_sample_interval starts 1")
+	assert_false(bool(s._events_truncated), "_events_truncated starts false")
+	assert_true(int(s._events_dropped) == 0, "_events_dropped starts 0")
+	assert_false(bool(s._wait_active), "_wait_active starts false")
+	assert_false(bool(s._wait_emitted), "_wait_emitted starts false")
+	assert_true(int(s._wait_rejected) == 0, "_wait_rejected starts 0")
+	assert_false(bool(s._wait_predicate_failed), "_wait_predicate_failed starts false")
+	assert_true(int(s._wait_timeout_ms) == 0, "_wait_timeout_ms starts 0")
+	assert_true(int(s._wait_hit_ms) == 0, "_wait_hit_ms starts 0")
+
+func test_mb2_start_resets_state() -> void:
+	# kills l64/73 boundary false→true / 0→1 mutants: start() must RESET truncated
+	# flag and frame_index (observable: second start after dirty state is clean)
+	var n := Control.new()
+	n.name = "MB2Reset"
+	get_tree().root.add_child(n)
+	var full_key := str(n.get_path()) + ":visible"
+	s._events_truncated = true  # dirty state from a "previous session"
+	s._frame_index = 999
+	s.start([{"path": str(n.get_path()), "fields": ["visible"]}], 60, 5000, [])
+	assert_false(bool(s._events_truncated), "start() resets _events_truncated")
+	assert_true(int(s._frame_index) == 0, "start() resets _frame_index")
+	assert_true((s.collect().get("fields")[full_key] as Array).size() == 0, "samples start empty")
+	n.queue_free()
+
+func test_mb2_start_reset_events_dropped() -> void:
+	# kills l25 boundary 0→1/−1 : _events_dropped must reset to 0 on start()
+	s._events_dropped = 99
+	var n := Control.new()
+	n.name = "MB2ED"
+	get_tree().root.add_child(n)
+	s.start([{"path": str(n.get_path()), "fields": ["visible"]}], 60, 5000, [])
+	assert_true(int(s._events_dropped) == 0, "start() resets _events_dropped")
+	n.queue_free()
+
+func test_mb2_wait_flags_reset_on_start_signal_wait() -> void:
+	# kills l45/46/47/48/53/56 boundary flips: start_signal_wait resets all wait state
+	var n := Control.new()
+	n.name = "MB2Wait"
+	n.add_user_signal("sig", [{"name": "v", "type": TYPE_INT}])
+	get_tree().root.add_child(n)
+	# dirty the wait state
+	s._wait_active = true
+	s._wait_emitted = true
+	s._wait_rejected = 77
+	s._wait_predicate_failed = true
+	s._wait_timeout_ms = 12345
+	s._wait_hit_ms = 999
+	var r: Dictionary = s.start_signal_wait(str(n.get_path()), "sig", 1000, "")
+	assert_true(r.get("connected") == true)
+	assert_false(bool(s._wait_emitted), "wait reset: emitted=false")
+	assert_true(int(s._wait_rejected) == 0, "wait reset: rejected=0")
+	assert_false(bool(s._wait_predicate_failed), "wait reset: predicate_failed=false")
+	assert_true(int(s._wait_timeout_ms) == 1000, "wait reset: timeout from arg")
+	# _wait_hit_ms is intentionally NOT reset by start_signal_wait (set only on hit);
+	# production gap noted in the mutation-exemptions ledger (l56 init-flip mutant is
+	# un-killable at this call site without touching production).
+	n.queue_free()
+
+func test_mb2_sample_interval_fps_branches() -> void:
+	# kills l75/76/77 TERNARY + boundary + ROR mutants on sample_interval: with real
+	# fps>0 the interval is fps/hz clamped ≥1; the formula must never yield 0.
+	var n := Control.new()
+	n.name = "MB2SI"
+	get_tree().root.add_child(n)
+	s.start([{"path": str(n.get_path()), "fields": ["visible"]}], 60, 5000, [])
+	var fps := Engine.get_frames_per_second()
+	if fps > 0:
+		assert_true(int(s._sample_interval) == max(1, int(fps / 60)), "interval = max(1, fps/hz) when fps>0")
+	else:
+		assert_true(int(s._sample_interval) == max(1, int(60.0 / 60)), "interval = max(1, 60/hz) fallback when fps<=0")
+	assert_true(int(s._sample_interval) >= 1, "interval never 0 (kills 1→0 and 1→−1)")
+	n.queue_free()
+
+func test_mb2_field_cap_breaks_outer_loop() -> void:
+	# kills l82 ROR >=→>/== : outer field-count cap must break at MAX_FIELDS (32) —
+	# a > mutant would let the 33rd field land.
+	var n := Control.new()
+	n.name = "MB2Cap"
+	get_tree().root.add_child(n)
+	var fields: Array = []
+	for i in range(40):
+		fields.append("f%d" % i)
+	var r: Dictionary = s.start([{"path": str(n.get_path()), "fields": fields}], 60, 5000, [])
+	assert_true(int(r.get("resolved_fields")) == 32, "field cap exactly 32 (kills >=→> and →==)")
+	n.queue_free()
+
+func test_mb2_empty_path_or_fields_skip() -> void:
+	# kills l86 LOGICAL or→and : empty path with non-empty fields must SKIP (or
+	# semantics), not fall through to resolution
+	var r: Dictionary = s.start([{"path": "", "fields": ["visible"]}], 60, 5000, [])
+	assert_true(int(r.get("resolved_fields")) == 0, "empty path skipped (or semantics)")
+	var r2: Dictionary = s.start([{"path": "/missing", "fields": []}], 60, 5000, [])
+	assert_true(int(r2.get("resolved_fields")) == 0, "empty fields skipped")
+	var r3: Dictionary = s.start([{"path": "", "fields": []}], 60, 5000, [])
+	assert_true(int(r3.get("resolved_fields")) == 0, "both empty skipped")
