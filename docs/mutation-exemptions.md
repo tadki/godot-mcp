@@ -92,3 +92,12 @@
   break 时机完全相同（第 33 个 field 到达时 count==32==cap），行为等效。
 - 相关生产缺口（非变异，记录）：start_signal_wait 不重置 _wait_hit_ms（仅命中时
   赋值）——语义上无害（hit_ms 仅在 emitted:true 时读取），不建议改生产。
+
+### mcp_runtime_state_sampler.gd — headless fps 臂不可达（l75/76/77 共 7 个，环境等效）
+- 位置：l75 TERNARY ×1、l76 ROR >→>=/>→<= ×2 + boundary 0→1/−1 ×2（fps>0 条件臂）、
+  l77 boundary 1→0/−1 ×2（else 臂 max(1, int(60.0/hz))）
+- 证据：headless 夹具内 Engine.get_frames_per_second() 实测下限 1.0（fps_probe），
+  fps<=0 的 else 臂引擎不可达；else 臂 mutant（1→0）实测 82/82 通过（注入未改变
+  行为，因该臂不可达）。fps>0 臂由 test_mb3_sample_interval_formula 以观测 fps
+  锁定 max(1, int(fps/hz))。
+- 豁免理由：环境不可达臂——headless 夹具无法驱动引擎 fps≤0，行为等效于不存在。

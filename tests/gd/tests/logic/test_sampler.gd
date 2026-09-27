@@ -600,3 +600,85 @@ func test_mb2_empty_path_or_fields_skip() -> void:
 	assert_true(int(r2.get("resolved_fields")) == 0, "empty fields skipped")
 	var r3: Dictionary = s.start([{"path": "", "fields": []}], 60, 5000, [])
 	assert_true(int(r3.get("resolved_fields")) == 0, "both empty skipped")
+
+# ── §SPEC-016 micro-bucket 3: precise interval + field accounting kills ─────
+
+func test_mb3_sample_interval_formula() -> void:
+	# Headless environment: Engine.get_frames_per_second() reads 1.0 floor (probed),
+	# so the ternary takes the fps>0 arm: interval = max(1, int(fps/hz)). The
+	# else-arm (fps<=0) is engine-unreachable here — l75/l76/l77 mutants on that arm
+	# are ledger-class (environment-unreachable). Pin the fps>0 arm exactly:
+	var n := Control.new()
+	n.name = "MB3I"
+	get_tree().root.add_child(n)
+	var fps := Engine.get_frames_per_second()
+	s.start([{"path": str(n.get_path()), "fields": ["visible"]}], 30, 5000, [])
+	var expected := max(1, int(fps / 30))
+	assert_true(int(s._sample_interval) == expected, "interval = max(1, int(fps/hz)) with observed fps")
+	s.start([{"path": str(n.get_path()), "fields": ["visible"]}], 1, 5000, [])
+	var expected2 := max(1, int(fps / 1))
+	assert_true(int(s._sample_interval) == expected2, "interval scales with 1/hz")
+	n.queue_free()
+
+func test_mb3_full_key_construction_uses_plus() -> void:
+	# kills l97 AOR +→- / +→* : full_key must be node_path + ":" + field_key.
+	# +→* (string repetition) or +→- (invalid) would change the dict key shape.
+	var n := Control.new()
+	n.name = "MB3Key"
+	get_tree().root.add_child(n)
+	s.start([{"path": str(n.get_path()), "fields": ["visible", "size"]}], 60, 5000, [])
+	var fields: Dictionary = s.collect().get("fields")
+	assert_true(fields.has(str(n.get_path()) + ":visible"), "full_key uses + concatenation (visible)")
+	assert_true(fields.has(str(n.get_path()) + ":size"), "full_key uses + concatenation (size)")
+
+func test_mb3_field_count_accounting_exact() -> void:
+	# kills l95 >=→== inner-cap and pins multi-spec field accounting: two specs with
+	# 20 fields each (total 40 > cap 32) → first spec takes 32, second takes 0.
+	var n1 := Control.new()
+	n1.name = "MB3A"
+	get_tree().root.add_child(n1)
+	var n2 := Control.new()
+	n2.name = "MB3B"
+	get_tree().root.add_child(n2)
+	var f1: Array = []
+	for i in range(20):
+		f1.append("a%d" % i)
+	var f2: Array = []
+	for i in range(20):
+		f2.append("b%d" % i)
+	var r: Dictionary = s.start([
+		{"path": str(n1.get_path()), "fields": f1},
+		{"path": str(n2.get_path()), "fields": f2},
+	], 60, 5000, [])
+	# correct >= cap: spec A fills 20, spec B fills next 12 → total 32; ==-mutant
+	# breaks when count==32 (after B adds 12 → 32) — identical for +1 increments
+	# UNLESS a spec adds >1 per iteration. Inner loop adds 1 per field — identical.
+	# So l95 is behaviorally equivalent (ledger). Pin the total instead:
+	assert_true(int(r.get("resolved_fields")) == 32, "multi-spec total capped at 32")
+	n1.queue_free()
+	n2.queue_free()
+
+func test_mb3_empty_fields_continue_not_break() -> void:
+	# pins l82/86 guard semantics: empty-fields spec skipped but LATER specs still
+	# resolve (continue, not break) — distinguishes guard arm from cap arm.
+	var n := Control.new()
+	n.name = "MB3C"
+	get_tree().root.add_child(n)
+	var r: Dictionary = s.start([
+		{"path": str(n.get_path()), "fields": []},
+		{"path": str(n.get_path()), "fields": ["visible"]},
+	], 60, 5000, [])
+	assert_true(int(r.get("resolved_fields")) == 1, "empty-fields spec skipped; later spec still resolves")
+	n.queue_free()
+
+func test_mb3_missing_node_continue() -> void:
+	# pins l90 guard semantics: missing node spec skipped, later spec resolves
+	var n := Control.new()
+	n.name = "MB3D"
+	get_tree().root.add_child(n)
+	var r: Dictionary = s.start([
+		{"path": "/missing", "fields": ["visible"]},
+		{"path": str(n.get_path()), "fields": ["visible"]},
+	], 60, 5000, [])
+	assert_true(int(r.get("resolved_fields")) == 1, "missing-node spec skipped; later spec resolves")
+	n.queue_free()
