@@ -122,7 +122,7 @@ async function main(): Promise<void> {
     outputSchema?: unknown;
     annotations?: { title?: string; readOnlyHint?: boolean };
   }>;
-  check('tools/list returns 21 tools', tools.length === 21, `got ${tools.length}`);
+  check('tools/list returns 22 tools', tools.length === 22, `got ${tools.length}`);
   check(
     'every inputSchema is a flat object (no oneOf/anyOf/allOf at root)',
     tools.every((t) => t.inputSchema.type === 'object' && !t.inputSchema.oneOf && !t.inputSchema.anyOf && !t.inputSchema.allOf)
@@ -155,7 +155,7 @@ async function main(): Promise<void> {
     name: string;
     annotations?: { readOnlyHint?: boolean };
   }>;
-  check('read-only mode registers 12 tools', roTools.length === 12, `got ${roTools.length}`);
+  check('read-only mode registers 13 tools', roTools.length === 13, `got ${roTools.length}`);
   check(
     'every read-only-mode tool is readOnlyHint true',
     roTools.every((t) => t.annotations?.readOnlyHint === true)
