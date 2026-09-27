@@ -88,6 +88,10 @@
 - l86 LOGICAL or→and（start() 空 path/fields 守卫）：or→and 后空 path 仍被
   _resolve_node 返回 null → continue（l90 node==null 双闸兜底），行为等效。
   kill 测试无法区分（三组 or/and 输入全部经双闸收敛到同一结果）。
+- l82 ROR ×2（>=→> / >=→==，外层 field cap）：count 以 1 递增前提下外层 cap
+  `>=` 与 `>` / `==` 行为恒等（与 l95 先例同构；Bachi 补单 A 判定"kill 测试强度
+  缺口"经 Leader 复核改判等效——递增不变式下不可区分即等效）。护栏：
+  test_mb3_field_count_accounting_exact（40-field 双 spec 精确 32 断言）在位。
 - l95 ROR >=→==（内层 field_count cap）：count 以 1 递增，== 与 >= 在此不变式下
   break 时机完全相同（第 33 个 field 到达时 count==32==cap），行为等效。
 - 相关生产缺口（非变异，记录）：start_signal_wait 不重置 _wait_hit_ms（仅命中时
