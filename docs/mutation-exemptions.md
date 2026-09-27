@@ -101,3 +101,19 @@
   行为，因该臂不可达）。fps>0 臂由 test_mb3_sample_interval_formula 以观测 fps
   锁定 max(1, int(fps/hz))。
 - 豁免理由：环境不可达臂——headless 夹具无法驱动引擎 fps≤0，行为等效于不存在。
+
+## SEE-1348 §SPEC-016 收口记录（2026-09-27）
+
+### sampler 存活终裁（7 个，runner 判定差异）
+
+mb3 终验余 15 存活：6 个（l75/l76/l77 fps≤0 臂）= 环境不可达台账（fps_probe 实测引擎下限 1.0）+ l86/l95 = 等效类台账（递增不变式）在上一节已覆盖。**余 7 个（l82 ROR ×2 / l90 ROR ×2 / l97 AOR ×3）经 Leader 控制实验裁定为 runner 判定错误**：disk-mutant 逐一应用后 logic 套件（gut_cmdln -gdir=res://tests/logic）实测 69 项失败（pristine 全绿），kill 测试（test_mb3_field_count_accounting_exact / test_mb3_empty_fields_continue_not_break / test_mb3_missing_node_continue / test_mb3_full_key_construction_uses_plus）真实有效；gqt mutation runner（jobs=8, adaptive_timeout=120s）在同 fixture 判其 survived / "only pre-existing failures" —— **runner 的 baseline 对照在该新建 fixture 上吞掉新失败（上游 gqt 缺陷，移交 godot-qa-toolkit 侧修复）**。7 个变异按"kill 测试已存在 + 控制实验证据"核销。
+
+### mcp_qa.gd 面（前节 17 个）确认
+
+mb3 终验复核：logic 口径 33/50 killed，17 存活全部为 l31/l36/l47 dispatch-leg 区，与上一节台账逐条吻合。
+
+### §SPEC-016 最终口径
+
+- mutation（logic 口径，jobs=8）：mcp_qa 33/50 + sampler 35/50 killed；32 存活全部台账核销（17 dispatch-leg 机制 + 6 fps 不可达 + 2 等效 + 7 runner 判定差异）。
+- coverage：mcp_qa 81.4% / sampler 84.1%，缺口 = send 腿（dispatch 桶护栏）+ 引擎不可达臂（EngineDebugger/RenderingServer），豁免边界已核。
+- 上游移交：gqt mutation runner baseline 对照吞失败缺陷（新 fixture 场景）。
