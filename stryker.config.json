@@ -17,7 +17,7 @@
     "≈4s → 10s gives ~2.5x headroom."
   ],
   "packageManager": "npm",
-  "testRunner": "command",
+  "testRunner": "vitest",
   "reporters": [
     "html",
     "clear-text",
@@ -52,8 +52,5 @@
   "timeoutMS": 10000,
   "concurrency": 4,
   "//thresholds": "SEE-1334 SPEC-061/063 (100% ratchet): effective kill rate 100 — killed 224 / non-ignored 224. Exemption mechanism: Stryker per-line 'disable' comments with registered reasons (ledger: docs/mutation-exemptions.md) for 21 equivalence-class mutants, plus range exclusion of convertHexToIp internals (timeout+noCov equivalence-class; re-gated by isValidIPv4 at its caller). Ratchet ONLY-UP. Rationale: 44 survivors audited over 3 kill-rounds; equivalence-class + double-gate analysis in the ledger; no test was written to pass vacuously.",
-  "//mutate": "SPEC-040 original whitelist face (6 files) restored per D2 — gateway-resolver carries a surgical 3-line gap (L161-164: the unreachable catch of convertHexToIp, whose BlockStatement mutant is NoCoverage and un-excludable via disable comments in this Stryker version; parseInt of hex cannot throw). Ledger: docs/mutation-exemptions.md. No blanket face reduction.",
-  "commandRunner": {
-    "command": "npx vitest run --config server/vitest.config.ts"
-  }
+  "//mutate": "SPEC-040 original whitelist face (6 files) restored per D2 — gateway-resolver carries a surgical 3-line gap (L161-164: the unreachable catch of convertHexToIp, whose BlockStatement mutant is NoCoverage and un-excludable via disable comments in this Stryker version; parseInt of hex cannot throw). Ledger: docs/mutation-exemptions.md. No blanket face reduction."
 }
