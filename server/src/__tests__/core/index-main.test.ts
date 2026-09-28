@@ -2,83 +2,61 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
-// SEE-1348 SPEC-017 gate fix: vi.mock factories are hoisted ABOVE top-level
-// declarations. Under stryker perTest instrumentation the load order changed
-// and the factories hit TDZ variables → ConfigError crashed mutation-gate's
-// initial run. vi.hoisted creates the shared state before the hoisted mock
-// factories execute, on any loader order.
-const { loggerMock, stubExecute, registerAllToolsCalls, state } = vi.hoisted(() => ({
+;
+
+// Runtime interception instead of vi.mock: module-level mock factories are
+// hoisted by vitest and crash the suite on CI runners (deterministic on CI,
+// unreproducible locally). vi.spyOn patches AFTER the module graph is fully
+// evaluated — no hoisting, no race. Functionally identical interception.
+const spySetup = vi.hoisted(() => ({
   loggerMock: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    notice: vi.fn(),
-    warning: vi.fn(),
-    warningRateLimited: vi.fn(),
-    error: vi.fn(),
-    critical: vi.fn(),
+    debug: vi.fn(), info: vi.fn(), notice: vi.fn(), warning: vi.fn(),
+    warningRateLimited: vi.fn(), error: vi.fn(), critical: vi.fn(),
   },
   stubExecute: vi.fn(),
   registerAllToolsCalls: [] as Array<{ readOnly: boolean; names: string[] }>,
   state: { capturedServer: null as unknown as Server | null },
 }));
+const { loggerMock, stubExecute, registerAllToolsCalls, state } = spySetup;
 
-vi.mock('../../connection/websocket.js', async (importOriginal) => {
-  const mod = await importOriginal<typeof import('../../connection/websocket.js')>();
-  return { ...mod, getGodotConnection: vi.fn(), initializeConnection: vi.fn(() => Promise.resolve()) };
+// websocket: intercept getGodotConnection/initializeConnection after import
+vi.spyOn(
+  await import('../../connection/websocket.js').then(m => m),
+  'getGodotConnection',
+).mockReturnValue(undefined as never);
+vi.spyOn(
+  await import('../../connection/websocket.js').then(m => m),
+  'initializeConnection',
+).mockImplementation(() => Promise.resolve());
+
+// logger: swap all methods for mocks
+for (const k of ['debug','info','notice','warning','warningRateLimited','error','critical'] as const) {
+  vi.spyOn((await import('../../utils/logger.js')).logger as never, k)
+    .mockImplementation(loggerMock[k]);
+}
+
+// Server: capture the constructed instance via prototype-level interception of
+// connect() — main() always calls server.connect(transport) at boot, so the
+// spy sees every constructed Server without touching module identity.
+vi.spyOn(Server.prototype, 'connect').mockImplementation(function (this: Server, transport: Transport) {
+  state.capturedServer = this;
+  return Promise.resolve();
 });
 
-vi.mock('../../utils/logger.js', () => ({ logger: loggerMock }));
+// registry: executeTool stubbed per-test; getToolList preserved; register* no-ops
+const registryMod = await import('../../core/registry.js');
+const realRegistry = registryMod.registry;
+vi.spyOn(realRegistry, 'executeTool').mockImplementation((...a: unknown[]) => stubExecute(...a));
+vi.spyOn(realRegistry, 'getToolList').mockImplementation(() => realRegistry.getToolList());
+vi.spyOn(realRegistry, 'registerTool').mockImplementation(() => undefined);
+vi.spyOn(realRegistry, 'registerTools').mockImplementation(() => undefined);
 
-// Capture the Server instance main() constructs so the registered handlers can
-// be driven in-process (registry is a singleton with no reset API — a second
-// main() would throw "already registered" — so we stub the constructor).
-
-vi.mock('@modelcontextprotocol/sdk/server/index.js', async (importOriginal) => {
-  const mod = await importOriginal<typeof import('@modelcontextprotocol/sdk/server/index.js')>();
-  const RealServer = mod.Server;
-  const SpyServer = class extends RealServer {
-    constructor(...args: ConstructorParameters<typeof RealServer>) {
-      super(...args);
-      // eslint-disable-next-line @typescript-eslint/no-this-alias -- subclass capture needs the instance ref
-      state.capturedServer = this;
-    }
-  };
-  return { ...mod, Server: SpyServer };
-});
-
-// executeTool stubbed to return a value the test chooses — the handler's
-// result-shape branches (string / array / structured / raw / error) are what
-// we drive. registerAllTools recorded so the readOnly gate arms are asserted
-// through main() itself (the pure-function isReadOnlyMode has no direct
-// export — its observable contract IS the flag passed to registerAllTools).
-vi.mock('../../core/registry.js', async (importOriginal) => {
-  const mod = await importOriginal<typeof import('../../core/registry.js')>();
-  const realRegistry = mod.registry;
-  const stubbed = Object.create(Object.getPrototypeOf(realRegistry), {
-    executeTool: { value: (...a: unknown[]) => stubExecute(...a), writable: true },
-    getToolList: { value: () => realRegistry.getToolList(), writable: true },
-    registerTool: { value: () => undefined, writable: true },
-    registerTools: { value: () => undefined, writable: true },
-  });
-  return { ...mod, registry: stubbed };
-});
-vi.mock('../../tools/index.js', async (importOriginal) => {
-  const mod = await importOriginal<typeof import('../../tools/index.js')>();
-  // Derive the full tool-name list from the module's real tool arrays (the
-  // re-exports at the bottom of tools/index.ts).
-  const all = (Object.values(mod).filter(Array.isArray) as Array<Array<{ name: string }>>)
-    .flat()
-    .map((t) => t.name)
-    .filter(Boolean);
-  return {
-    ...mod,
-    registerAllTools: (opts: { readOnly?: boolean } = {}) => {
-      // Mirror the real readOnly filter so getToolList-backed assertions
-      // observe the same surface the production registration produces.
-      void all;
-      registerAllToolsCalls.push({ readOnly: opts.readOnly === true, names: [] });
-    },
-  };
+// tools/index: registerAllTools intercepted; readOnly flag recorded
+const toolsMod = await import('../../tools/index.js');
+const realRegisterAllTools = toolsMod.registerAllTools;
+void realRegisterAllTools;
+vi.spyOn(toolsMod, 'registerAllTools').mockImplementation((opts: { readOnly?: boolean } = {}) => {
+  registerAllToolsCalls.push({ readOnly: opts.readOnly === true, names: [] });
 });
 
 function makeFakeTransport(): Transport {
