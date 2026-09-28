@@ -64,3 +64,11 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm run mutation
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-gate-report
+          path: |
+            reports/mutation/mutation.json
+            .stryker-tmp/**/*.log
+          retention-days: 7
