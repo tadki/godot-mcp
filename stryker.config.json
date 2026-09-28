@@ -38,7 +38,8 @@
     "server/src/core/schema.ts",
     "server/src/utils/errors.ts",
     "server/src/tools/exec.ts",
-    "server/src/tools/qa.ts"
+    "server/src/tools/qa.ts",
+    "server/src/index.ts"
   ],
   "vitest": {
     "configFile": "server/vitest.stryker.config.ts"
@@ -46,7 +47,7 @@
   "thresholds": {
     "high": 100,
     "low": 99,
-    "break": 99.5
+    "break": 100
   },
   "timeoutMS": 10000,
   "concurrency": 4,
