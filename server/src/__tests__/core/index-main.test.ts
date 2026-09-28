@@ -386,12 +386,19 @@ describe('SEE-1348 补单 A: index.ts CallTool handler result shapes (in-process
     // zod validates params before the handler, so '' can never reach 106.)
   });
 
-  it('createTransport default arm produces a working transport (31)', async () => {
-    // No createTransport dep → the default arm constructs a real
-    // StdioServerTransport. Its start() registers on stdin/stdout — in the
-    // vitest child that resolves; connectGodot never resolves (harmless).
+  it('createTransport default arm produces a real StdioServerTransport instance (31)', async () => {
+    // No createTransport dep → the default arm must construct a real
+    // StdioServerTransport and hand it to server.connect. Server.connect is
+    // prototype-spied (it accepts ANY argument), so merely booting proves
+    // nothing: the 31:52 ()=>undefined mutant also boots cleanly. Pin the
+    // exact argument — the mutant passes undefined, failing instanceof.
+    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
+    const connectSpy = vi.mocked(Server.prototype.connect);
+    connectSpy.mockClear();
     const { main } = await import('../../index.js');
     await main({ connectGodot: () => new Promise<void>(() => {}) });
+    expect(connectSpy).toHaveBeenCalledTimes(1);
+    expect(connectSpy.mock.calls[0][0]).toBeInstanceOf(StdioServerTransport);
   });
 
   it('ListTools handler returns the registry tool list verbatim (97/98)', async () => {
