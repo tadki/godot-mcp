@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
@@ -32,7 +32,16 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // §4.5 T1: the addon `test/` subtree (which held watch_contract.json) was
 // dropped from the repo root; the artifact now lives under launch/ (the shared
 // dev-support tree retained in the restructured layout).
-const CONTRACT_PATH = resolve(HERE, '../../../../launch/watch_contract.json');
+let CONTRACT_PATH = resolve(HERE, '../../../../launch/watch_contract.json');
+// SEE-1348 SPEC-014 gate fix: stryker sandbox copies server/ only — walk up to the real
+// repo root when the sandbox-relative artifact is absent (tempDirName .stryker-tmp sits
+// under server/, so 4×../ in the sandbox lands at server/.stryker-tmp, not repo root).
+if (!existsSync(CONTRACT_PATH)) {
+	for (let up = 1; up <= 6; up++) {
+		const candidate = resolve(HERE, '../'.repeat(4 + up), 'launch/watch_contract.json');
+		if (existsSync(candidate)) { CONTRACT_PATH = candidate; break; }
+	}
+}
 
 interface Shape {
   required: string[];
