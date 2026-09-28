@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
-;
-
 // Runtime interception instead of vi.mock: module-level mock factories are
 // hoisted by vitest and crash the suite on CI runners (deterministic on CI,
 // unreproducible locally). vi.spyOn patches AFTER the module graph is fully
@@ -45,18 +43,19 @@ vi.spyOn(Server.prototype, 'connect').mockImplementation(function (this: Server)
   return Promise.resolve();
 });
 
-// registry: executeTool stubbed per-test; getToolList preserved; register* no-ops
+// registry: executeTool stubbed per-test; getToolList preserved via the bound
+// real implementation captured before spying (a self-referential mock would
+// recurse); register* no-ops
 const registryMod = await import('../../core/registry.js');
 const realRegistry = registryMod.registry;
+const realGetToolList = realRegistry.getToolList.bind(realRegistry);
 vi.spyOn(realRegistry, 'executeTool').mockImplementation((...a: unknown[]) => stubExecute(...a));
-vi.spyOn(realRegistry, 'getToolList').mockImplementation(() => realRegistry.getToolList());
+vi.spyOn(realRegistry, 'getToolList').mockImplementation(() => realGetToolList());
 vi.spyOn(realRegistry, 'registerTool').mockImplementation(() => undefined);
 vi.spyOn(realRegistry, 'registerTools').mockImplementation(() => undefined);
 
 // tools/index: registerAllTools intercepted; readOnly flag recorded
 const toolsMod = await import('../../tools/index.js');
-const realRegisterAllTools = toolsMod.registerAllTools;
-void realRegisterAllTools;
 vi.spyOn(toolsMod, 'registerAllTools').mockImplementation((opts: { readOnly?: boolean } = {}) => {
   registerAllToolsCalls.push({ readOnly: opts.readOnly === true, names: [] });
 });
