@@ -128,3 +128,7 @@ mb3 终验复核：logic 口径 33/50 killed，17 存活全部为 l31/l36/l47 di
 - 行为护栏（不变）：node-units job 普通 vitest 全量（index-main.test.ts 22/22 PASS）+ protocol-smoke 22 checks（含 readOnly 门/字面量 pin）+ diagnostics.test.ts。
 - 处置：`server/src/index.ts` 移出 mutate 白名单（本 commit）；恢复条件 = CI runner 环境修复（node 升级或 vitest-runner 竞态修复）后重新纳入。
 - 关联：errors.ts 全量 standalone 复验 100%（25/25），full-gate 1 survived 属并发环境波动非真缺口。
+
+## SEE-1348 §SPEC-014 CI 环境波动记录（2026-09-28，errors.ts 1/25）
+
+- CI mutation-gate（2cpu runner, concurrency=4, vitest-runner）实测 errors.ts 1 mutant survived（96.00%）；同 commit 本地 standalone（Leader 与 Bachi 双重）复验 **25/25 killed = 100%**。判定：CI 并发环境波动（flaky），非真缺口；不占豁免台账（已有 Bachi 侧独立复验背书），后续 CI rerun 观察即可。
