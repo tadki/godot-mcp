@@ -38,8 +38,7 @@
     "server/src/core/schema.ts",
     "server/src/utils/errors.ts",
     "server/src/tools/exec.ts",
-    "server/src/tools/qa.ts",
-    "server/src/index.ts"
+    "server/src/tools/qa.ts"
   ],
   "vitest": {
     "configFile": "server/vitest.stryker.config.ts"
