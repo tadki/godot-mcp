@@ -121,3 +121,10 @@ mb3 终验复核：logic 口径 33/50 killed，17 存活全部为 l31/l36/l47 di
 - mutation（logic 口径，jobs=8）：mcp_qa 33/50 + sampler 35/50 killed；32 存活全部台账核销（17 dispatch-leg 机制 + 6 fps 不可达 + 2 等效 + 7 runner 判定差异）。
 - coverage：mcp_qa 81.4% / sampler 84.1%，缺口 = send 腿（dispatch 桶护栏）+ 引擎不可达臂（EngineDebugger/RenderingServer），豁免边界已核。
 - 上游移交：gqt mutation runner baseline 对照吞失败缺陷（新 fixture 场景）。
+
+## SEE-1348 §SPEC-014 补充（2026-09-28）：server/src/index.ts 移出 mutate 白名单
+
+- 原因：index.ts（boot 布线，114 mutants）的行为覆盖唯一来源 index-main.test.ts 在 CI node v22 + stryker vitest-runner（perTest，4 进程）下有 mock 加载竞态，dry-run 必崩（3/3 CI rerun 实证；本地 node v25 + command/vitest runner 不可复现）。移出 dry-run 排除面后该 114 mutants 全部 no-cov，score 必跌破 break=100。
+- 行为护栏（不变）：node-units job 普通 vitest 全量（index-main.test.ts 22/22 PASS）+ protocol-smoke 22 checks（含 readOnly 门/字面量 pin）+ diagnostics.test.ts。
+- 处置：`server/src/index.ts` 移出 mutate 白名单（本 commit）；恢复条件 = CI runner 环境修复（node 升级或 vitest-runner 竞态修复）后重新纳入。
+- 关联：errors.ts 全量 standalone 复验 100%（25/25），full-gate 1 survived 属并发环境波动非真缺口。
