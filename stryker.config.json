@@ -42,7 +42,7 @@
     "server/src/index.ts"
   ],
   "vitest": {
-    "configFile": "server/vitest.config.ts"
+    "configFile": "server/vitest.stryker.config.ts"
   },
   "thresholds": {
     "high": 100,
