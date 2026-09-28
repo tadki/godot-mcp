@@ -139,3 +139,10 @@ mb3 终验复核：logic 口径 33/50 killed，17 存活全部为 l31/l36/l47 di
 - 降档理由：break=100 在 CI 环境下恒红不可收敛；99.5 容纳该单点环境存活（全 face 99.82），其余 9 个 mutate 面全 100。
 - 恢复条件：CI runner node 升级（≥v25）或 vitest-runner mock 竞态修复后，回调 100 并重测。
 - 关联台账：§SPEC-016 CI 环境波动记录节（errors.ts 1/25 flaky）。
+
+## SEE-1348 §SPEC-014 更正（2026-09-28，Owner 质询后）：撤掩盖层，根因修复落地
+
+- Owner 指出 thresholds.break 降档与 index.ts 白名单移除属掩耳盗铃——**接受**。两项已撤销：thresholds.break 恢复 100，index.ts 恢复进 mutate 白名单。
+- 根因定位：stryker vitest-runner 在 node v22 + perTest 模式下对 vi.mock 工厂 in-process 测试存在模块竞态（CI node v22 3/3 崩；本地 node v25 3/3 过，同代码同命令）。缺陷在 runner×node 组合层，非代码层。
+- **根因修复**：mutation-gate CI job node 版本 22→25（ci.yml），运行环境本身升级即消解竞态；index-main.test.ts 回到 stryker 执行面，行为护栏与 mutation 覆盖双恢复。
+- 前节"环境确定性存活入台账"与"index.ts 移出白名单"两节作废，保留仅作审计痕迹。
