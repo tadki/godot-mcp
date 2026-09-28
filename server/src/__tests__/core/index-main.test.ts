@@ -2,15 +2,26 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
-const loggerMock = {
-  debug: vi.fn(),
-  info: vi.fn(),
-  notice: vi.fn(),
-  warning: vi.fn(),
-  warningRateLimited: vi.fn(),
-  error: vi.fn(),
-  critical: vi.fn(),
-};
+// SEE-1348 SPEC-017 gate fix: vi.mock factories are hoisted ABOVE top-level
+// declarations. Under stryker perTest instrumentation the load order changed
+// and the factories hit TDZ variables → ConfigError crashed mutation-gate's
+// initial run. vi.hoisted creates the shared state before the hoisted mock
+// factories execute, on any loader order.
+const { loggerMock, stubExecute, registerAllToolsCalls, state } = vi.hoisted(() => ({
+  loggerMock: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    notice: vi.fn(),
+    warning: vi.fn(),
+    warningRateLimited: vi.fn(),
+    error: vi.fn(),
+    critical: vi.fn(),
+  },
+  stubExecute: vi.fn(),
+  registerAllToolsCalls: [] as Array<{ readOnly: boolean; names: string[] }>,
+  state: { capturedServer: null as unknown as Server | null },
+}));
+
 vi.mock('../../connection/websocket.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../connection/websocket.js')>();
   return { ...mod, getGodotConnection: vi.fn(), initializeConnection: vi.fn(() => Promise.resolve()) };
@@ -21,7 +32,6 @@ vi.mock('../../utils/logger.js', () => ({ logger: loggerMock }));
 // Capture the Server instance main() constructs so the registered handlers can
 // be driven in-process (registry is a singleton with no reset API — a second
 // main() would throw "already registered" — so we stub the constructor).
-let capturedServer: Server | null = null;
 
 vi.mock('@modelcontextprotocol/sdk/server/index.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@modelcontextprotocol/sdk/server/index.js')>();
@@ -30,7 +40,7 @@ vi.mock('@modelcontextprotocol/sdk/server/index.js', async (importOriginal) => {
     constructor(...args: ConstructorParameters<typeof RealServer>) {
       super(...args);
       // eslint-disable-next-line @typescript-eslint/no-this-alias -- subclass capture needs the instance ref
-      capturedServer = this;
+      state.capturedServer = this;
     }
   };
   return { ...mod, Server: SpyServer };
@@ -41,8 +51,6 @@ vi.mock('@modelcontextprotocol/sdk/server/index.js', async (importOriginal) => {
 // we drive. registerAllTools recorded so the readOnly gate arms are asserted
 // through main() itself (the pure-function isReadOnlyMode has no direct
 // export — its observable contract IS the flag passed to registerAllTools).
-const stubExecute = vi.fn();
-const registerAllToolsCalls: Array<{ readOnly: boolean; names: string[] }> = [];
 vi.mock('../../core/registry.js', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../../core/registry.js')>();
   const realRegistry = mod.registry;
@@ -86,8 +94,8 @@ function makeFakeTransport(): Transport {
 const boot = async () => {
   const { main } = await import('../../index.js');
   await main({ createTransport: makeFakeTransport, connectGodot: () => new Promise<void>(() => {}) });
-  if (!capturedServer) throw new Error('Server not captured');
-  return capturedServer;
+  if (!state.capturedServer) throw new Error('Server not captured');
+  return state.capturedServer;
 };
 
 type ToolResult = { content: Array<{ type: string; text?: string }>; isError?: boolean; structuredContent?: unknown };
