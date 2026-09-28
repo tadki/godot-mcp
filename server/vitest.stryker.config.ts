@@ -13,9 +13,10 @@ export default mergeConfig(
   base,
   defineConfig({
     test: {
+      root: __dirname,
       exclude: [
         ...(base.test?.exclude ?? []),
-        'src/__tests__/core/index-main.test.ts',
+        '**/__tests__/core/index-main.test.ts',
       ],
     },
   }),
