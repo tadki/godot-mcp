@@ -30,9 +30,11 @@ vi.spyOn(
 ).mockImplementation(() => Promise.resolve());
 
 // logger: swap all methods for mocks
+const loggerMod = await import('../../utils/logger.js');
+type LoggerLike = Record<'debug'|'info'|'notice'|'warning'|'warningRateLimited'|'error'|'critical', (...a: unknown[]) => void>;
 for (const k of ['debug','info','notice','warning','warningRateLimited','error','critical'] as const) {
-  vi.spyOn((await import('../../utils/logger.js')).logger as never, k)
-    .mockImplementation(loggerMock[k]);
+  vi.spyOn(loggerMod.logger as unknown as LoggerLike, k)
+    .mockImplementation(loggerMock[k] as (...a: unknown[]) => void);
 }
 
 // Server: capture the constructed instance via prototype-level interception of
