@@ -40,7 +40,7 @@ for (const k of ['debug','info','notice','warning','warningRateLimited','error',
 // Server: capture the constructed instance via prototype-level interception of
 // connect() — main() always calls server.connect(transport) at boot, so the
 // spy sees every constructed Server without touching module identity.
-vi.spyOn(Server.prototype, 'connect').mockImplementation(function (this: Server, transport: Transport) {
+vi.spyOn(Server.prototype, 'connect').mockImplementation(function (this: Server) {
   state.capturedServer = this;
   return Promise.resolve();
 });

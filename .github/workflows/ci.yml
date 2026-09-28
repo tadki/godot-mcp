@@ -63,6 +63,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: server/package-lock.json
       - run: npm ci --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
+        working-directory: server
       - run: npm run mutation
       - if: failure()
         uses: actions/upload-artifact@v4
