@@ -84,7 +84,8 @@ rl.on('line', (line) => {
             result: { tools: [{
                 name: 'godot_exec',
                 description: 'A static denylist rejects accidental process/file-write escape ' +
-                    '(OS.execute, DirAccess, write-mode FileAccess, ResourceSaver, ProjectSettings.save, ...) and ' +
+                    '(OS.execute and its spawn/shell siblings, DirAccess, write-mode FileAccess, ResourceSaver, ' +
+                    'ProjectSettings.save, EditorInterface) and ' +
                     'names the offending token — an accident guard, NOT a security boundary.',
                 inputSchema: { type: 'object' },
             }] }
