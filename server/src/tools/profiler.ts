@@ -169,10 +169,10 @@ const ProfilerSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('snapshot').describe('Full performance snapshot (all engine metrics)') }),
   z.object({ action: z.literal('start').describe('Start per-frame time-series profiling') }),
   z.object({ action: z.literal('stop').describe('Stop time-series profiling') }),
-  z.object({ action: z.literal('get_data').describe('Get collected time-series data with spike detection') }),
-  z.object({ action: z.literal('get_active_processes').describe('List active _process/_physics_process scripts') }),
+  z.object({ action: z.literal('get_data').describe('Get collected time-series data with percentile stats, frame-budget usage, spike detection (first 20 spikes listed; count is the total), and monitor trends') }),
+  z.object({ action: z.literal('get_active_processes').describe('List active _process/_physics_process entries by script (built-in class name when a node has no script), with instance counts') }),
   z.object({
-    action: z.literal('get_signal_connections').describe('Inspect signal connections'),
+    action: z.literal('get_signal_connections').describe('Inspect signal connections under a node subtree (up to 200 connections, 20 levels deep; silently truncated at those caps)'),
     node_path: z.string().optional().describe('Node path (defaults to scene root)'),
   }),
 ]);

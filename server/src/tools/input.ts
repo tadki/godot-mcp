@@ -143,8 +143,10 @@ const MouseMoveEntrySchema = z.strictObject({
       'relative. Drives Control._gui_input, mouse_entered/exited, and any _input ' +
       'handler that reads event.position; does NOT move the polled OS cursor (games ' +
       'that poll get_mouse_position() will not see this — see the spike doc). Precede ' +
-      'clicks/drags with a move to the exact grab point: a press without a prior move ' +
-      'inherits the last known (first use: physical) cursor position. See the drag ' +
+      'clicks/drags with a move to the exact grab point: the press event lands at its ' +
+      'own (x, y), but without a prior move the game\'s hover state and cooperative ' +
+      'cursor still report the last known position (physical cursor on first use), so ' +
+      'hover/mouse_entered fire only via the press itself. See the drag ' +
       'recipe in docs/tools/input.md.'
     ),
   ...TimingFields,
@@ -282,8 +284,9 @@ const InputSchema = z.discriminatedUnion('action', [
       .describe(
         'Array of inputs to execute. Each entry is one of: a named ACTION (action_name, optional ' +
         'analog strength), a joypad BUTTON (joy_button), an analog AXIS hold (axis + value), a ' +
-        'STICK vector (stick + x/y), a raw KEY (key, e.g. "ctrl+s"), or relative mouse LOOK ' +
-        '(look: [dx, dy]) — mix freely on one timeline. ' +
+        'STICK vector (stick + x/y), a raw KEY (key, e.g. "ctrl+s"), relative mouse LOOK ' +
+        '(look: [dx, dy]), an absolute mouse MOVE (mouse_move: [x, y]), or an absolute mouse ' +
+        'CLICK/hold (mouse_button: {x, y, button?}) — mix freely on one timeline. ' +
         'Joypad events drive bound actions (with real deadzone math), raw _input handlers, and the ' +
         'polled Input singletons (get_joy_axis / is_joy_button_pressed); key events likewise drive ' +
         'bound actions, _input/_unhandled_input, and Input.is_key_pressed; look events deliver ' +
@@ -368,7 +371,7 @@ export const input = defineTool({
   name: 'godot_input',
   annotations: { title: 'Input Injection', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   description:
-    'Inject input into a running Godot game for testing: named actions (with analog strength), joypad buttons, analog axes, stick vectors, raw keyboard keys (with modifier combos), relative mouse-look (look: [dx, dy], for FPS-camera _input handlers), and ABSOLUTE mouse positioning (mouse_move/mouse_button, viewport/canvas space). Use get_map to discover available input actions and their bindings, sequence to execute inputs with precise timing (optionally with an effect probe that proves the inputs changed game state), or type_text to type into UI elements. Absolute entries drive the EVENT path only (event.position, Control._gui_input, mouse_entered); they deliberately do NOT move the polled OS cursor — games polling get_mouse_position() read the physical pointer, and warping it is off-limits by DECIDED design (docs/design/mouse-input-spike.md); poll-based games adopt the cooperative MCPCursor/MousePos contract instead (migration guide in docs/design/mouse-cursor-coop.md). Last-position semantics: the bridge never clears the virtual cursor (clear_virtual is intentionally never called) — once any absolute entry sets it, the game-side cooperative cursor keeps reporting that position for the rest of the session rather than falling back to the physical cursor mid-session; a click without a prior move seeds from the last known (first use: physical) position.',
+    'Inject input into a running Godot game for testing: named actions (with analog strength), joypad buttons, analog axes, stick vectors, raw keyboard keys (with modifier combos), relative mouse-look (look: [dx, dy], for FPS-camera _input handlers), and ABSOLUTE mouse positioning (mouse_move/mouse_button, viewport/canvas space). Use get_map to discover available input actions and their bindings, sequence to execute inputs with precise timing (optionally with an effect probe that proves the inputs changed game state), or type_text to type into UI elements. Absolute entries drive the EVENT path only (event.position, Control._gui_input, mouse_entered); they deliberately do NOT move the polled OS cursor — games polling get_mouse_position() read the physical pointer, and warping it is off-limits by DECIDED design (docs/design/mouse-input-spike.md); poll-based games adopt the cooperative MCPCursor/MousePos contract instead (migration guide in docs/design/mouse-cursor-coop.md). Last-position semantics: the bridge never clears the virtual cursor (clear_virtual is intentionally never called) — once any absolute entry sets it, the game-side cooperative cursor keeps reporting that position for the rest of the session rather than falling back to the physical cursor mid-session; the press event lands at its own (x, y), but a click without a prior move leaves the game-side hover state still reporting the last known (first use: physical) position.',
   schema: InputSchema,
   // eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
   async execute(args: InputArgs, { godot }) {

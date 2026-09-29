@@ -17,7 +17,7 @@
       },
       "node_path": {
         "type": "string",
-        "description": "Path to node to select (required for: select)"
+        "description": "Path to node to select — scene-relative (e.g. \"Player/Anim\") or runtime-style \"/root/<SceneRoot>/Player/Anim\" (the SceneRoot segment must match the open scene's root name) (required for: select)"
       },
       "scene_path": {
         "description": "Scene to run (optional, defaults to main scene) (for: run)",

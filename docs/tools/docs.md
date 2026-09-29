@@ -39,7 +39,7 @@ Get any docs page by path
 // fetch_class
 {
   "action": "fetch_class",
-  "class_name": "example"
+  "class_name": "CharacterBody2D"
 }
 ```
 

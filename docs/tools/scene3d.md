@@ -20,7 +20,7 @@ Get spatial data for a Node3D and optionally its children
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the Node3D |
+| `node_path` | string | Yes | Path to the Node3D — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `include_children` | boolean | No | Include child nodes |
 | `type_filter` | string | No | Filter by node type, e.g. "MeshInstance3D" |
 | `max_results` | integer | No | Limit number of results. Defaults to 50 when include_children=true. Set higher (e.g., 500) if needed. |

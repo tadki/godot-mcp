@@ -16,7 +16,7 @@ const TrackTypeEnum = z.enum([
   'animation',
 ]);
 
-const nodePathField = z.string().describe('Path to the AnimationPlayer');
+const nodePathField = z.string().describe('Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene\'s root name)');
 const animNameField = z.string().describe('Animation name');
 const trackIndexField = z.number().describe('Track index');
 const keyframeIndexField = z.number().describe('Keyframe index');
@@ -48,7 +48,7 @@ const AnimationEditSchema = z.discriminatedUnion('action', [
     action: z.literal('play').describe('Play an animation'),
     node_path: nodePathField,
     animation_name: animNameField,
-    custom_blend: z.number().optional().describe('Custom blend time, -1 for default'),
+    custom_blend: z.number().optional().describe('Custom blend time in seconds, -1 for default'),
     custom_speed: z.number().optional().describe('Playback speed, 1.0 default'),
     from_end: z.boolean().optional().describe('Play from end for reverse'),
   }),
@@ -70,7 +70,7 @@ const AnimationEditSchema = z.discriminatedUnion('action', [
     library_name: z.string().optional().describe('Library name'),
     length: z.number().optional().describe('Animation length in seconds'),
     loop_mode: LoopModeEnum.optional().describe('Loop mode: none, linear, pingpong'),
-    step: z.number().optional().describe('Step value for keyframe snapping'),
+    step: z.number().optional().describe('Step value in seconds for keyframe snapping'),
   }),
   z.object({
     action: z.literal('delete').describe('Delete an animation'),
@@ -84,7 +84,7 @@ const AnimationEditSchema = z.discriminatedUnion('action', [
     animation_name: animNameField,
     length: z.number().optional().describe('Animation length in seconds'),
     loop_mode: LoopModeEnum.optional().describe('Loop mode: none, linear, pingpong'),
-    step: z.number().optional().describe('Step value for keyframe snapping'),
+    step: z.number().optional().describe('Step value in seconds for keyframe snapping'),
   }),
   z.object({
     action: z.literal('add_track').describe('Add a track to an animation'),

@@ -23,7 +23,7 @@
       },
       "node_path": {
         "type": "string",
-        "description": "Path to the TileMapLayer (required for: get_info, get_tileset_info, get_used_cells, get_cell, get_cells_in_region, convert_coords)"
+        "description": "Path to the TileMapLayer — scene-relative (e.g. \"Player/Anim\") or runtime-style \"/root/<SceneRoot>/Player/Anim\" (the SceneRoot segment must match the open scene's root name) (required for: get_info, get_tileset_info, get_used_cells, get_cell, get_cells_in_region, convert_coords)"
       },
       "coords": {
         "type": "object",
@@ -74,7 +74,7 @@
         "description": "Maximum corner of region (required for: get_cells_in_region)"
       },
       "local_position": {
-        "description": "Local position to convert to map coords (for: convert_coords)",
+        "description": "Local position to convert to map coords — pass exactly one of local_position or map_coords (for: convert_coords)",
         "type": "object",
         "properties": {
           "x": {
@@ -90,7 +90,7 @@
         ]
       },
       "map_coords": {
-        "description": "Map coordinates to convert to local position (for: convert_coords)",
+        "description": "Map coordinates to convert to local position — pass exactly one of local_position or map_coords (for: convert_coords)",
         "type": "object",
         "properties": {
           "x": {

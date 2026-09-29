@@ -10,7 +10,7 @@ Live-game QA assertion primitives: property assertions, one-shot signal waits wi
 
 ## godot_qa
 
-Live-game QA assertion primitives for the RUNNING game — the act/observe/verify loop with real-machine oracles: assert_property (node property vs expected, tolerance-aware), wait_for_signal (one-shot signal listen with an optional predicate over declared args; timeout is a clean emitted:false, never an error), assert_layout (visible/onscreen/within_parent/min_size geometry checks as cheap text), and screenshot_node (lossless PNG cropped to one node). All read-only. NOT a GUT replacement: GUT owns repo test suites; godot_qa drives the running game, freeze included (freeze note: gameplay signals do not fire under godot_game_time freeze — waits resolve emitted:false there).
+Live-game QA assertion primitives for the RUNNING game — the act/observe/verify loop with real-machine oracles: assert_property (node property vs expected, tolerance-aware), wait_for_signal (one-shot signal listen with an optional predicate over declared args; timeout is a clean emitted:false, never an error), assert_layout (visible/onscreen/within_parent/min_size geometry checks as cheap text), and screenshot_node (lossless PNG cropped to one node). All read-only. NOT a GUT replacement: GUT owns repo test suites; godot_qa drives the running game, freeze included (see wait_for_signal for freeze semantics).
 
 ### Actions
 

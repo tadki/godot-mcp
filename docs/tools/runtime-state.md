@@ -35,19 +35,19 @@ Start an in-engine sampler that records specified node fields over a time window
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `specs` | object[] | No | Which nodes and fields to watch. Optional when signals is provided. |
-| `signals` | object[] | No | Signals to record as discrete timeline events during the window. Each emission is buffered as {t_ms, source, signal, args} (200 events/window shared FAIRLY — each signal gets an equal sub-budget so a chatty signal cannot starve a rare one; keep-first within each, with events_dropped + events_dropped_by_signal reporting any loss; args stringified to ~100 chars). watch_collect merges these with string-field transitions into a time-sorted `timeline`. Signals with more than 5 parameters are skipped and reported in unresolved_signals, as are bad paths/names. Connections stay live until duration_ms elapses or watch_stop. Signals must be emitted on the main thread (worker-thread emissions are unsupported). At least one of specs/signals is required. |
+| `signals` | object[] | No | Up to 16 signals to record as discrete timeline events during the window. Each emission is buffered as {t_ms, source, signal, args} (200 events/window shared FAIRLY — each signal gets an equal sub-budget so a chatty signal cannot starve a rare one; keep-first within each, with events_dropped + events_dropped_by_signal reporting any loss; args stringified to ~100 chars). watch_collect merges these with string-field transitions into a time-sorted `timeline`. Signals with more than 5 parameters are skipped and reported in unresolved_signals, as are bad paths/names. Connections stay live until duration_ms elapses or watch_stop. Signals must be emitted on the main thread (worker-thread emissions are unsupported). At least one of specs/signals is required. |
 | `hz` | integer | No | Sample rate in Hz (default: 20) |
 | `duration_ms` | integer | No | Auto-stop after this many milliseconds (default: 1000) |
 
 #### `watch_collect`
 
-Collect the current sampler buffer and return a per-field summary (start/end/min/max/mean/slope for numeric fields; transition events for string fields) plus a time-sorted `timeline` merging watched signal emissions with string-field transitions (kinds: signal, anim_transition, field_change). TIMESTAMPS: signal t_ms is emission time (ms resolution); anim/field t_ms is DETECTION time at the sample rate — the change happened up to one sample interval earlier, so do not infer cross-kind ordering from nearby timestamps. Safe to call before auto-stop — returns whatever has been recorded so far; signal connections stay live until the window ends.
+Collect the current sampler buffer and return a per-field summary (start/end/min/max/mean/slope for numeric fields; transition events for string fields) plus a time-sorted `timeline` merging watched signal emissions with string-field transitions (kinds: signal, anim_transition, field_change). TIMESTAMPS: signal t_ms is emission time (ms resolution); anim/field t_ms is DETECTION time at the sample rate — the change happened up to one sample interval earlier, so do not infer cross-kind ordering from nearby timestamps. The timeline is capped at 500 entries; `timeline_truncated`, `events_dropped`, and `events_dropped_by_signal` in the response report any loss (signal-event budget, cap, or a string field saturating its sample buffer), and a per-field `samples_truncated` marker means late samples were dropped so min/max/slope reflect only the early window. Safe to call before auto-stop — returns whatever has been recorded so far; signal connections stay live until the window ends.
 
 *No parameters.*
 
 #### `watch_stop`
 
-Stop the sampler early (disconnecting watched signals) and return the final per-field summary and merged `timeline`. Equivalent to watch_collect + stopping the sampler.
+Stop the sampler early (disconnecting watched signals) and return the final per-field summary and merged `timeline` (same truncation reporting as watch_collect). Equivalent to watch_collect + stopping the sampler.
 
 *No parameters.*
 

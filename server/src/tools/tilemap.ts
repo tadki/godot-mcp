@@ -14,7 +14,7 @@ const Vector3iSchema = z.object({
   z: z.number().int(),
 });
 
-const tilemapNodePath = z.string().describe('Path to the TileMapLayer');
+const tilemapNodePath = z.string().describe('Path to the TileMapLayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene\'s root name)');
 
 const TilemapReadSchema = z.discriminatedUnion('action', [
   z.object({
@@ -41,8 +41,10 @@ const TilemapReadSchema = z.discriminatedUnion('action', [
     local_position: z
       .object({ x: z.number(), y: z.number() })
       .optional()
-      .describe('Local position to convert to map coords'),
-    map_coords: Vector2iSchema.optional().describe('Map coordinates to convert to local position'),
+      .describe('Local position to convert to map coords — pass exactly one of local_position or map_coords'),
+    map_coords: Vector2iSchema.optional().describe('Map coordinates to convert to local position — pass exactly one of local_position or map_coords'),
+  }).refine((d) => (d.local_position !== undefined) !== (d.map_coords !== undefined), {
+    message: 'pass exactly one of local_position or map_coords',
   }),
 ]);
 
@@ -188,7 +190,7 @@ export const tilemapEdit = defineTool({
   },
 });
 
-const gridmapNodePath = z.string().describe('Path to the GridMap');
+const gridmapNodePath = z.string().describe('Path to the GridMap — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene\'s root name)');
 
 const GridmapReadSchema = z.discriminatedUnion('action', [
   z.object({

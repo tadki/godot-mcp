@@ -26,7 +26,7 @@ Get project settings
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `category` | string | No | Settings category to filter by (use "input" for input mappings) |
+| `category` | string | No | Setting-name prefix to filter by (e.g. "physics" returns all physics/* settings); the special value "input" returns full input-action mappings |
 | `include_builtin` | boolean | No | Include built-in ui_* actions (with category="input") |
 
 #### `addon_status`

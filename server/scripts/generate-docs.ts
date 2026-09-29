@@ -33,7 +33,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DOCS_DIR = join(__dirname, '../../docs');
 const TOOLS_DIR = join(DOCS_DIR, 'tools');
 const ROOT_README = join(__dirname, '../../README.md');
-const NPM_README = join(__dirname, '../README.md');
 
 interface ToolCategory {
   name: string;
@@ -44,7 +43,7 @@ interface ToolCategory {
 
 const categories: ToolCategory[] = [
   { name: 'Scene', filename: 'scene', description: 'Scene management tools', tools: sceneTools },
-  { name: 'Node', filename: 'node', description: 'Node manipulation and script attachment tools', tools: nodeTools },
+  { name: 'Node', filename: 'node', description: 'Node inspection and editing tools: read properties and the scene tree, find nodes (live-game tree when playing), update properties, and reparent', tools: nodeTools },
   { name: 'Editor', filename: 'editor', description: 'Editor control, debugging, and screenshot tools', tools: editorTools },
   { name: 'Project', filename: 'project', description: 'Project information tools', tools: projectTools },
   { name: 'Animation', filename: 'animation', description: 'Animation query, playback, and editing tools', tools: animationTools },
@@ -458,10 +457,11 @@ long-press) needs a real \`duration_ms\` on the press entry.
 
 ### Keep moves and press/release on separate frames
 
-The equal-time event sort deliberately fires presses before releases at the same
-timestamp, but a \`mouse_move\` sharing the press's \`start_ms\` may land before or
-with the press — order between different entry kinds at equal time is not
-guaranteed. Give the press and every move **distinct \`start_ms\` values spaced
+The equal-time event sort deliberately fires releases/zero-sets before
+presses/sets at the same timestamp (presses still land first in practice because
+press durations are nudged to >= 1 ms), and Godot's sort is unstable, so a
+\`mouse_move\` sharing the press's \`start_ms\` has no guaranteed order relative
+to the press. Give the press and every move **distinct \`start_ms\` values spaced
 ≥ one frame** (e.g. press at 0 with \`duration_ms\` 400, moves at 50 / 100 / 150 /
 200 — the release lands at 400, at least one frame after the last waypoint).
 This also lets hover/\`mouse_entered\` update between waypoints, which drag
@@ -557,29 +557,14 @@ Add to your MCP configuration:
 `;
 }
 
-function generateNpmReadme(): string {
-  const rootReadme = readFileSync(ROOT_README, 'utf-8');
-  const blobBase = 'https://github.com/satelliteoflove/godot-mcp/blob/main/';
-  const rawBase = 'https://raw.githubusercontent.com/satelliteoflove/godot-mcp/main/';
 
-  // npmjs.com resolves relative links against the repo root, not server/, so
-  // every relative link must become an absolute GitHub URL. Images need raw
-  // URLs (a blob URL is an HTML page and will not render as an image).
-  //
-  // SEE-1348 §SPEC-015: this fork's root README is fork-authored (tadki fork
-  // positioning, launch/ control plane) and is NOT npm-appropriate; upstream
-  // npm publish is gated off (release.yml SEE-1291) and server/README.md is
-  // the frozen upstream npm README (authored e64a0e0). The generator therefore
-  // does NOT rewrite server/README.md — writing the fork root content there
-  // was the source of the recurring "fork title" drift (cf68bf4, 8aa6fff).
-  return rootReadme.replace(
-    /(!?)\[([^\]]*)\]\((?!https?:\/\/|#)([^)\s]+)\)/g,
-    (_match, bang: string, text: string, path: string) => {
-      const isImage = bang === '!' || /\.(png|jpe?g|gif|svg|webp)(#|$)/i.test(path);
-      return `${bang}[${text}](${isImage ? rawBase : blobBase}${path})`;
-    },
-  );
-}
+// SEE-1348 §SPEC-015 rationale (kept here after generateNpmReadme() removal):
+// this fork's root README is fork-authored (tadki fork positioning, launch/
+// control plane) and is NOT npm-appropriate; upstream npm publish is gated off
+// (release.yml SEE-1291) and server/README.md is the frozen upstream npm README
+// (authored e64a0e0). The generator therefore does NOT rewrite
+// server/README.md — writing the fork root content there was the source of the
+// recurring "fork title" drift (cf68bf4, 8aa6fff).
 
 
 function main(): void {
@@ -604,7 +589,7 @@ function main(): void {
 
   // SEE-1348 §SPEC-015: server/README.md is the frozen upstream npm README
   // (upstream publish is gated off in this fork); the generator does not
-  // rewrite it — see generateNpmReadme's comment for the drift history.
+  // rewrite it — see the §SPEC-015 rationale comment above for the drift history.
   console.log('  Skipped server/README.md (frozen upstream npm README, SEE-1348 §SPEC-015)');
 
   console.log(`\nGenerated documentation for ${categories.reduce((sum, c) => sum + c.tools.length, 0)} tools.`);

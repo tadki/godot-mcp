@@ -22,7 +22,7 @@
       },
       "node_path": {
         "type": "string",
-        "description": "Path to the GridMap (required for: get_info, get_meshlib_info, get_used_cells, get_cell, get_cells_by_item)"
+        "description": "Path to the GridMap — scene-relative (e.g. \"Player/Anim\") or runtime-style \"/root/<SceneRoot>/Player/Anim\" (the SceneRoot segment must match the open scene's root name) (required for: get_info, get_meshlib_info, get_used_cells, get_cell, get_cells_by_item)"
       },
       "coords": {
         "type": "object",

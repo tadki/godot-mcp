@@ -68,7 +68,7 @@ describe('generated doc examples (#287)', () => {
   it.each(ACTION_CASES.map((c) => [`${c.tool.name}:${c.variant.action}`, c] as const))(
     'emits a schema-valid example for %s',
     (_label, { tool, variant }) => {
-      const example = buildVariantExample(variant, tool.schema);
+      const example = buildVariantExample(variant, tool.schema, tool.name);
       const result = tool.schema.safeParse(example);
       expect(result.success, JSON.stringify(example)).toBe(true);
     }

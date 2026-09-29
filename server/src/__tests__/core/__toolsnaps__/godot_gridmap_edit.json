@@ -16,7 +16,7 @@
       },
       "node_path": {
         "type": "string",
-        "description": "Path to the GridMap"
+        "description": "Path to the GridMap — scene-relative (e.g. \"Player/Anim\") or runtime-style \"/root/<SceneRoot>/Player/Anim\" (the SceneRoot segment must match the open scene's root name)"
       },
       "coords": {
         "type": "object",

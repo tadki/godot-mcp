@@ -14,7 +14,7 @@ const ProjectSchema = z.discriminatedUnion('action', [
     category: z
       .string()
       .optional()
-      .describe('Settings category to filter by (use "input" for input mappings)'),
+      .describe('Setting-name prefix to filter by (e.g. "physics" returns all physics/* settings); the special value "input" returns full input-action mappings'),
     include_builtin: z
       .boolean()
       .optional()
