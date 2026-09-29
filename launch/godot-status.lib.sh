@@ -117,7 +117,7 @@ process.stdout.write(JSON.stringify(out, null, 2));
 # freshness 仍为纯展示派生——不触发任何 reaper/清理联动（WS-4 约束）。
 status_registry_json() {
     local reg="${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-port-registry.json}"
-    local ann='{}' rid wt h cw cwd_real wt_real
+    local ann='{}' rid wt cw cwd_real wt_real
     cwd_real="$(realpath -m -- "$PWD" 2>/dev/null || printf '%s' "$PWD")"
     while IFS=$'\t' read -r rid wt; do
         [[ -n "$rid" ]] || continue

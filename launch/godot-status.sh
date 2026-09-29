@@ -136,7 +136,7 @@ fi
 OUT="$(mktemp /tmp/godot-status-out.XXXXXX.json)"
 trap 'rm -f "$OUT"' EXIT
 AGENT="$AGENT_NAME" RID="$RUNTIME_ID" LBL="$LABEL" PORTV="${PORT:-}" PSRC="$PORT_SOURCE" \
-WT="$WT_RESOLVED" PB="$PORT_BOUND" WDHash="$WORKDIR_HASH" WDSrc="$WORKDIR_HASH_SOURCE" \
+WT="$WT_RESOLVED" PB="$PORT_BOUND" WDHASH="$WORKDIR_HASH" WDSRC="$WORKDIR_HASH_SOURCE" \
 LEASE="$LEASE_JSON" REG="$REGISTRY_JSON" \
 LIFE="$LIFECYCLE_JSON" WARM="$WARMUP_JSON" GUP="$GIVEUP_JSON" \
 PSTATE="$PROXY_STATE_JSON" PLOG="$PROXYLOG_JSON" REGS="$REGISTRATION_JSON" TIMEO="$TIMEOUTS_JSON" \
@@ -153,8 +153,8 @@ const doc = {
         port: env.PORTV ? Number(env.PORTV) : null,
         port_source: env.PSRC || "",
         worktree: env.WT || "",
-        workdir_hash: env.WDHash || null,
-        hash_source: env.WDSrc || null,
+        workdir_hash: env.WDHASH || null,
+        hash_source: env.WDSRC || null,
         port_bound: env.PB === "true" ? true : env.PB === "false" ? false : null,
     },
     lease: j(env.LEASE, "lease"),
@@ -170,7 +170,7 @@ const doc = {
 require("fs").writeFileSync(process.argv[1], JSON.stringify(doc, null, 2) + "\n");
 ' "$OUT" \
 AGENT="$AGENT_NAME" RID="$RUNTIME_ID" LBL="$LABEL" PORTV="${PORT:-}" PSRC="$PORT_SOURCE" \
-WT="$WT_RESOLVED" PB="$PORT_BOUND" WDHash="$WORKDIR_HASH" WDSrc="$WORKDIR_HASH_SOURCE" \
+WT="$WT_RESOLVED" PB="$PORT_BOUND" WDHASH="$WORKDIR_HASH" WDSRC="$WORKDIR_HASH_SOURCE" \
 LEASE="$LEASE_JSON" REG="$REGISTRY_JSON" \
 LIFE="$LIFECYCLE_JSON" WARM="$WARMUP_JSON" GUP="$GIVEUP_JSON" \
 PSTATE="$PROXY_STATE_JSON" PLOG="$PROXYLOG_JSON" REGS="$REGISTRATION_JSON" TIMEO="$TIMEOUTS_JSON" || true
