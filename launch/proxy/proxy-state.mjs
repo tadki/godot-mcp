@@ -46,10 +46,19 @@ export function proxyStatePathFor(runtimeId = RUNTIME_ID) {
 }
 
 // Current coarse state, same vocabulary godot-status/doctor consume.
+// SEE-1356 D2 (批 1 QA FAIL 裁定) vocabulary/priority correction:
+//   failed_exit = the TERMINAL family — the legacy T4 latch (S.warmupTimedOut)
+//   OR an armed give-up (spawn-terminal FAILED_CLEAN, WS-5: S.spawnTerminal /
+//   S.giveUpArmedAt > 0). Derived read-side only — the state-machine fields
+//   stay the SSOT, no behavior delta at any write site.
+//   recovering outranks warm: in the warm+recovering form (T2 warm branch —
+//   editor bound but the CLI never connected) the operative warmup state IS
+//   RECOVERING; the previous warm-first priority made the doctor
+//   (recovering,*) arbitration rows unreachable on real chains.
 export function proxyCoarseState() {
-    if (S.warm) return 'warm';
+    if (S.warmupTimedOut || S.spawnTerminal || S.giveUpArmedAt > 0) return 'failed_exit';
     if (S.recovering) return 'recovering';
-    if (S.warmupTimedOut) return 'failed_exit';
+    if (S.warm) return 'warm';
     if (S.spawnTriggered || S.spawnInFlight) return 'warming';
     return 'cold_idle';
 }
