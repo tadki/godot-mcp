@@ -16,7 +16,7 @@
         "description": "Resource path (e.g., \"res://player/sprites.tres\")"
       },
       "max_depth": {
-        "description": "Detail level: 0 = summary only, 1 = full detail (default), 2+ = expand sub-resources",
+        "description": "Detail level: 0 = summary only, 1 = full detail (default), 2+ = maximum expansion (per-tile TileSet detail, one more nesting level inside arrays/dicts). Resource-valued properties are always reported as path references or type markers, never expanded inline.",
         "type": "number"
       },
       "include_internal": {

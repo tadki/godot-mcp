@@ -32,7 +32,7 @@ const ExecSchema = z.discriminatedUnion('action', [
         'Node/Object/Resource come back as compact reference metadata (class + path + repr), never ' +
         'the object graph. Budget gates: nesting depth 8 and node count 512 (each trips a ' +
         '`result_truncated` marker naming the reason; a payload over the byte cap GODOT_MCP_EXEC_MAX_BYTES ' +
-        'downgrades to a capped JSON preview with reason "bytes"). `result_repr` carries the legacy ' +
+        '(default 64 KB) downgrades to a capped JSON preview with reason "bytes"). `result_repr` carries the legacy ' +
         'str() preview for transitional consumers. print() output is not returned — use return ' +
         'values (or, when the minimal-godot-mcp companion server is installed, its ' +
         'get_console_output). Function bodies cannot declare top-level func/class — use lambdas ' +
@@ -96,7 +96,8 @@ export const exec = defineTool({
     'into game code. Errors when no game is running. For launch-time setup, compose: ' +
     'godot_editor_edit run frozen=true -> godot_exec run (mutate state, attach bots under `holder`) -> ' +
     'godot_game_time thaw. A static denylist rejects accidental process/file-write escape ' +
-    '(OS.execute, DirAccess, write-mode FileAccess, ResourceSaver, ProjectSettings.save, ...) and ' +
+    '(OS.execute and its spawn/shell siblings, DirAccess, write-mode FileAccess, ResourceSaver, ' +
+    'ProjectSettings.save, EditorInterface) and ' +
     'names the offending token — an accident guard, NOT a security boundary. Compile errors ' +
     'reject the call with the parser message; runtime errors come back in runtime_errors with the ' +
     'call still completing.',

@@ -1,6 +1,6 @@
 # Node Tools
 
-Node manipulation and script attachment tools
+Node inspection and editing tools: read properties and the scene tree, find nodes (live-game tree when playing), update properties, and reparent
 
 ## Tools
 
@@ -11,7 +11,7 @@ Node manipulation and script attachment tools
 
 ## godot_node_read
 
-Inspect scene nodes in the editor: read a node's effective properties (including class defaults a .tscn read cannot show), view the full scene tree as the editor sees it (including children inside instanced sub-scenes), and find nodes by name or type. Use it to discover node paths and verify the live state of the open scene before or after making changes. It cannot modify anything; to update properties or reparent a node, use godot_node_edit.
+Inspect scene nodes: read a node's effective properties (including class defaults a .tscn read cannot show), view the full scene tree as the editor sees it (including children inside instanced sub-scenes), and find nodes by name or type — find searches the RUNNING game's live tree (spawned entities included) while a game is playing, otherwise the scene open in the editor. Use it to discover node paths and verify live state. It cannot modify anything; to update properties or reparent a node, use godot_node_edit.
 
 ### Actions
 

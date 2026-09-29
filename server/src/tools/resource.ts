@@ -19,7 +19,7 @@ const ResourceSchema = z.discriminatedUnion('action', [
     max_depth: z
       .number()
       .optional()
-      .describe('Detail level: 0 = summary only, 1 = full detail (default), 2+ = expand sub-resources'),
+      .describe('Detail level: 0 = summary only, 1 = full detail (default), 2+ = maximum expansion (per-tile TileSet detail, one more nesting level inside arrays/dicts). Resource-valued properties are always reported as path references or type markers, never expanded inline.'),
     include_internal: z
       .boolean()
       .optional()

@@ -298,7 +298,7 @@
                   "items": {
                     "type": "number"
                   },
-                  "description": "Absolute mouse move: teleport the virtual cursor to [x, y] in VIEWPORT/canvas space, injected as a single InputEventMouseMotion with position set and zero relative. Drives Control._gui_input, mouse_entered/exited, and any _input handler that reads event.position; does NOT move the polled OS cursor (games that poll get_mouse_position() will not see this — see the spike doc). Precede clicks/drags with a move to the exact grab point: a press without a prior move inherits the last known (first use: physical) cursor position. See the drag recipe in docs/tools/input.md."
+                  "description": "Absolute mouse move: teleport the virtual cursor to [x, y] in VIEWPORT/canvas space, injected as a single InputEventMouseMotion with position set and zero relative. Drives Control._gui_input, mouse_entered/exited, and any _input handler that reads event.position; does NOT move the polled OS cursor (games that poll get_mouse_position() will not see this — see the spike doc). Precede clicks/drags with a move to the exact grab point: the press event lands at its own (x, y), but without a prior move the game's hover state and cooperative cursor still report the last known position (physical cursor on first use), so hover/mouse_entered fire only via the press itself. See the drag recipe in docs/tools/input.md."
                 },
                 "start_ms": {
                   "default": 0,

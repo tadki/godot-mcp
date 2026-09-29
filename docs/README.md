@@ -18,7 +18,7 @@ This server provides **22 tools** for AI-assisted Godot development.
 | Category | Tools | Description |
 |----------|-------|-------------|
 | [Scene](tools/scene.md) | 1 | Scene management tools |
-| [Node](tools/node.md) | 2 | Node manipulation and script attachment tools |
+| [Node](tools/node.md) | 2 | Node inspection and editing tools: read properties and the scene tree, find nodes (live-game tree when playing), update properties, and reparent |
 | [Editor](tools/editor.md) | 2 | Editor control, debugging, and screenshot tools |
 | [Project](tools/project.md) | 1 | Project information tools |
 | [Animation](tools/animation.md) | 2 | Animation query, playback, and editing tools |

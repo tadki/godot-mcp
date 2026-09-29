@@ -195,8 +195,7 @@ export const qa = defineTool({
     'listen with an optional predicate over declared args; timeout is a clean emitted:false, never an error), ' +
     'assert_layout (visible/onscreen/within_parent/min_size geometry checks as cheap text), and screenshot_node ' +
     '(lossless PNG cropped to one node). All read-only. NOT a GUT replacement: GUT owns repo test suites; ' +
-    'godot_qa drives the running game, freeze included (freeze note: gameplay signals do not fire under ' +
-    'godot_game_time freeze — waits resolve emitted:false there).',
+    'godot_qa drives the running game, freeze included (see wait_for_signal for freeze semantics).',
   schema: QaSchema,
   // The 4-action switch is the same dispatch shape as runtime-state (cc 31);
   // the plain-`complexity` warning is absorbed by the --max-warnings ratchet,

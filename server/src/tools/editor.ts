@@ -121,7 +121,7 @@ const EditorEditSchema = z
   .discriminatedUnion('action', [
     z.object({
       action: z.literal('select').describe('Select a node in the editor'),
-      node_path: z.string().describe('Path to node to select'),
+      node_path: z.string().describe('Path to node to select — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene\'s root name)'),
     }),
     z.object({
       action: z.literal('run').describe('Run the project'),

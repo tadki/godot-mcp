@@ -21,7 +21,7 @@ Inspect a Resource file by path
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `resource_path` | string | Yes | Resource path (e.g., "res://player/sprites.tres") |
-| `max_depth` | number | No | Detail level: 0 = summary only, 1 = full detail (default), 2+ = expand sub-resources |
+| `max_depth` | number | No | Detail level: 0 = summary only, 1 = full detail (default), 2+ = maximum expansion (per-tile TileSet detail, one more nesting level inside arrays/dicts). Resource-valued properties are always reported as path references or type markers, never expanded inline. |
 | `include_internal` | boolean | No | Include internal properties starting with underscore (default: false) |
 
 ### Examples

@@ -29,7 +29,7 @@ Get AnimationPlayer state and library list
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 
 #### `get_details`
 
@@ -37,7 +37,7 @@ Get an animation's tracks and properties
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `animation_name` | string | Yes | Animation name |
 
 #### `get_keyframes`
@@ -46,7 +46,7 @@ Get keyframes for a track
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `animation_name` | string | Yes | Animation name |
 | `track_index` | number | Yes | Track index |
 
@@ -92,9 +92,9 @@ Play an animation
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `animation_name` | string | Yes | Animation name |
-| `custom_blend` | number | No | Custom blend time, -1 for default |
+| `custom_blend` | number | No | Custom blend time in seconds, -1 for default |
 | `custom_speed` | number | No | Playback speed, 1.0 default |
 | `from_end` | boolean | No | Play from end for reverse |
 
@@ -104,7 +104,7 @@ Stop playback
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `keep_state` | boolean | No | Keep current animation state |
 
 #### `seek`
@@ -113,7 +113,7 @@ Seek to a position in the current animation
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `seconds` | number | Yes | Position to seek to |
 | `update` | boolean | No | Update node immediately, default true |
 
@@ -123,12 +123,12 @@ Create an animation
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `animation_name` | string | Yes | Animation name |
 | `library_name` | string | No | Library name |
 | `length` | number | No | Animation length in seconds |
 | `loop_mode` | `none`, `linear`, `pingpong` | No | Loop mode: none, linear, pingpong |
-| `step` | number | No | Step value for keyframe snapping |
+| `step` | number | No | Step value in seconds for keyframe snapping |
 
 #### `delete`
 
@@ -136,7 +136,7 @@ Delete an animation
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `animation_name` | string | Yes | Animation name |
 | `library_name` | string | No | Library name |
 
@@ -146,11 +146,11 @@ Update animation properties
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `animation_name` | string | Yes | Animation name |
 | `length` | number | No | Animation length in seconds |
 | `loop_mode` | `none`, `linear`, `pingpong` | No | Loop mode: none, linear, pingpong |
-| `step` | number | No | Step value for keyframe snapping |
+| `step` | number | No | Step value in seconds for keyframe snapping |
 
 #### `add_track`
 
@@ -158,7 +158,7 @@ Add a track to an animation
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `animation_name` | string | Yes | Animation name |
 | `track_type` | `value`, `position_3d`, `rotation_3d`, `scale_3d`, `blend_shape`, `method`, `bezier`, `audio`, `animation` | Yes | Type of track |
 | `track_path` | string | Yes | Node path and property, e.g. "Sprite2D:frame" |
@@ -170,7 +170,7 @@ Remove a track
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `animation_name` | string | Yes | Animation name |
 | `track_index` | number | Yes | Track index |
 
@@ -180,7 +180,7 @@ Add a keyframe to a track
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `animation_name` | string | Yes | Animation name |
 | `track_index` | number | Yes | Track index |
 | `time` | number | Yes | Keyframe time in seconds |
@@ -195,7 +195,7 @@ Remove a keyframe
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `animation_name` | string | Yes | Animation name |
 | `track_index` | number | Yes | Track index |
 | `keyframe_index` | number | Yes | Keyframe index |
@@ -206,7 +206,7 @@ Update a keyframe
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to the AnimationPlayer |
+| `node_path` | string | Yes | Path to the AnimationPlayer — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 | `animation_name` | string | Yes | Animation name |
 | `track_index` | number | Yes | Track index |
 | `keyframe_index` | number | Yes | Keyframe index |

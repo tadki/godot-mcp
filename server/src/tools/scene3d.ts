@@ -33,7 +33,7 @@ const AABBInputSchema = z.object({
 const Scene3DSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('get_spatial_info').describe('Get spatial data for a Node3D and optionally its children'),
-    node_path: z.string().describe('Path to the Node3D'),
+    node_path: z.string().describe('Path to the Node3D — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene\'s root name)'),
     include_children: z
       .boolean()
       .optional()

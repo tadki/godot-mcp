@@ -49,6 +49,8 @@ export function getActionVariants(schema: Record<string, unknown>): ActionVarian
 // Representative values for well-known parameter names, so generated examples
 // read like real calls rather than `"example"` placeholders.
 const NAMED_EXAMPLES: Record<string, unknown> = {
+  coords: { x: 0, y: 0 },
+  item: 0,
   node_path: '/root/Main/Player',
   parent_path: '/root/Main',
   new_parent_path: '/root/UI',
@@ -69,7 +71,10 @@ const NAMED_EXAMPLES: Record<string, unknown> = {
 // a specific tool's context. Consulted before NAMED_EXAMPLES.
 const TOOL_NAMED_EXAMPLES: Record<string, Record<string, unknown>> = {
   // `path` is a node path everywhere else, but a docs URL path here.
-  godot_docs: { path: '/tutorials/2d/2d_movement.html' },
+  godot_docs: { path: '/tutorials/2d/2d_movement.html', class_name: 'CharacterBody2D' },
+  // GridMap cells are 3D — the 2D {x, y} named example would be schema-invalid here.
+  godot_gridmap_edit: { coords: { x: 0, y: 0, z: 0 } },
+  godot_gridmap_read: { coords: { x: 0, y: 0, z: 0 } },
   // `properties` is a z.record (no JSON-Schema `properties`), so the generic
   // object builder yields {}, which the addon rejects as an empty update.
   godot_node_edit: { properties: { position: { x: 100, y: 50 } } },
@@ -101,8 +106,13 @@ export function exampleForProp(name: string, prop: Record<string, unknown>, tool
       return 'example';
     case 'integer':
     case 'number':
-      // Respect a lower bound so .min(n) constraints aren't violated.
-      return typeof prop.minimum === 'number' ? prop.minimum : 0;
+      // Respect a real lower bound so .min(n) constraints aren't violated;
+      // zod's draft-07 sentinel (-9007199254740991) means "no bound", not a
+      // sensible example value.
+      {
+        const min = prop.minimum;
+        return typeof min === 'number' && min > -9007199254740991 ? min : 0;
+      }
     case 'boolean':
       return false;
     case 'array': {

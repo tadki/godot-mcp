@@ -100,7 +100,7 @@ Select a node in the editor
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `node_path` | string | Yes | Path to node to select |
+| `node_path` | string | Yes | Path to node to select — scene-relative (e.g. "Player/Anim") or runtime-style "/root/<SceneRoot>/Player/Anim" (the SceneRoot segment must match the open scene's root name) |
 
 #### `run`
 

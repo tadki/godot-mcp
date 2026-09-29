@@ -23,14 +23,14 @@
       },
       "node_path": {
         "type": "string",
-        "description": "Path to the AnimationPlayer"
+        "description": "Path to the AnimationPlayer — scene-relative (e.g. \"Player/Anim\") or runtime-style \"/root/<SceneRoot>/Player/Anim\" (the SceneRoot segment must match the open scene's root name)"
       },
       "animation_name": {
         "type": "string",
         "description": "Animation name (required for: play, create, delete, update_props, add_track, remove_track, add_keyframe, remove_keyframe, update_keyframe)"
       },
       "custom_blend": {
-        "description": "Custom blend time, -1 for default (for: play)",
+        "description": "Custom blend time in seconds, -1 for default (for: play)",
         "type": "number"
       },
       "custom_speed": {
@@ -71,7 +71,7 @@
         ]
       },
       "step": {
-        "description": "Step value for keyframe snapping (for: create, update_props)",
+        "description": "Step value in seconds for keyframe snapping (for: create, update_props)",
         "type": "number"
       },
       "track_type": {

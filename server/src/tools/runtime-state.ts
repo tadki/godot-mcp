@@ -341,7 +341,7 @@ const RuntimeStateSchema = z.discriminatedUnion('action', [
       .max(16)
       .optional()
       .describe(
-        'Signals to record as discrete timeline events during the window. Each emission is ' +
+        'Up to 16 signals to record as discrete timeline events during the window. Each emission is ' +
         'buffered as {t_ms, source, signal, args} (200 events/window shared FAIRLY — each signal ' +
         'gets an equal sub-budget so a chatty signal cannot starve a rare one; keep-first within ' +
         'each, with events_dropped + events_dropped_by_signal reporting any loss; args stringified ' +
@@ -380,6 +380,10 @@ const RuntimeStateSchema = z.discriminatedUnion('action', [
         'emission time (ms resolution); anim/field t_ms is DETECTION time at the sample rate — ' +
         'the change happened up to one sample interval earlier, so do not infer cross-kind ' +
         'ordering from nearby timestamps. ' +
+        'The timeline is capped at 500 entries; `timeline_truncated`, `events_dropped`, and ' +
+        '`events_dropped_by_signal` in the response report any loss (signal-event budget, cap, or ' +
+        'a string field saturating its sample buffer), and a per-field `samples_truncated` marker ' +
+        'means late samples were dropped so min/max/slope reflect only the early window. ' +
         'Safe to call before auto-stop — returns whatever has been recorded so far; ' +
         'signal connections stay live until the window ends.'
       ),
@@ -389,7 +393,8 @@ const RuntimeStateSchema = z.discriminatedUnion('action', [
       .literal('watch_stop')
       .describe(
         'Stop the sampler early (disconnecting watched signals) and return the final ' +
-        'per-field summary and merged `timeline`. Equivalent to watch_collect + stopping the sampler.'
+        'per-field summary and merged `timeline` (same truncation reporting as watch_collect). ' +
+        'Equivalent to watch_collect + stopping the sampler.'
       ),
   }),
 ]);

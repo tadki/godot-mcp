@@ -34,19 +34,19 @@ Stop time-series profiling
 
 #### `get_data`
 
-Get collected time-series data with spike detection
+Get collected time-series data with percentile stats, frame-budget usage, spike detection (first 20 spikes listed; count is the total), and monitor trends
 
 *No parameters.*
 
 #### `get_active_processes`
 
-List active _process/_physics_process scripts
+List active _process/_physics_process entries by script (built-in class name when a node has no script), with instance counts
 
 *No parameters.*
 
 #### `get_signal_connections`
 
-Inspect signal connections
+Inspect signal connections under a node subtree (up to 200 connections, 20 levels deep; silently truncated at those caps)
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

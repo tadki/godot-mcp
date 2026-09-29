@@ -14,7 +14,7 @@
       },
       "node_path": {
         "type": "string",
-        "description": "Path to the Node3D (required for: get_spatial_info)"
+        "description": "Path to the Node3D — scene-relative (e.g. \"Player/Anim\") or runtime-style \"/root/<SceneRoot>/Player/Anim\" (the SceneRoot segment must match the open scene's root name) (required for: get_spatial_info)"
       },
       "include_children": {
         "default": false,
