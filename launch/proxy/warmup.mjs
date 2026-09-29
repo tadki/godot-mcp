@@ -321,10 +321,23 @@ async function warmupLoop() {
                     // said a prior record served this slot; our CLI may
                     // already be connected) provably bound long ago — bypass
                     // the milestone gate exactly like hot reuse.
+                    // SEE-1356 D1 (批 1 QA FAIL 裁定): `!logTailAvailable` was an
+                    // UNCONDITIONAL fail-open — in the fork lane probeOk is
+                    // structurally true (SEE-1338 P1 removed the probe), and at
+                    // proxy start the editor log does not exist YET, so the
+                    // bypass opened the gate with ZERO evidence (a no-addon
+                    // editor was judged warm ~4ms in). No log tail = insufficient
+                    // evidence, never proof of warm: the degradation now serves
+                    // ONLY the legacy lane, where probeOk is a real wsProbe
+                    // handshake against a mock-seam listener. Fork lane with no
+                    // log tail rides the cold window → T2 RECOVERING →
+                    // FAILED_EXIT; a genuinely bound editor is still served once
+                    // the CLI connects (recovering_connected flush path), and a
+                    // readable log opens the gate on real milestone evidence.
                     const handoffWarm = process.env.GODOT_MCP_HANDOFF_WARM === '1';
                     const gateOpen = S.lastSpawnReused
                         || handoffWarm
-                        || !S.logTailAvailable
+                        || (!S.logTailAvailable && !forkLane)
                         || (S.stageTimestamps.SERVER_LISTENING !== null
                             && S.stageTimestamps.WS_HANDSHAKE !== null);
                     // 缺陷 #6 (SEE-1111): a real WS handshake must be proven

@@ -43,6 +43,9 @@ beforeEach(() => {
     S.lastProxyStatePersistMs = 0;
     S.warm = false; S.recovering = false; S.warmupTimedOut = false;
     S.spawnTriggered = false; S.spawnInFlight = null;
+    // SEE-1356 D2: the coarse-state vocabulary face also flips the terminal
+    // family flags — reset them with the rest or tests leak state.
+    S.spawnTerminal = false; S.giveUpArmedAt = 0;
     for (const k of Object.keys(S.stageTimestamps)) S.stageTimestamps[k] = null;
 });
 
@@ -50,6 +53,7 @@ afterEach(() => {
     // restore the shared-S flags each test may have flipped
     S.warm = false; S.recovering = false; S.warmupTimedOut = false;
     S.spawnTriggered = false; S.spawnInFlight = null;
+    S.spawnTerminal = false; S.giveUpArmedAt = 0;
 });
 
 // ——— dual-form naming contract (runtime_id 键, port 键否决) ————————————————
@@ -87,16 +91,23 @@ describe('proxyStatePathFor dual-form naming boundary matrix', () => {
 });
 
 // ——— coarse-state vocabulary (godot-status/doctor consumer contract) ————————
+// SEE-1356 D2 corrected vocabulary: failed_exit (terminal family: T4 latch OR
+// armed give-up) > recovering > warm > warming > cold_idle. The T2 warm-branch
+// form (S.warm && S.recovering) must read `recovering` — the doctor
+// (recovering,*) arbitration rows were unreachable under the old warm-first
+// priority (QA FAIL defect D2②).
 describe('proxyCoarseState transition vocabulary', () => {
-    // kills: branch deletion in the precedence chain (warm > recovering >
-    // failed_exit > warming > cold_idle) — each mutant reorders/removes one
-    // arm and exactly one pin flips.
-    test('warm wins', () => { S.warm = true; S.recovering = true; expect(proxyCoarseState()).toBe('warm'); });
-    test('recovering over failed_exit', () => { S.recovering = true; S.warmupTimedOut = true; expect(proxyCoarseState()).toBe('recovering'); });
-    test('failed_exit over warming', () => { S.warmupTimedOut = true; S.spawnTriggered = true; expect(proxyCoarseState()).toBe('failed_exit'); });
-    test('spawnTriggered → warming', () => { S.spawnTriggered = true; expect(proxyCoarseState()).toBe('warming'); });
+    // kills: branch deletion in the precedence chain — each mutant reorders or
+    // removes one arm and exactly one pin flips.
+    test('recovering over warm (D2②: T2 warm branch reads recovering)', () => { S.warm = true; S.recovering = true; expect(proxyCoarseState()).toBe('recovering'); });
+    test('failed_exit over recovering+warm (terminal family wins)', () => { S.warm = true; S.recovering = true; S.warmupTimedOut = true; expect(proxyCoarseState()).toBe('failed_exit'); });
+    test('armed give-up reads failed_exit (D2①: spawn-terminal FAILED_CLEAN)', () => { S.warmupTimedOut = false; S.spawnTerminal = false; S.giveUpArmedAt = Date.now(); S.warm = true; S.recovering = true; expect(proxyCoarseState()).toBe('failed_exit'); });
+    test('legacy spawn-terminal reads failed_exit', () => { S.giveUpArmedAt = 0; S.spawnTerminal = true; expect(proxyCoarseState()).toBe('failed_exit'); });
+    test('warm alone', () => { S.warm = true; S.spawnTerminal = false; S.recovering = false; expect(proxyCoarseState()).toBe('warm'); });
+    test('failed_exit over warming', () => { S.warm = false; S.warmupTimedOut = true; S.spawnTriggered = true; expect(proxyCoarseState()).toBe('failed_exit'); });
+    test('spawnTriggered → warming', () => { S.warmupTimedOut = false; S.spawnTriggered = true; expect(proxyCoarseState()).toBe('warming'); });
     test('spawnInFlight → warming', () => { S.spawnInFlight = {}; expect(proxyCoarseState()).toBe('warming'); });
-    test('cold_idle default', () => { expect(proxyCoarseState()).toBe('cold_idle'); });
+    test('cold_idle default', () => { S.warm = false; S.spawnTriggered = false; S.spawnInFlight = null; expect(proxyCoarseState()).toBe('cold_idle'); });
 });
 
 // ——— workdir snapshot (§SPEC-L2-03) ————————————————————————————————————————
