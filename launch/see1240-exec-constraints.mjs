@@ -180,7 +180,8 @@ export function execConstraintDigest() {
 // (forward-compat, same contract as WS-3's DESCRIPTION_PATCHES).
 export const EXEC_DESCRIPTION_ANCHOR =
     'A static denylist rejects accidental process/file-write escape ' +
-    '(OS.execute, DirAccess, write-mode FileAccess, ResourceSaver, ProjectSettings.save, ...) and ' +
+    '(OS.execute and its spawn/shell siblings, DirAccess, write-mode FileAccess, ResourceSaver, ' +
+    'ProjectSettings.save, EditorInterface) and ' +
     'names the offending token — an accident guard, NOT a security boundary.';
 
 export function execDescriptionReplacement() {
