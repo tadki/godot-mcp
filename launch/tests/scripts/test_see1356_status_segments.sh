@@ -86,6 +86,58 @@ section "R1: shared resolve helper — verdict 分级"
     mcp_resolve_command "see1356-p3cmd"
     PATH="$SAVED_PATH"
     ok "R1g bare name in 3rd PATH dir → ok (第 3 目录判 PASS)" "$([[ "$RCV_VERDICT" == "ok" && "$RCV_PATH" == "$P3/see1356-p3cmd" ]] && echo 1 || echo 0)" "$RCV_VERDICT/$RCV_PATH"
+
+    # —— SEE-1356 hardener：R1 边界形态全覆盖（每条注明所杀变异类别）——
+    # R1h 空命令 → broken/empty_command 且 rc=0。kills: `[[ -n "$cmd" ]]`
+    #   早退删除（空串会落入 bare 分支 → bare_path_miss，verdict/reason 双变）。
+    mcp_resolve_command ""
+    ok "R1h empty command → broken/empty_command rc=0" \
+        "$([[ "$RCV_VERDICT" == "broken" && "$RCV_REASON" == "empty_command" && "$RCV_PATH" == "" ]] && echo 1 || echo 0)" "$RCV_VERDICT/$RCV_REASON/$RCV_PATH"
+    # R1i 相对路径形态（含 /）直判。kills: `== */*` 形态分流变异（相对路径
+    #   误入 bare 分支会变 bare_path_hit/miss）。
+    REL="$SB/rel-exec.sh"; printf '#!/bin/bash\n' > "$REL"; chmod +x "$REL"
+    OUTI2="$(cd "$SB" && mcp_resolve_command "./rel-exec.sh"; printf '%s|%s|%s' "$RCV_VERDICT" "$RCV_REASON" "$RCV_PATH")"
+    ok "R1i relative path form → ok (direct judgement)" \
+        "$([[ "$OUTI2" == "ok|ok|./rel-exec.sh" ]] && echo 1 || echo 0)" "$OUTI2"
+    # R1j 目录路径 → degraded/not_regular_file。kills: `[[ -d ]]` 分支删除
+    #   （目录会落入 -f 分支 → dangling/broken，误 FAIL）。
+    mcp_resolve_command "$SB"
+    ok "R1j directory path → degraded/not_regular_file" \
+        "$([[ "$RCV_VERDICT" == "degraded" && "$RCV_REASON" == "not_regular_file" && "$RCV_PATH" == "$SB" ]] && echo 1 || echo 0)" "$RCV_VERDICT/$RCV_REASON"
+    # R1k 非常规文件（fifo）存在但非 dir/regular → degraded。kills:
+    #   `[[ -e ]]` 兜底分支删除（socket/fifo 形态会误判 dangling → FAIL）。
+    FIFO="$SB/see1356.fifo"; mkfifo "$FIFO"
+    mcp_resolve_command "$FIFO"
+    ok "R1k non-regular file (fifo) → degraded/not_regular_file" \
+        "$([[ "$RCV_VERDICT" == "degraded" && "$RCV_REASON" == "not_regular_file" ]] && echo 1 || echo 0)" "$RCV_VERDICT/$RCV_REASON"
+    # R1l 退役路径但健康可执行 → 必须 ok（marker 只降级失败，不污染健康解）。
+    #   kills: marker 降级无条件化变异（ok 也被改判 stale）。
+    RET="$SB/.dev/godot-mcp/launch"; mkdir -p "$RET"
+    printf '#!/bin/bash\n' > "$RET/healthy-launcher.sh"; chmod +x "$RET/healthy-launcher.sh"
+    mcp_resolve_command "$RET/healthy-launcher.sh"
+    ok "R1l retired-path but healthy+exec → ok (marker never demotes ok)" \
+        "$([[ "$RCV_VERDICT" == "ok" && "$RCV_REASON" == "ok" ]] && echo 1 || echo 0)" "$RCV_VERDICT/$RCV_REASON"
+    # R1m 已删除（见 review 说明）：bare miss 的 RCV_PATH 重置被函数入口
+    #   `RCV_PATH=""` 初始化输出等价遮蔽——任何单变异下该断言均不可失败，
+    #   属无效断言，按对抗性原则不保留凑数用例。
+    # R1n 空 PATH 段绝不落回 cwd 探测（SEE-1240 回归类）。kills:
+    #   `"$dir/$cmd"`→`"$cmd"` 简化变异（会命中 cwd 同名可执行 → 假 ok）。
+    TRAP="$SB/cwd-trap"; mkdir -p "$TRAP"; P3B="$SB/path3b"; mkdir -p "$P3B"
+    printf '#!/bin/bash\nexit 0\n' > "$TRAP/see1356-p3exec"; chmod +x "$TRAP/see1356-p3exec"
+    printf '#!/bin/bash\nexit 0\n' > "$P3B/see1356-p3exec"; chmod +x "$P3B/see1356-p3exec"
+    OUTN="$(cd "$TRAP" && SAVED_PATH="$PATH"; PATH=":$P3B"; mcp_resolve_command "see1356-p3exec"; PATH="$SAVED_PATH"; printf '%s|%s' "$RCV_VERDICT" "$RCV_PATH")"
+    ok "R1n empty PATH segment never probes cwd (SEE-1240 class)" \
+        "$([[ "$OUTN" == "ok|$P3B/see1356-p3exec" ]] && echo 1 || echo 0)" "$OUTN"
+    # R1o bare 名仅遇不可执行同名 → degraded/bare_path_miss（不是 ok 也不是
+    #   not_executable）。kills: bare 分支 `&& -x` 条件删除（非执行命中会
+    #   假 ok）。
+    NOEX3="$SB/path-noex"; mkdir -p "$NOEX3"; printf '#!/bin/bash\n' > "$NOEX3/see1356-noex"; chmod 644 "$NOEX3/see1356-noex"
+    RCV_VERDICT=""; RCV_PATH=""; RCV_REASON=""
+    SAVED_PATH="$PATH"; PATH="$NOEX3"
+    mcp_resolve_command "see1356-noex"
+    PATH="$SAVED_PATH"
+    ok "R1o bare name vs non-executable only → degraded/bare_path_miss" \
+        "$([[ "$RCV_VERDICT" == "degraded" && "$RCV_REASON" == "bare_path_miss" ]] && echo 1 || echo 0)" "$RCV_VERDICT/$RCV_REASON"
 }
 
 section "R2: workdir_hash SSOT + status/registry 三处标注"
@@ -117,6 +169,61 @@ section "R2: workdir_hash SSOT + status/registry 三处标注"
     ok "R2h seed-* alias 命中（runtime_id = agent-<slot hash>）" \
         "$([[ "$(echo "$OUT" | jq -r .runtime.runtime_id)" == "$RID1" ]] && echo 1 || echo 0)" \
         "$(echo "$OUT" | jq -r .runtime.runtime_id)"
+
+    # —— SEE-1356 hardener：kol_workdir_hash 边界形态全覆盖（每条注明所杀变异类别）——
+    WDH() { bash -c 'source "$1/launch/runtime.lib.sh" && kol_workdir_hash "$2"' _ "$REPO" "$1"; }
+    WSH() { bash -c 'source "$1/launch/runtime.lib.sh" && out="$(kol_workdir_hash "$2" 2>/dev/null)"; rc=$?; printf "%s|%s|%s" "$rc" "$out" "$KOL_WORKDIR_HASH_SOURCE"' _ "$REPO" "$1"; }
+    # R2i 空输入 → rc=1、零输出、source 变量清空。kills: `[[ -n "$wt" ]]`
+    #   早退删除（空串会走 sha256("") → 产出一个假哈希 + path 标注）。
+    OUTI="$(WSH "")"
+    ok "R2i empty input → rc=1, no output, source var cleared" \
+        "$([[ "$OUTI" == "1||" ]] && echo 1 || echo 0)" "$OUTI"
+    # R2j legacy 裸 8-hex 槽目录 → slot 口径。kills: `{8,}` 下界抬到
+    #   `{12,}`（legacy bare-dir 布局会整族跌落 path fallback）。
+    WTL="$HOME/multica_workspaces/wslegacy/5d621003/workdir/KingOfLikes-Godot"
+    mkdir -p "$WTL"
+    ok "R2j legacy bare 8-hex slot dir → slot" \
+        "$([[ "$(WDH "$WTL")" == "5d621003 slot" ]] && echo 1 || echo 0)" "$(WDH "$WTL")"
+    # R2k 大写 hex 尾段 → 非 slot（大小写敏感）。kills: `[0-9a-f]`→
+    #   `[0-9a-fA-F]` 松化（大写尾段会冒充 slot 身份）。
+    WTU="$HOME/multica_workspaces/$CONTAINER/see-x-AAAA11112222/workdir/KingOfLikes-Godot"
+    mkdir -p "$WTU"
+    ok "R2k uppercase hex tail → path fallback (case-sensitivity)" \
+        "$([[ "$(WDH "$WTU")" =~ ^[0-9a-f]{8}\ path$ ]] && echo 1 || echo 0)" "$(WDH "$WTU")"
+    # R2l 7-hex 尾段（低于下界）→ path fallback。kills: `{8,}`→`{7,}`/`+`
+    #   下界松化（短尾段会冒充 slot 哈希，撞 slot 身份空间）。
+    WTS="$HOME/multica_workspaces/$CONTAINER/see-x-abc1234/workdir/KingOfLikes-Godot"
+    mkdir -p "$WTS"
+    ok "R2l 7-hex tail below floor → path fallback" \
+        "$([[ "$(WDH "$WTS")" =~ ^[0-9a-f]{8}\ path$ ]] && echo 1 || echo 0)" "$(WDH "$WTS")"
+    # R2m 多 `-` 分段槽名 → 尾段即哈希。kills: `${h##*-}` 尾段提取删除
+    #   （要求整段裸 hex 会拒绝 see-<issue>-<hex12> 正典形态）。
+    WTM="$HOME/multica_workspaces/$CONTAINER/see-x-y-333344445555/workdir/KingOfLikes-Godot"
+    mkdir -p "$WTM"
+    ok "R2m multi-dash slot name → last -segment is the hash" \
+        "$([[ "$(WDH "$WTM")" == "333344445555 slot" ]] && echo 1 || echo 0)" "$(WDH "$WTM")"
+    # R2n realpath 归一：词法不同指向同目录 → 同一 path 哈希。kills:
+    #   `realpath -m` 归一删除（../ 未折叠 → 哈希漂移，registry 去重失效）。
+    H1="$(WDH "$REPO/launch" | cut -d' ' -f1)"
+    H2="$(WDH "$REPO/launch/../launch" | cut -d' ' -f1)"
+    ok "R2n realpath normalization: lexical variants hash identically" \
+        "$([[ -n "$H1" && "$H1" == "$H2" ]] && echo 1 || echo 0)" "$H1 vs $H2"
+    # R2o 双形态互斥 + provenance 变量：slot 调用后 source=slot，path 调用后
+    #   source=path，失败后清空。kills: `KOL_WORKDIR_HASH_SOURCE` 赋值删除
+    #   （标注会滞留上一次取值 → status hash_source 谎报来源）。
+    OUTO="$(bash -c 'source "$1/launch/runtime.lib.sh"
+kol_workdir_hash "$2" >/dev/null; s1="$KOL_WORKDIR_HASH_SOURCE"
+kol_workdir_hash "$3" >/dev/null; s2="$KOL_WORKDIR_HASH_SOURCE"
+kol_workdir_hash "" >/dev/null 2>&1; s3="$KOL_WORKDIR_HASH_SOURCE"
+printf "%s|%s|%s" "$s1" "$s2" "$s3"' _ "$REPO" "$WT1" "$REPO/launch")"
+    ok "R2o hash_source variable tracks slot→path→empty transitions" \
+        "$([[ "$OUTO" == "slot|path|" ]] && echo 1 || echo 0)" "$OUTO"
+    # R2p path 哈希 = sha256(realpath)[:8] 精确口径。kills: `cut -c1-8`
+    #   截断长度变异（16 字符哈希会破坏 runtime_id 槽段宽度契约）。
+    REAL_LAUNCH="$(realpath -m -- "$REPO/launch")"
+    EXPECTED_HASH="$(printf '%s' "$REAL_LAUNCH" | sha256sum | cut -c1-8)"
+    ok "R2p path hash == sha256(realpath)[:8] exact" \
+        "$([[ "$(WDH "$REPO/launch")" == "$EXPECTED_HASH path" ]] && echo 1 || echo 0)" "$(WDH "$REPO/launch") vs $EXPECTED_HASH"
 }
 
 write_proxy_state() {
