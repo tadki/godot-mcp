@@ -190,6 +190,64 @@ section "G4: hex hardening — malformed hash misses with structured failure"
     ok "G4 control: valid hex hash still hits" "$([[ "$R" == "HIT $WT" ]] && echo 1 || echo 0)" "$R"
 }
 
+section "G6: hex hardening boundary shapes (SEE-1356 hardener)"
+{
+    # Each case names the MUTANT CLASS its assertion kills. Fixture: a real
+    # same-agent slot (managed_env on) so the (a2) marker-decode tier is
+    # actually REACHED for every malformed marker (G4 pattern), plus the
+    # daemon-lag slot for the G6d positive decode case (G1c pattern).
+    H="$TMP/g6-home"; TD="$TMP/g6-tmp"; mkdir -p "$H" "$TD"
+    make_slot "$H" "see-g6-disc-aaaa11112222" "$AGENT" >/dev/null
+    base="${H#/}/multica_workspaces/$CONTAINER"
+    enc="$(printf '%s' "$base" | tr '/' '_')"
+    bad_marker() { # $1=hash-segment $2=case-tag → resolve with the marker present
+        printf x > "$TD/.cc-aligned-_${enc}_${1}_workdir_KingOfLikes-Godot"
+        R="$(resolve_in_env "$H" "$TD" "$TMP/g6-$2.err")"
+        rm -f "$TD"/.cc-aligned-*"_workdir"*
+    }
+    failed_n() { grep -c 'marker_decode_failed' "$TMP/g6-$1.err" 2>/dev/null || true; }
+    # G6a EMPTY hash segment → decode fails. Kills: the `[[ -z "$hash" ]]`
+    # guard removal (empty segment would decode to an empty hit hash).
+    bad_marker "" "empty"
+    ok "G6a empty hash segment → marker_decode_failed" \
+        "$([[ "$(failed_n empty)" -ge 1 ]] && echo 1 || echo 0)" "failed=$(failed_n empty)"
+    # G6b hash with EMPTY tail ("abc-") → decode fails. Kills: `+`→`*` in the
+    # tail regex (empty last-dash segment would decode).
+    bad_marker "abc-" "emptytail"
+    ok "G6b empty last-dash tail → marker_decode_failed" \
+        "$([[ "$(failed_n emptytail)" -ge 1 ]] && echo 1 || echo 0)" "failed=$(failed_n emptytail)"
+    # G6c UPPERCASE hex tail → decode fails. Kills: `[0-9a-f]`→`[0-9a-fA-F]`
+    # case-loosening (uppercase never names a real slot dir).
+    bad_marker "AAAA11112222" "upper"
+    ok "G6c uppercase hex tail → marker_decode_failed" \
+        "$([[ "$(failed_n upper)" -ge 1 ]] && echo 1 || echo 0)" "failed=$(failed_n upper)"
+    # G6d MULTI-DASH valid hash → FULL hash decodes and its slot hits (a2).
+    # Kills: tail-extraction removal (`${hash##*-}` → `$hash` would demand a
+    # bare-hex segment and reject the canonical see-<issue>-<hex> form).
+    WT6="$(make_slot "$H" "see-g6-ffff33334444" "$AGENT" "")"   # daemon-lag marker slot
+    printf x > "$TD/.cc-aligned-_${enc}_see-g6-ffff33334444_workdir_KingOfLikes-Godot"
+    R="$(resolve_in_env "$H" "$TD" "$TMP/g6-multi.err")"
+    ok "G6d multi-dash hash decodes whole and hits (a2)" \
+        "$([[ "$R" == "HIT $WT6" ]] && grep -q 'strategy=a2_marker_decode' "$TMP/g6-multi.err" && echo 1 || echo 0)" "$R"
+    rm -f "$TD"/.cc-aligned-*"_workdir"*
+    # G6e 13-hex tail STILL decodes (shape-only contract, no length cap).
+    # Kills: `{8,12}`-style cap insertion into the DECODE regex (the decode
+    # contract is `^[0-9a-f]+$`; slot-length caps belong to runtime-id gates).
+    printf x > "$TD/.cc-aligned-_${enc}_abc123def4567_workdir_KingOfLikes-Godot"
+    R="$(resolve_in_env "$H" "$TD" "$TMP/g6-long.err")"
+    ok "G6e 13-hex tail: no marker_decode_failed, (b) still resolves" \
+        "$([[ "$(failed_n long)" -eq 0 && "$R" == HIT* ]] && echo 1 || echo 0)" "R=$R failed=$(failed_n long)"
+    rm -f "$TD"/.cc-aligned-*"_workdir"*
+    # G6f FOREIGN-prefix marker (not our workspace shape) → rejected WITHOUT
+    # the structured failure line. Kills: unconditional-emit mutants (the
+    # stage line must separate "malformed decode" from "not our marker").
+    printf x > "$TD/.cc-aligned-_some_other_workspace_root_see-x-111122223333_workdir_KingOfLikes-Godot"
+    R="$(resolve_in_env "$H" "$TD" "$TMP/g6-foreign.err")"
+    ok "G6f foreign-prefix marker: no decode hit AND no marker_decode_failed" \
+        "$([[ "$(failed_n foreign)" -eq 0 ]] && echo 1 || echo 0)" "R=$R failed=$(failed_n foreign)"
+    rm -f "$TD"/.cc-aligned-*"_workdir"*
+}
+
 echo
 echo "SUMMARY: PASS=$PASS FAIL=$FAIL"
 if [[ $FAIL -gt 0 ]]; then exit 1; fi
