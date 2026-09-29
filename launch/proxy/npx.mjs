@@ -331,7 +331,8 @@ function startNpx() {
                     }
                 }
             }
-            // SEE-1070 #8: exec responses carry hints for known GDScript pitfalls            // and str()-truncated container returns. Handles both MCP-level errors
+            // SEE-1070 #8: exec responses carry hints for known GDScript pitfalls
+            // and str()-truncated container returns. Handles both MCP-level errors
             // and the common case where exec errors live inside the result text.
             if (msg.id !== undefined && S.execCallIds.has(msg.id)) {
                 S.execCallIds.delete(msg.id); // one response per id

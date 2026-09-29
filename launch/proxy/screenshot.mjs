@@ -59,7 +59,6 @@ function screenshotCaptureMode({ warm: warmLocal, transportReady, autoStepReques
 // exists in a current checkout).
 const SCREENSHOT_FALLBACK_HINT =
     ' [hint: screenshot 失败，可调 addons/godot_mcp/launch/screenshot-fallback.sh 兜底抓主屏 → PNG]';
-export { SCREENSHOT_FALLBACK_HINT };
 function augmentScreenshotError(error) {
     if (!error || typeof error !== 'object') return error;
     const out = { ...error };
@@ -124,4 +123,5 @@ export {
     screenshotCaptureMode,
     augmentScreenshotError,
     runAutoStepThenForward,
+    SCREENSHOT_FALLBACK_HINT,
 };
