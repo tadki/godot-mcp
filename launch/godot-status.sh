@@ -42,6 +42,7 @@ esac
 
 # --- 解析查询对象（与 launcher 同派生逻辑，同降级）---------------------------
 source "$SCRIPT_DIR/runtime.lib.sh"
+source "$SCRIPT_DIR/resolve-command.lib.sh"
 source "$SCRIPT_DIR/agent-ports.lib.sh" 2>/dev/null || true
 
 AGENT_NAME="${KOL_AGENT_NAME:-${1:-}}"
@@ -61,6 +62,15 @@ fi
 LABEL=""
 if [[ -n "$AGENT_NAME" ]]; then
     LABEL="$(echo "$AGENT_NAME" | tr '[:upper:]' '[:lower:]')"
+fi
+
+# SEE-1356 L2 (§SPEC-L2-02): runtime.workdir_hash — the SSOT helper's stamp
+# for THIS query's worktree (slot 主口径 + path fallback + hash_source).
+WORKDIR_HASH=""
+WORKDIR_HASH_SOURCE=""
+if [[ -n "$WT_RESOLVED" ]]; then
+    # Helper prints "<hash> <source>" on one line ($()-safe provenance).
+    read -r WORKDIR_HASH WORKDIR_HASH_SOURCE <<< "$(kol_workdir_hash "$WT_RESOLVED" 2>/dev/null || true)"
 fi
 
 # 端口解析优先级镜像 launcher: KOL_MCP_PORT > registry 条目 > lease sidecar > legacy 表。
@@ -113,6 +123,8 @@ LAUNCHER_LOG=""
 [[ -z "$LAUNCHER_LOG" && -n "$PORT" ]] && LAUNCHER_LOG="${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-mcp-launcher-port-${PORT}.log"
 WARMUP_JSON="$(status_warmup_json "$RUNTIME_ID" "$LABEL" "$LAUNCHER_LOG")"
 GIVEUP_JSON="$(status_giveup_json "$RUNTIME_ID" "$LABEL")"
+PROXY_STATE_JSON="$(status_proxy_state_json "$RUNTIME_ID" "$LABEL")"
+PROXYLOG_JSON="$(status_proxylog_json "$RUNTIME_ID" "$LABEL")"
 REGISTRATION_JSON="$(status_registration_json)"
 TIMEOUTS_JSON="$(status_timeouts_json)"
 PORT_BOUND="null"
@@ -124,8 +136,10 @@ fi
 OUT="$(mktemp /tmp/godot-status-out.XXXXXX.json)"
 trap 'rm -f "$OUT"' EXIT
 AGENT="$AGENT_NAME" RID="$RUNTIME_ID" LBL="$LABEL" PORTV="${PORT:-}" PSRC="$PORT_SOURCE" \
-WT="$WT_RESOLVED" PB="$PORT_BOUND" LEASE="$LEASE_JSON" REG="$REGISTRY_JSON" \
-LIFE="$LIFECYCLE_JSON" WARM="$WARMUP_JSON" GUP="$GIVEUP_JSON" REGS="$REGISTRATION_JSON" TIMEO="$TIMEOUTS_JSON" \
+WT="$WT_RESOLVED" PB="$PORT_BOUND" WDHash="$WORKDIR_HASH" WDSrc="$WORKDIR_HASH_SOURCE" \
+LEASE="$LEASE_JSON" REG="$REGISTRY_JSON" \
+LIFE="$LIFECYCLE_JSON" WARM="$WARMUP_JSON" GUP="$GIVEUP_JSON" \
+PSTATE="$PROXY_STATE_JSON" PLOG="$PROXYLOG_JSON" REGS="$REGISTRATION_JSON" TIMEO="$TIMEOUTS_JSON" \
 node -e '
 const env = process.env;
 const j = (s, name) => { try { return JSON.parse(s); } catch (e) { return { error: `unreadable:${name}` }; } };
@@ -139,6 +153,8 @@ const doc = {
         port: env.PORTV ? Number(env.PORTV) : null,
         port_source: env.PSRC || "",
         worktree: env.WT || "",
+        workdir_hash: env.WDHash || null,
+        hash_source: env.WDSrc || null,
         port_bound: env.PB === "true" ? true : env.PB === "false" ? false : null,
     },
     lease: j(env.LEASE, "lease"),
@@ -146,14 +162,18 @@ const doc = {
     lifecycle: j(env.LIFE, "lifecycle"),
     warmup: j(env.WARM, "warmup"),
     giveup: j(env.GUP, "giveup"),
+    proxy_state: j(env.PSTATE, "proxy_state"),
+    proxylog: j(env.PLOG, "proxylog"),
     registration: j(env.REGS, "registration"),
     timeouts: j(env.TIMEO, "timeouts"),
 };
 require("fs").writeFileSync(process.argv[1], JSON.stringify(doc, null, 2) + "\n");
 ' "$OUT" \
 AGENT="$AGENT_NAME" RID="$RUNTIME_ID" LBL="$LABEL" PORTV="${PORT:-}" PSRC="$PORT_SOURCE" \
-WT="$WT_RESOLVED" PB="$PORT_BOUND" LEASE="$LEASE_JSON" REG="$REGISTRY_JSON" \
-LIFE="$LIFECYCLE_JSON" WARM="$WARMUP_JSON" GUP="$GIVEUP_JSON" REGS="$REGISTRATION_JSON" TIMEO="$TIMEOUTS_JSON" || true
+WT="$WT_RESOLVED" PB="$PORT_BOUND" WDHash="$WORKDIR_HASH" WDSrc="$WORKDIR_HASH_SOURCE" \
+LEASE="$LEASE_JSON" REG="$REGISTRY_JSON" \
+LIFE="$LIFECYCLE_JSON" WARM="$WARMUP_JSON" GUP="$GIVEUP_JSON" \
+PSTATE="$PROXY_STATE_JSON" PLOG="$PROXYLOG_JSON" REGS="$REGISTRATION_JSON" TIMEO="$TIMEOUTS_JSON" || true
 
 if [[ ! -s "$OUT" ]]; then
     echo "[godot-status] ERROR: failed to compose status document (node assembly failed); sources: lease=${LEASE_FILE:-none} registry=${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-port-registry.json" >&2
@@ -176,7 +196,7 @@ add_verdict() { VERDICTS+=("$1|$2|$3"); }  # level|check|detail
 BROKEN_REG=0; TOTAL_GODOT=0; MISSING_REG=0
 while IFS= read -r line; do
     [[ -n "$line" ]] || continue
-    IFS='|' read -r cfg_name srv cmd verdict <<< "$line"
+    IFS='|' read -r cfg_name srv cmd verdict reason <<< "$line"
     if [[ "$verdict" == "missing" ]]; then
         MISSING_REG=$((MISSING_REG+1))
         add_verdict "WARN" "registration:${cfg_name}" "/tmp/multica-mcp-*/mcp-config.json 中未发现任何 godot-mcp server 条目（可能平台未注入或全部缺失——mcp_config 缺失形态，2026-08-01 事故同款）"
@@ -188,6 +208,13 @@ while IFS= read -r line; do
         add_verdict "WARN" "registration:${cfg_name}/${srv}" "command 指向已退役 legacy 路径: ${cmd}（SEE-1273 T5-F 退役残留 stale mcp-config；清理该 /tmp/multica-mcp-*/ 条目即可，不影响当前链路）"
         continue
     fi
+    # SEE-1356 L6 (§SPEC-L6-03): verdict=degraded = 探测不可证（bare 名本 PATH
+    # 未命中 / EACCES / 非常规文件）→ WARN 分级，绝不 FAIL（SEE-1240 D1 语义：
+    # helper 证不出断裂就不判断裂）。
+    if [[ "$verdict" == "degraded" ]]; then
+        add_verdict "WARN" "registration:${cfg_name}/${srv}" "command 探测降级（${reason}）: ${cmd}——本进程 PATH/权限下无法证明失效；bare 名以 spawn 时 PATH 为准，不判 FAIL"
+        continue
+    fi
     TOTAL_GODOT=$((TOTAL_GODOT+1))
     if [[ "$verdict" == "broken" ]]; then
         add_verdict "FAIL" "registration:${cfg_name}/${srv}" "command 指向失效: ${cmd}（2026-08-01 事故形态：mcp_config 指向已删除路径 → server 拉起失败 → 工具不注册）"
@@ -197,10 +224,10 @@ done < <(node -e '
 const o = JSON.parse(process.argv[1]);
 for (const c of o.configs || []) {
     for (const g of c.godot_servers || []) {
-        process.stdout.write([c.dir, g.name, g.command, g.verdict].join("|") + "\n");
+        process.stdout.write([c.dir, g.name, g.command, g.verdict, g.reason || ""].join("|") + "\n");
     }
     if ((c.godot_servers || []).length === 0) {
-        process.stdout.write([c.dir, "<no-godot-entry>", "", "missing"].join("|") + "\n");
+        process.stdout.write([c.dir, "<no-godot-entry>", "", "missing", ""].join("|") + "\n");
     }
 }
 ' "$REGISTRATION_JSON" 2>/dev/null)
@@ -268,16 +295,72 @@ else
 fi
 
 # 6. Give-up / 重武装层（SEE-1240 WS-5：proxy in-band 恢复状态可查询）
+# SEE-1356 L5 (§SPEC-L5-02): proxy-state 为主判据——当快照新鲜且 state=warm，
+# giveup 的历史 WARN 降级为参考（PASS 行），永不覆盖主判据结论。
+PS_PRESENT="$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(o.present?"1":"0")' "$PROXY_STATE_JSON" 2>/dev/null)"
+PS_STALE="$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(o.stale?"1":"0")' "$PROXY_STATE_JSON" 2>/dev/null)"
+PS_STATE="$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(String(o.state||""))' "$PROXY_STATE_JSON" 2>/dev/null)"
+GIVEUP_DOWNGRADE=0
+if [[ "$PS_PRESENT" == "1" && "$PS_STALE" == "0" && "$PS_STATE" == "warm" ]]; then
+    GIVEUP_DOWNGRADE=1
+fi
 GIVEUP_COUNT="$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(String(o.giveup_count??0))' "$GIVEUP_JSON" 2>/dev/null)"
 GIVEUP_COOLING="$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(o.cooling?"1":"0")' "$GIVEUP_JSON" 2>/dev/null)"
 GIVEUP_PRESENT="$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(o.present?"1":"0")' "$GIVEUP_JSON" 2>/dev/null)"
 if [[ "$GIVEUP_PRESENT" == "0" ]]; then
     add_verdict "PASS" "giveup" "无 give-up 记录（该 runtime 未发生 spawn 连续失败终态）"
+elif [[ "$GIVEUP_DOWNGRADE" == "1" ]]; then
+    # proxy-state 主判据 (fresh + warm)：giveup 历史仅作参考，不拉 WARN。
+    add_verdict "PASS" "giveup:${GIVEUP_COUNT}" "曾发生 give-up（count=${GIVEUP_COUNT}）但 proxy_state 主判据为 fresh+warm——历史失败已恢复，此条仅为参考（giveup 永不覆盖 proxy_state 结论）"
 elif [[ "$GIVEUP_COOLING" == "1" ]]; then
     GUP_UNTIL="$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(String(o.cooldown_until||""))' "$GIVEUP_JSON" 2>/dev/null)"
     add_verdict "WARN" "giveup:${GIVEUP_COUNT}" "give-up 后冷却中（until ${GUP_UNTIL}）——proxy in-band 恢复已武装，冷却后下次 tools/call 自动重试，无需重启 MCP server"
 else
     add_verdict "WARN" "giveup:${GIVEUP_COUNT}" "曾发生 give-up（count=${GIVEUP_COUNT}，reason: $(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(String(o.last_reason||"").slice(0,80))' "$GIVEUP_JSON" 2>/dev/null)）——当前不在冷却期，proxy 已重武装"
+fi
+
+# 7. Proxy-state 仲裁判定表（SEE-1356 L5 §SPEC-L5-02）
+# 时效先行：stale（heartbeat > 90s）→ 快照降权为参考，不主判（不推断死因）。
+# 皆新鲜时（proxy_state 为主判据）：
+#   (failed_exit, cooling)          → WARN 设计内
+#   (failed_exit, 无 rearm/冷却毕)  → FAIL 契约逃逸
+#   (warm, *)                       → PASS
+#   (recovering/warming, *)         → WARN（超阈值注明）
+# 两文件（proxy-state / giveup）mtime 并列呈现。giveup 永不覆盖本判定。
+# cooling 判据来自 giveup 文件的 cooldown_until 派生（GIVEUP_COOLING，块 6 已算）。
+PS_COOLING="${GIVEUP_COOLING:-0}"
+GUP_MTIME="$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(String(o.path&&o.present?(o.mtime||"?"):"absent"))' "$GIVEUP_JSON" 2>/dev/null)"
+if [[ "$PS_PRESENT" == "0" ]]; then
+    if [[ "$GIVEUP_PRESENT" == "1" ]]; then
+        add_verdict "WARN" "proxy_state" "giveup 文件存在但 proxy-state 快照缺席（证据链断裂：发生过于失败终态的 runtime 不应无快照）——giveup mtime=${GUP_MTIME}"
+    else
+        add_verdict "PASS" "proxy_state" "快照缺席（该 runtime 的 proxy 尚未持久化过状态，属正常）；giveup mtime=${GUP_MTIME}"
+    fi
+elif [[ "$PS_STALE" == "1" ]]; then
+    PS_AGE="$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(String(o.heartbeat_age_s??"?"))' "$PROXY_STATE_JSON" 2>/dev/null)"
+    add_verdict "WARN" "proxy_state" "快照 stale（heartbeat 距今 ${PS_AGE}s > 90s 阈值）——降权为参考，不作主判据；state=${PS_STATE:-?}，proxy-state mtime=$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(String(o.mtime||"?"))' "$PROXY_STATE_JSON" 2>/dev/null)，giveup mtime=${GUP_MTIME}"
+else
+    PS_MTIME="$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(String(o.mtime||"?"))' "$PROXY_STATE_JSON" 2>/dev/null)"
+    case "$PS_STATE" in
+        warm)
+            add_verdict "PASS" "proxy_state:warm" "主判据：快照新鲜且 state=warm（proxy-state mtime=${PS_MTIME}，giveup mtime=${GUP_MTIME} 并列）"
+            ;;
+        failed_exit)
+            if [[ "$PS_COOLING" == "1" ]]; then
+                add_verdict "WARN" "proxy_state:failed_exit" "主判据：failed_exit 且冷却中（设计内 in-band 恢复，proxy-state mtime=${PS_MTIME}）"
+            else
+                add_verdict "FAIL" "proxy_state:failed_exit" "主判据：failed_exit 且无 rearm/冷却已毕——契约逃逸（proxy 宣称终态但未恢复；proxy-state mtime=${PS_MTIME}）"
+            fi
+            ;;
+        recovering|warming)
+            PS_ELAPSED="$(node -e 'const o=JSON.parse(process.argv[1]);process.stdout.write(String(o.elapsed_ms??0))' "$PROXY_STATE_JSON" 2>/dev/null)"
+            PS_TIMEOUT="$(node -e 'const o=JSON.parse(process.argv[1]);const w=o.warmupDiagnostic||{};process.stdout.write(String(w.warmupTimeoutMs??"?"))' "$PROXY_STATE_JSON" 2>/dev/null)"
+            add_verdict "WARN" "proxy_state:${PS_STATE}" "主判据：state=${PS_STATE}，已等 ${PS_ELAPSED}ms（warmup 阈值=${PS_TIMEOUT}ms）——降级但可能自愈；proxy-state mtime=${PS_MTIME}"
+            ;;
+        *)
+            add_verdict "WARN" "proxy_state" "主判据：快照新鲜但 state=${PS_STATE:-<unknown>} 非典型值；proxy-state mtime=${PS_MTIME}"
+            ;;
+    esac
 fi
 
 # --- 输出 doctor ---------------------------------------------------------------

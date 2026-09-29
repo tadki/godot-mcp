@@ -28,6 +28,7 @@ import { decideSidecarGuard } from '../see1129-sidecar-guard-predicate.mjs';
 import { maybeEvictStaleHeld } from './stale-proxy.mjs';
 import { writeRuntimeState, readRuntimeState, editorPidAlive } from './state-file.mjs';
 import { decideReuseSingleSource } from '../see1338-handoff.mjs';
+import { recordProxyTransition, rememberWorkdirSnapshot } from './proxy-state.mjs';
 
 // Extract + verify the holder proxy record from a .state doc (triple check:
 // kill-0 + /proc exe node + started_at). Returns { pid, alive }.
@@ -68,6 +69,11 @@ function triggerEnsureEditor() {
     if (S.spawnInFlight) return S.spawnInFlight;
     const t0 = Date.now();
     stageLog('ENSURE_EDITOR_BEGIN', `attempt=${S.spawnAttempts + 1}`);
+    // SEE-1356 L5 T1: spawn-round start is a snapshot transition point; the
+    // workdir triple (runtime_id/worktree/workdir_hash) is stamped here so the
+    // get_info echo (§SPEC-L2-03) has a snapshot to read even mid-warmup.
+    rememberWorkdirSnapshot();
+    recordProxyTransition('T1_warming_enter', `attempt=${S.spawnAttempts + 1}`);
     S.spawnInFlight = ensureEditor(t0)
         .then((result) => {
             stageLog('ENSURE_EDITOR_END', `spawned=${result.spawned} reused=${result.reused === true} dt_ms=${Date.now() - t0}`);
@@ -690,6 +696,7 @@ function handleSpawnFailure(err) {
         } else {
             S.spawnTerminal = true;
             S.spawnLastFailed = true;
+            recordProxyTransition('spawn_terminal', `bucket=${bucket} streak=${S.spawnFailedStreak}`);
         }
         return;
     }
@@ -838,6 +845,10 @@ function giveUpAndRearm(bucket, message) {
     S.renderStable = false;
     startRenderStableMonitor();
     persistGiveUpStatus('give_up', bucket, message);
+    // SEE-1356 L5 T4: a give-up is the FAILED_EXIT transition point — the
+    // proxy-state snapshot lands with it (giveup 永不覆盖 proxy_state, but the
+    // snapshot must exist for doctor's 仲裁判定表 to arbitrate at all).
+    recordProxyTransition('T4_give_up_rearm', `${bucket}: ${message}`);
     log(`give-up #${S.giveUpCount} recorded (bucket=${bucket}); re-armed — cooldown ${Math.floor(S.giveUpBackoffMs / 1000)}s before the next attempt (WS-5).`);
 }
 
@@ -851,7 +862,7 @@ function persistGiveUpStatus(event, bucket, message) {
         const dir = path.join(GODOT_MCP_HOME, 'godot-editor');
         const rid = process.env.GODOT_MCP_RUNTIME_ID || process.env.KOL_RUNTIME_ID || '';
         const legacyLabel = (process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || '').toLowerCase();
-        const file = (rid && rid !== '*' && !rid.endsWith('-solo') && rid.match(/^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8}$/))
+        const file = (rid && rid !== '*' && !rid.endsWith('-solo') && rid.match(/^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8,12}$/))
             ? path.join(dir, `${rid}.giveup.json`)
             : path.join(dir, `godot-editor-${legacyLabel || 'unknown'}.giveup.json`);
         const doc = {

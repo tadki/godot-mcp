@@ -111,11 +111,48 @@ process.stdout.write(JSON.stringify(out, null, 2));
 # 输出全部 entries + 派生每条活性判定（heartbeat 距今 vs 60s 阈值——阈值与
 # kol-runtime/port-registry 语义一致，此处只读引用，阈值本体在 launcher 的
 # worktree-holder 扫描逻辑里，同为 60s）。
+# SEE-1356 L2 (§SPEC-L2-02): 每条 entry 并列输出 workdir_hash + hash_source
+# （经 kol_workdir_hash SSOT，禁止此处自算）与 is_current_workdir 三态
+# （true=本进程 cwd 归一后命中 / false=不命中 / null=entry 无 worktree 可比）。
+# freshness 仍为纯展示派生——不触发任何 reaper/清理联动（WS-4 约束）。
 status_registry_json() {
     local reg="${KOL_PORT_REGISTRY_PATH_OVERRIDE:-${GODOT_MCP_HOME:-${HOME}/.config/godot-mcp}/godot-port-registry.json}"
-    REG_PATH="$reg" node -e '
+    local ann='{}' rid wt h cw cwd_real wt_real
+    cwd_real="$(realpath -m -- "$PWD" 2>/dev/null || printf '%s' "$PWD")"
+    while IFS=$'\t' read -r rid wt; do
+        [[ -n "$rid" ]] || continue
+        local h="" src=""
+        # Helper prints "<hash> <source>" ($()-safe provenance).
+        read -r h src <<< "$(kol_workdir_hash "$wt" 2>/dev/null || true)"
+        if [[ -z "$wt" ]]; then
+            cw='null'
+        else
+            wt_real="$(realpath -m -- "$wt" 2>/dev/null || printf '%s' "$wt")"
+            if [[ "$wt_real" == "$cwd_real" ]]; then cw=true; else cw=false; fi
+        fi
+        ann="$(ANN_ACC="$ann" ANN_RID="$rid" ANN_H="$h" ANN_SRC="$src" ANN_CW="$cw" node -e '
+const ann = JSON.parse(process.env.ANN_ACC || "{}");
+ann[process.env.ANN_RID] = {
+    workdir_hash: process.env.ANN_H || null,
+    hash_source: process.env.ANN_SRC || null,
+    is_current_workdir: process.env.ANN_CW === "null" ? null : process.env.ANN_CW === "true",
+};
+process.stdout.write(JSON.stringify(ann));
+' 2>/dev/null)"
+    done < <(REG_PATH="$reg" node -e '
+const fs = require("fs");
+try {
+    const o = JSON.parse(fs.readFileSync(process.env.REG_PATH, "utf8"));
+    for (const [rid, e] of Object.entries(o.entries || {})) {
+        if (!e || typeof e !== "object") continue;
+        process.stdout.write(rid + "\t" + String(e.worktree ?? "") + "\n");
+    }
+} catch { /* absent/unparseable — no annotations */ }
+' 2>/dev/null)
+    REG_PATH="$reg" REG_ANN="$ann" node -e '
 const fs = require("fs");
 const p = process.env.REG_PATH;
+const ann = JSON.parse(process.env.REG_ANN || "{}");
 const out = { source: "port_registry", path: p, entries: {} };
 let raw = null;
 try { raw = JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) {
@@ -127,6 +164,7 @@ if (raw && raw.entries && typeof raw.entries === "object") {
         if (!e || typeof e !== "object") continue;
         const hb = e.heartbeat_at ? Date.parse(e.heartbeat_at) : NaN;
         const ageMs = Number.isFinite(hb) ? now - hb : null;
+        const a = ann[rid] || {};
         out.entries[rid] = {
             port: e.port ?? null,
             agent: e.agent ?? "",
@@ -135,6 +173,9 @@ if (raw && raw.entries && typeof raw.entries === "object") {
             heartbeat_at: e.heartbeat_at ?? null,
             heartbeat_age_s: ageMs === null ? null : Math.round(ageMs / 1000),
             heartbeat: ageMs === null ? "never" : (ageMs < 60000 ? "alive" : "stale"),
+            workdir_hash: a.workdir_hash ?? null,
+            hash_source: a.hash_source ?? null,
+            is_current_workdir: a.is_current_workdir === undefined ? null : a.is_current_workdir,
         };
     }
 }
@@ -267,7 +308,7 @@ const lid = process.env.LID || "";
 const lbl = process.env.LBL || "";
 const out = { source: "giveup_status", present: false, giveup_count: 0 };
 const candidates = [];
-if (lid && /^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8}$/.test(lid)) candidates.push(`${home}/godot-editor/${lid}.giveup.json`);
+if (lid && /^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8,12}$/.test(lid)) candidates.push(`${home}/godot-editor/${lid}.giveup.json`);
 if (lbl) candidates.push(`${home}/godot-editor-${lbl}.giveup.json`);
 for (const p of candidates) {
     try {
@@ -338,14 +379,41 @@ process.stdout.write(JSON.stringify(out, null, 2));
 
 # --- 注册层: mcp-config 层检查（2026-08-01 事故形态检测点）--------------------
 # 读取每个 /tmp/multica-mcp-*/mcp-config.json，抽取 godot-mcp-* server 条目，
-# 逐条判定：command 文件是否存在且可执行？——2026-08-01 事故形态 = "仓库移动了
-# launcher，per-agent mcp_config 仍指向已删除路径" → server 拉起失败 → 工具不注册。
-# 同时报告完整 server 列表，"mcp_config 缺失"（godot 条目整体缺失）也可见。
+# 逐条判定 command 可解析性。SEE-1356 L6 (§SPEC-L6-03): 判定改由 launch 域共享
+# resolve helper（resolve-command.lib.sh mcp_resolve_command）单点执行——
+# 绝对/相对直判、bare 名逐 PATH 解析、退役路径 stale 降级、ENOENT/EACCES 分级；
+# verdict 集合 ok|stale|broken|degraded（degraded = 探测不可证 → doctor WARN）。
 status_registration_json() {
-    REG_ROOT="/tmp" node -e '
+    local resolved_tsv="" dir name cmd
+    while IFS=$'\t' read -r dir name cmd; do
+        [[ -n "$dir" ]] || continue
+        mcp_resolve_command "$cmd"
+        resolved_tsv+="${dir}"$'\t'"${name}"$'\t'"${cmd}"$'\t'"${RCV_VERDICT}"$'\t'"${RCV_PATH}"$'\t'"${RCV_REASON}"$'\n'
+    done < <(node -e '
+const fs = require("fs");
+const path = require("path");
+let dirs = [];
+try { dirs = fs.readdirSync("/tmp").filter(d => d.startsWith("multica-mcp-")).sort(); } catch { /* no /tmp scan root */ }
+for (const d of dirs) {
+    try {
+        const cfg = JSON.parse(fs.readFileSync(path.join("/tmp", d, "mcp-config.json"), "utf8"));
+        for (const [name, s] of Object.entries(cfg.mcpServers || {})) {
+            if (!/godot/i.test(name)) continue;
+            process.stdout.write([d, name, (s && s.command) || ""].join("\t") + "\n");
+        }
+    } catch { /* absent/unparseable handled in final assembly */ }
+}
+' 2>/dev/null)
+    REG_RESOLVED="$resolved_tsv" node -e '
 const fs = require("fs");
 const path = require("path");
 const out = { source: "mcp_config_registration", root: "/tmp", configs: [] };
+const resolution = {};
+for (const line of (process.env.REG_RESOLVED || "").split("\n")) {
+    if (!line) continue;
+    const [dir, name, cmd, verdict, rpath, reason] = line.split("\t");
+    resolution[dir + " " + name] = { verdict, resolved_path: rpath || null, reason };
+}
 let dirs = [];
 try { dirs = fs.readdirSync("/tmp").filter(d => d.startsWith("multica-mcp-")).sort(); } catch (e) { out.error = String(e.message || e); }
 for (const d of dirs) {
@@ -361,52 +429,107 @@ for (const d of dirs) {
             if (!/godot/i.test(name)) continue;
             const cmd = (s && s.command) || "";
             const args = (s && s.args) || [];
-            const g = { name, command: cmd, args, command_exists: null, command_executable: null };
-            if (cmd) {
-                // MCP stdio commands come in two shapes: an absolute/relative
-                // PATH (resolve directly) or a bare name resolved via PATH at
-                // spawn time ("bash", "npx"). accessSync on a bare name would
-                // probe the process cwd and false-FAIL a perfectly valid
-                // registration — resolve through PATH for that shape.
-                const cmdPath = cmd.includes("/") ? cmd : null;
-                let resolved = cmdPath;
-                if (!resolved) {
-                    for (const dir of (process.env.PATH || "").split(":")) {
-                        if (!dir) continue;
-                        try {
-                            const p = dir + "/" + cmd;
-                            fs.accessSync(p, fs.constants.X_OK);
-                            resolved = p;
-                            break;
-                        } catch { /* next dir */ }
-                    }
-                }
-                if (resolved) {
-                    try { fs.accessSync(resolved, fs.constants.F_OK); g.command_exists = true; }
-                    catch { g.command_exists = false; }
-                    if (g.command_exists) {
-                        try { fs.accessSync(resolved, fs.constants.X_OK); g.command_executable = true; }
-                        catch { g.command_executable = false; }
-                    }
-                } else {
-                    g.command_exists = false;
-                    g.command_executable = false;
-                }
-            }
-            // Verdict mirrors the SEE-1078 incident: missing/dangling command = broken registration.
-            // SEE-1288: a dangling command under the SEE-1273 T5-F RETIRED legacy
-            // launch path (/.dev/godot-mcp/launch/) is stale /tmp mcp-config
-            // residue, not a live-chain break — downgrade to "stale" so doctor
-            // WARNs (visible hygiene signal) instead of FAILing the current chain.
-            // Every OTHER dangling path keeps verdict=broken (SEE-1078 detection).
-            g.stale_retired_path = !(g.command_exists && g.command_executable) && cmd.includes("/.dev/godot-mcp/launch/");
-            g.verdict = (g.command_exists && g.command_executable) ? "ok" : (g.stale_retired_path ? "stale" : "broken");
-            entry.godot_servers.push(g);
+            // SEE-1356 L6: the shared helper owns the verdict. An empty
+            // command can never resolve — pin it broken at the assembly.
+            const r = resolution[d + " " + name]
+                || { verdict: "broken", resolved_path: null, reason: cmd ? "unresolved" : "empty_command" };
+            entry.godot_servers.push({
+                name, command: cmd, args,
+                resolved_path: r.resolved_path,
+                verdict: r.verdict,
+                reason: r.reason,
+            });
         }
     } catch (e) {
         entry.error = e.code === "ENOENT" ? "mcp-config.json_absent" : ("unparseable: " + String(e.message || e));
     }
     out.configs.push(entry);
+}
+process.stdout.write(JSON.stringify(out, null, 2));
+' 2>/dev/null
+}
+
+# --- proxy_state 段: L5 快照只读镜像（SEE-1356 §SPEC-L5-02）-------------------
+# 读取 <rid>.proxy-state.json（双形态命名，镜像 giveup 解析规则），附派生
+# stale 判定：heartbeat_at 距今 > 90s → stale:true（纯派生，不推断死因，
+# 不触发任何联动）。缺失 = 该 runtime 的 proxy 尚未持久化过快照（正常）。
+status_proxy_state_json() {
+    local runtime_id="$1" label="$2"
+    LID="$runtime_id" LBL="$label" node -e '
+const fs = require("fs");
+const home = process.env.GODOT_MCP_HOME || (process.env.HOME ? (process.env.HOME + "/.config/godot-mcp") : "");
+const lid = process.env.LID || "";
+const lbl = process.env.LBL || "";
+const out = { source: "proxy_state", present: false, path: null };
+const candidates = [];
+if (lid && /^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8,12}$/.test(lid)) candidates.push(`${home}/godot-editor/${lid}.proxy-state.json`);
+if (lbl) candidates.push(`${home}/godot-editor/godot-editor-${lbl}.proxy-state.json`);
+for (const p of candidates) {
+    try {
+        const o = JSON.parse(fs.readFileSync(p, "utf8"));
+        Object.assign(out, o);
+        out.path = p;
+        out.present = true;
+        const hb = o.heartbeat_at ? Date.parse(o.heartbeat_at) : NaN;
+        out.heartbeat_age_s = Number.isFinite(hb) ? Math.round((Date.now() - hb) / 1000) : null;
+        // 90s stale threshold (§SPEC-L5-02): purely derived, display-only.
+        out.stale = !(Number.isFinite(hb) && (Date.now() - hb) <= 90000);
+        out.mtime = fs.statSync(p).mtime.toISOString();
+        break;
+    } catch (e) {
+        if (e.code !== "ENOENT") { out.parse_error = String(e.message || e); out.path = p; }
+    }
+}
+process.stdout.write(JSON.stringify(out, null, 2));
+' 2>/dev/null
+}
+
+# --- proxylog 段: proxy stderr 落盘文件的 64KB tail 扫描（SEE-1356 §SPEC-L6-02）-
+# 复用 status_warmup_json 形态。json_rpc_contaminated 恒应为 false：tee 只写
+# 日志行，stdout（JSON-RPC 通道）永不入文件——该字段是契约自证哨兵。
+status_proxylog_json() {
+    local runtime_id="$1" label="$2"
+    RID="$runtime_id" LBL="$label" node -e '
+const fs = require("fs");
+const home = process.env.GODOT_MCP_HOME || (process.env.HOME ? (process.env.HOME + "/.config/godot-mcp") : "");
+const rid = process.env.RID || "";
+const lbl = process.env.LBL || "";
+const STAGES = ["LAUNCHER_EXEC","EDITOR_SPAWNED","PLUGIN_INIT","SERVER_LISTENING","TCP_CONNECTED","WS_HANDSHAKE","MCP_INITIALIZED","WARM"];
+const out = { source: "proxy_log", path: null, present: false, tail_bytes_scanned: 0, highest_stage: null, highest_stage_ts: null, json_rpc_contaminated: false, last_lines: [] };
+const candidates = [];
+if (rid && /^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8,12}$/.test(rid)) candidates.push(`${home}/godot-editor/${rid}.proxy.log`);
+if (lbl) candidates.push(`${home}/godot-editor/godot-editor-${lbl}.proxy.log`);
+for (const p of candidates) {
+    let tail = "";
+    try {
+        const fd = fs.openSync(p, "r");
+        const size = fs.fstatSync(fd).size;
+        const len = Math.min(size, 65536);
+        const buf = Buffer.alloc(len);
+        fs.readSync(fd, buf, 0, len, size - len);
+        fs.closeSync(fd);
+        tail = buf.toString("utf8");
+    } catch { continue; }
+    out.path = p;
+    out.present = true;
+    out.tail_bytes_scanned = tail.length;
+    const lines = tail.split("\n").filter(Boolean);
+    out.last_lines = lines.slice(-5);
+    for (const line of lines) {
+        let m;
+        if ((m = line.match(/\[stage=([A-Z_]+)\]/))) {
+            const ord = STAGES.indexOf(m[1]);
+            if (ord >= 0 && (out.highest_stage === null || ord > STAGES.indexOf(out.highest_stage))) {
+                out.highest_stage = m[1];
+                out.highest_stage_ts = (line.match(/\[ts=([^\]]+)\]/) || [])[1] || null;
+            }
+        }
+        // JSON-RPC contamination sentinel: a request/response SHAPE at line
+        // start in the tee would mean stdout leaked into the log — contract
+        // breach. Plain-text log lines that merely mention words stay clean.
+        if (/^\s*\{"(jsonrpc|id|result|error)"/.test(line)) out.json_rpc_contaminated = true;
+    }
+    break; // one file is authoritative (slot form first, then legacy)
 }
 process.stdout.write(JSON.stringify(out, null, 2));
 ' 2>/dev/null

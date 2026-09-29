@@ -65,23 +65,29 @@ RESULT="$(DOCTOR_JSON="$DOCTOR_JSON" node -e '
 const d = JSON.parse(process.env.DOCTOR_JSON);
 const reg = d.registration_detail || {};
 const cfgs = reg.configs || [];
-let godotEntries = 0, broken = 0;
+let godotEntries = 0, broken = 0, degraded = 0;
 for (const c of cfgs) for (const s of (c.godot_servers || [])) {
     godotEntries++;
+    // SEE-1356 L6: verdict set from the shared resolve helper — broken is the
+    // provable dangling shape (FAIL); degraded is probe-uncertain (WARN-ish,
+    // never FAIL); stale is retired-path residue (hygiene).
     if (s.verdict === "broken") broken++;
+    if (s.verdict === "degraded") degraded++;
 }
 let verdict;
 if (godotEntries === 0) verdict = "NO_GODOT_ENTRY";
 else if (broken > 0) verdict = "FAIL";
+else if (degraded > 0) verdict = "DEGRADED";
 else verdict = "PASS";
 process.stdout.write(JSON.stringify({
     verdict,
     godot_entries: godotEntries,
     broken,
+    degraded,
     doctor_verdict: d.verdict || "?",
     configs_seen: cfgs.length
 }));
-' 2>/dev/null || echo '{"verdict":"PARSE_FAIL","godot_entries":0,"broken":0,"doctor_verdict":"?","configs_seen":0}')"
+' 2>/dev/null || echo '{"verdict":"PARSE_FAIL","godot_entries":0,"broken":0,"degraded":0,"doctor_verdict":"?","configs_seen":0}')"
 
 VERDICT="$(RESULT_JSON="$RESULT" node -e 'process.stdout.write(JSON.parse(process.env.RESULT_JSON).verdict)' 2>/dev/null || echo "PARSE_FAIL")"
 

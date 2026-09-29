@@ -205,6 +205,7 @@ export async function enrichScreenshotResponse({
     requestArgs = {},
     mutationBeforeCaptureMs = 0,
     lastFrameAdvanceMs = 0,
+    fallbackHint = null,
 }) {
     if (!Array.isArray(resultContent)) return null;
     const image = resultContent.find((c) => c && c.type === 'image' && typeof c.data === 'string');
@@ -226,8 +227,21 @@ export async function enrichScreenshotResponse({
     // otherwise no export file is written at all (never a junk .png on disk).
     let exportsInfo = null;
     let advisoryExtra = null;
-    const png = base64ToBuffer(image.data);
+    // SEE-1356 L3 段2 (§SPEC-L3-01): IHDR deep check on the proxy contract
+    // module — a decode failure is CLASSIFIED (empty base64 / bad base64 /
+    // bad PNG header) and stamped onto _screenshot.decode_error with the
+    // existing fallback hint attached. The addon-side format fix (L3 段1,
+    // batch 2) owns the root cause; this proxy-side gate is the defensive
+    // layer that makes "empty payload" VISIBLE instead of a silent export
+    // skip — the "偶发自愈" blind spot the capture contract cannot see.
+    let decodeError = null;
+    if (typeof image.data !== 'string' || image.data.length === 0) {
+        decodeError = 'empty_base64';
+    }
+    const png = decodeError ? null : base64ToBuffer(image.data);
+    if (!decodeError && !png) decodeError = 'bad_base64';
     const dims = png ? pngDimensions(png) : null;
+    if (!decodeError && !dims) decodeError = 'bad_png_header';
     if (png && dims) {
         const fname = `screenshot-${nowMs}-${++exportSeq}.png`;
         const outPath = path.join(worktree, EXPORTS_RELDIR, fname);
@@ -258,7 +272,20 @@ export async function enrichScreenshotResponse({
             };
         }
     } else {
-        exportsInfo = { png_path: null, width: null, height: null, error: 'image payload not decodable as a PNG (base64 decode or PNG header failed)' };
+        exportsInfo = {
+            png_path: null,
+            width: null,
+            height: null,
+            decode_error: decodeError,
+            error: decodeError === 'empty_base64'
+                ? 'capture payload is EMPTY base64 — the addon produced no decodable image (non-8-bit viewport format is the known root cause; L3 段1 fixes it in-batch)'
+                : 'image payload not decodable as a PNG (base64 decode or PNG header failed)',
+        };
+        if (fallbackHint) {
+            advisoryExtra = advisoryExtra
+                ? `${advisoryExtra} CAPTURE decode_error=${decodeError}.${fallbackHint.trim()}`
+                : `CAPTURE decode_error=${decodeError}.${fallbackHint.trim()}`;
+        }
     }
 
     const meta = {
@@ -267,6 +294,7 @@ export async function enrichScreenshotResponse({
         auto_step: autoStepPerformed,
         stale: verdict.stale,
     };
+    if (decodeError) meta.decode_error = decodeError;
 
     const advisoryText = verdict.stale
         ? staleAdvisoryText(verdict, autoStepRequested)

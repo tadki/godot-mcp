@@ -16,6 +16,7 @@ import { log } from './log.mjs';
 import { maybeProgressLog, rejectQueue } from './router.mjs';
 import { finishRestartHold } from './restart.mjs';
 import { editorPidAlive, readRuntimeState, writeRuntimeState, releaseRuntimeLock } from './state-file.mjs';
+import { maybePersistProxyHeartbeat } from './proxy-state.mjs';
 
 function shutdown() {
     S.shutdownRequested = true;
@@ -200,6 +201,8 @@ function startHeartbeat() {
         refreshRegistryHeartbeat().catch(() => {});
         selfRegisterProxyPid().catch(() => {});
         backfillEditorPid().catch(() => {});
+        // SEE-1356 L5: 30s-throttled proxy-state heartbeat refresh.
+        maybePersistProxyHeartbeat();
     }, HEARTBEAT_INTERVAL_MS);
 }
 
