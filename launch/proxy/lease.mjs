@@ -12,6 +12,7 @@ import { log, stageLog } from './log.mjs';
 import { maybeNotifyStageChange, warmupDiagnostic } from './diagnostics.mjs';
 import { rejectQueue } from './router.mjs';
 import { beginWarmEditorRespawn, giveUpAndRearm } from './spawn.mjs';
+import { recordProxyTransition } from './proxy-state.mjs';
 
 // SEE-1077: independent lease monitor. Watches EDITOR_LOG_FILE for the exact
 // "exiting editor to release the port" line; on match, takes the existing T4
@@ -90,6 +91,8 @@ async function checkLeaseTail() {
         clearInterval(S.leaseTimer);
         S.leaseTimer = null;
         if (KOL_PROGRESS_PROTOCOL !== 'off') S.leaseExitDetected = true;
+        // SEE-1356 L5: the lease exit is its own snapshot transition point.
+        recordProxyTransition('lease_exit', 'editor lease grace expired; editor self-exits to release the port');
         log(`ERROR: lease death detected in editor log ('${LEASE_EXITING_LINE}'); rejecting ${S.pendingCalls.length} buffered call(s) and ${GIVEUP_REARM_ENABLED ? 're-arming in-band (WS-5)' : 'exiting'}.`);
         rejectQueue(`editor lease expired; exiting to release port`, warmupDiagnostic('failed_exit'));
         if (GIVEUP_REARM_ENABLED) {

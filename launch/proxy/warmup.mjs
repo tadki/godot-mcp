@@ -27,6 +27,7 @@ import { startRenderStableMonitor, tcpProbe, wsProbe } from './probes.mjs';
 import { maybeRefreshToolsCache } from './tools-cache.mjs';
 import { resolveWorktreeForSpawn } from './worktree.mjs';
 import { writeRuntimeState } from './state-file.mjs';
+import { recordProxyTransition } from './proxy-state.mjs';
 import { RUNTIME_ID, GODOT_PORT as SOT_PORT } from './config.mjs';
 
 // eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
@@ -142,6 +143,8 @@ async function warmupLoop() {
                             last_error: 'warmup timed out; entering RECOVERING',
                         }, { event: 'STATE_TRANSITION', fromState: 'WARMING', detail: 'warmup timeout' });
                     }
+                    // SEE-1356 L5 T2: RECOVERING entry is a snapshot transition point.
+                    recordProxyTransition('T2_recovering_enter', 'warm branch: CLI never connected within warmup window');
                     rejectQueue(
                         `editor warmup timed out after ${Math.floor(currentWarmupTimeout() / 1000)}s; please retry`,
                         warmupDiagnostic('recovering'),
@@ -185,6 +188,7 @@ async function warmupLoop() {
                         giveUpAndRearm('warm_recovering_failed_exit', 'warm+recovering FAILED_EXIT');
                         break;   // exit the warmFlushed loop; outer loop re-arms
                     }
+                    recordProxyTransition('T4_failed_exit', 'warm+recovering FAILED_EXIT (legacy terminal)');
                     S.warmupTimedOut = true;
                     process.exit(1);
                 }
@@ -457,6 +461,8 @@ async function warmupLoop() {
                     S.recovering = true;
                     S.recoveringEnteredAt = now;
                     lastTcpOkAt = now; // seed the FAILED_EXIT window from RECOVERING entry
+                    // SEE-1356 L5 T2: RECOVERING entry is a snapshot transition point.
+                    recordProxyTransition('T2_recovering_enter', 'cold branch: warmup window exhausted');
                     rejectQueue(
                         `editor warmup timed out after ${Math.floor(currentWarmupTimeout() / 1000)}s; please retry`,
                         warmupDiagnostic('recovering'),
@@ -497,6 +503,7 @@ async function warmupLoop() {
                             giveUpAndRearm('recovering_failed_exit', 'sustained probe failure (FAILED_EXIT)');
                             break;   // exit the warmFlushed loop; outer loop re-arms
                         }
+                        recordProxyTransition('T4_failed_exit', 'cold sustained probe failure (legacy terminal)');
                         S.warmupTimedOut = true;
                         process.exit(1);
                     }

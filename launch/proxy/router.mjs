@@ -22,6 +22,7 @@ import { persistGiveUpStatus, spawnFailedDiagnostic, triggerEnsureEditor } from 
 import { beginRestartHold, isRestartToolsCall } from './restart.mjs';
 import { shutdown } from './lifecycle.mjs';
 import { writeRuntimeState } from './state-file.mjs';
+import { noteProxyCallSummary, recordProxyTransition } from './proxy-state.mjs';
 import { RUNTIME_ID } from './config.mjs';
 
 function maybeProgressLog(force = false) {
@@ -94,6 +95,9 @@ function rejectQueue(reason, data = undefined) {
         const line = S.pendingCalls.shift();
         try {
             const msg = JSON.parse(line);
+            // SEE-1356 L5: rejected calls land in the proxy-state snapshot
+            // (tool + argument key names + lengths only — never values).
+            noteProxyCallSummary(msg, 'rejected');
             if (msg.id !== undefined) {
                 sendToClaude(makeErrorResponse(msg.id, reason, -32000, data));
             }
@@ -301,6 +305,14 @@ function handleClaudeMessage(line) {
             // the screenshot frame-age contract (set→不 step→capture detection).
             if (((msg.params.arguments || {}).action) === 'run') S.lastMutationAtMs = Date.now();
         }
+        // SEE-1356 L2 (§SPEC-L2-03): track godot_project action=get_info so the
+        // response carries the on-disk workdir snapshot echo (proxy-side
+        // injection; the addon is untouched).
+        if (id !== undefined
+            && ((msg.params && msg.params.name) === 'godot_project')
+            && (((msg.params.arguments || {}).action) === 'get_info')) {
+            S.getInfoCallIds.add(id);
+        }
         // SEE-1240 WS-3: a game_time step/step_until/thaw draws at least one
         // frame — anything captured after it is definitionally post-advance.
         if (isGameTimeToolsCall(msg)) {
@@ -396,6 +408,7 @@ function handleClaudeMessage(line) {
                 S.spawnLastFailed = false;   // first-report already consumed by the cooldown-era call(s)
                 S.spawnLastError = null;
                 persistGiveUpStatus('rearm', S.spawnFailedBucket || 'cleared', 'cooldown expired; warmup re-armed');
+                recordProxyTransition('give_up_rearm', 'cooldown expired; warmup re-armed by next tools/call');
                 log(`give-up cooldown expired (count=${S.giveUpCount}); warmup re-armed — this call re-triggers the spawn (WS-5).`);
                 // fall through to the normal trigger path below.
             } else {
@@ -542,6 +555,8 @@ function handleClaudeMessage(line) {
         // branches above (RECOVERING / warmupTimedOut) are the 180s-window
         // fallbacks: if the editor never warms, the held call is rejected with
         // a retryable diagnostic instead of hanging forever.
+        // SEE-1356 L5: held calls land in the snapshot's hold-queue summary.
+        noteProxyCallSummary(msg, 'held');
         S.pendingCalls.push(line);
         maybeProgressLog(true);
         return;

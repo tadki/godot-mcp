@@ -10,13 +10,13 @@ import {
     FORK_CLI_PATH, HOT_NPX_RESTART_DEADLINE_MS, KOL_PROGRESS_PROTOCOL,
     NPX_RESTART_BACKOFF_MS, TAKEOVER_RETRY_MS, TAKEOVER_TIMEOUT_MS,
 } from './config.mjs';
-import { log, stageLog } from './log.mjs';
+import { log, stageLog, teeStderrLine } from './log.mjs';
 import { flushNpxWriteBuffer, replayHandshake } from './protocol.mjs';
 import { markNpxTransportReady, rejectQueue } from './router.mjs';
 import {
     maybeRefreshToolsCache, patchToolsList, resolveToolsCacheRefresh, writeToolsCache,
 } from './tools-cache.mjs';
-import { augmentScreenshotError } from './screenshot.mjs';
+import { augmentScreenshotError, SCREENSHOT_FALLBACK_HINT } from './screenshot.mjs';
 import { augmentExecResult, execHintsForText } from './exec.mjs';
 import {
     augmentEditorBusyError, augmentToolsCallError, isEditorBusyError, isEditorGoneError,
@@ -28,6 +28,7 @@ import { driveRestartRespawn, finishRestartHold } from './restart.mjs';
 import { beginWarmEditorRespawn } from './spawn.mjs';
 import { buildWarmupTimeline } from './diagnostics.mjs';
 import { resolveWorktreeForSpawn } from './worktree.mjs';
+import { workdirEchoForGetInfo } from './proxy-state.mjs';
 import { enrichScreenshotResponse, spliceEnrichment } from '../see1240-screenshot-contract.mjs';
 import { resolveGodotMcpCommand } from '../godot-mcp-resolve.mjs';
 import { stageOrdinal } from '../warmup-stage-parser.mjs';
@@ -106,7 +107,7 @@ function startNpx() {
         let errBuf = '';
         S.npx.stderr.on('data', (chunk) => {
             const s = chunk.toString();
-            try { process.stderr.write(s); } catch { /* ignore */ }
+            try { teeStderrLine(s); } catch { /* ignore */ }
             errBuf += s;
             let idx;
             while ((idx = errBuf.indexOf('\n')) !== -1) {
@@ -294,6 +295,9 @@ function startNpx() {
                                 requestArgs: info.requestArgs,
                                 mutationBeforeCaptureMs: S.lastMutationAtMs,
                                 lastFrameAdvanceMs: S.lastFrameAdvanceAtMs,
+                                // SEE-1356 L3 段2: IHDR deep-check failures carry
+                                // the same fallback hint as error responses.
+                                fallbackHint: SCREENSHOT_FALLBACK_HINT,
                             })
                             : null;
                         if (enrichment) {
@@ -307,8 +311,27 @@ function startNpx() {
                     }
                 }
             }
-            // SEE-1070 #8: exec responses carry hints for known GDScript pitfalls
-            // and str()-truncated container returns. Handles both MCP-level errors
+            // SEE-1356 L2 (§SPEC-L2-03): get_info responses carry the on-disk
+            // workdir snapshot echo (runtime_id/worktree/workdir_hash from the
+            // L5 proxy-state snapshot). Snapshot absent → workdir_hash null +
+            // hash_source 'snapshot_absent' (null = unknown, not "no hash").
+            // Additive-only: one text block is appended, the result is preserved.
+            if (msg.id !== undefined && S.getInfoCallIds.has(msg.id)) {
+                S.getInfoCallIds.delete(msg.id); // one response per id
+                if (msg.result !== undefined) {
+                    try {
+                        const echo = workdirEchoForGetInfo();
+                        const result = msg.result;
+                        const content = Array.isArray(result.content) ? [...result.content] : [];
+                        content.push({ type: 'text', text: JSON.stringify({ workdir_snapshot: echo }) });
+                        msg.result = { ...result, content };
+                        out = JSON.stringify(msg);
+                    } catch (err) {
+                        log(`WARNING: get_info workdir echo failed (forwarding unmodified): ${err && err.message}`);
+                    }
+                }
+            }
+            // SEE-1070 #8: exec responses carry hints for known GDScript pitfalls            // and str()-truncated container returns. Handles both MCP-level errors
             // and the common case where exec errors live inside the result text.
             if (msg.id !== undefined && S.execCallIds.has(msg.id)) {
                 S.execCallIds.delete(msg.id); // one response per id

@@ -371,8 +371,29 @@ _encode_workdir_marker() {
 # is `.cc-aligned-_<ws_base_underscored>_<hash>_workdir_KingOfLikes-Godot`
 # where <ws_base_underscored> is $ws_base with '/'->'_'. Prints the hash on
 # success, returns 1 when the marker does not match the expected shape.
+# Structured stage emitter for the resolution block. Falls back to bare
+# stderr when log_stage is unavailable (the SEE-1356 harness extracts this
+# block in isolation and sources only env.sh, not the whole launcher).
+_emit_stage_line() {
+    if command -v log_stage >/dev/null 2>&1; then
+        log_stage "$@"
+    else
+        printf '[godot-mcp-launcher] %s\n' "$*" >&2
+    fi
+}
+
+# SEE-1356 L7 (§SPEC-L7-02): the decoded segment names a slot DIRECTORY, so
+# its shape is "<name>-<hash>" (see-1259-aa4de5376e75) or a bare hash
+# (5d621003) — the hardening validates BOTH: no underscore anywhere (the
+# legacy check), and the LAST '-'-segment must be pure lowercase hex (a real
+# slot hash is 8-12 hex chars). The legacy "non-empty, no underscore" check
+# silently accepted ambiguous shapes (uppercase / g-z tails) that could never
+# name a real slot dir; the miss then fell through to (b)'s freshest-mtime
+# and could pin a stale runtime. A failing decode emits a structured
+# marker_decode_failed stage line (observability gap, not just a test gap)
+# so post-hoc greps can tell "marker malformed" from "marker absent".
 _decode_marker_hash() {
-    local marker="$1" ws_base="$2" ws_enc prefix suffix rest hash
+    local marker="$1" ws_base="$2" ws_enc prefix suffix rest hash tail
     # Re-encode $ws_base the same way the hook encodes pwd: '/'->'_'.
     ws_enc="${ws_base#/}"
     ws_enc="${ws_enc////_}"
@@ -381,8 +402,11 @@ _decode_marker_hash() {
     [[ "$marker" == "$prefix"*"$suffix" ]] || return 1
     rest="${marker#"$prefix"}"
     hash="${rest%"$suffix"}"
-    # Hash must be non-empty and free of '_' (a real hash is 8 hex chars).
-    [[ -n "$hash" && "$hash" != *_* ]] || return 1
+    tail="${hash##*-}"
+    if [[ -z "$hash" || "$hash" == *_* || ! "$tail" =~ ^[0-9a-f]+$ ]]; then
+        _emit_stage_line "stage=WORKTREE_CANDIDATES" msg="marker_decode_failed" marker="${marker:0:80}" hash="${hash:0:24}"
+        return 1
+    fi
     printf '%s\n' "$hash"
 }
 
@@ -426,6 +450,18 @@ _resolve_via_runtime_registry() {
     done < <(_ws_base_candidates)
     (( ${#ws_bases[@]} > 0 )) || return 1
 
+    # SEE-1356 L7 (§SPEC-L7-03): candidate discovery lands on a structured
+    # stage line — post-hoc greps can see how many ws_base candidates (UUID +
+    # seed-* aliases) were scanned and which strategies were tried, without
+    # re-deriving the scan from the filesystem. O(n) find is intentionally
+    # kept: real scale is single-digit candidates (YAGNI).
+    local _names="" _b _markers=0
+    for _b in "${ws_bases[@]}"; do _names+="${_names:+,}$(basename "$_b")"; done
+    if [[ -n "${TMPDIR:-}" && -d "$TMPDIR" ]]; then
+        for _b in "$TMPDIR"/.cc-aligned-*; do [[ -e "$_b" ]] && _markers=$((_markers + 1)); done
+    fi
+    _emit_stage_line "stage=WORKTREE_CANDIDATES" msg="ws_base_scan" ws_bases="${#ws_bases[@]}" containers="$_names" markers="$_markers"
+
     # (a) exact task match via the TMPDIR .cc-aligned marker.
     if [[ -n "${TMPDIR:-}" ]]; then
         for marker in "$TMPDIR"/.cc-aligned-*; do
@@ -439,6 +475,7 @@ _resolve_via_runtime_registry() {
                     worktree="$ws_base/$hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
                     _has_launch_toolchain "$worktree" || continue
                     if [[ "$(_encode_workdir_marker "$worktree")" == "$marker" ]]; then
+                        _emit_stage_line "stage=WORKTREE_CANDIDATES" msg="registry_hit" strategy="a_exact" worktree="$worktree"
                         printf '%s\n' "$worktree"
                         return 0
                     fi
@@ -493,6 +530,7 @@ _resolve_via_runtime_registry() {
                     grep -q "\"agent_id\":[[:space:]]*\"${GODOT_MCP_AGENT_ID}\"" "$meta" || continue
                 fi
                 worktree="$ws_base/$hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
+                _emit_stage_line "stage=WORKTREE_CANDIDATES" msg="registry_hit" strategy="a2_marker_decode" worktree="$worktree" hash="$hash"
                 printf '%s\n' "$worktree"
                 return 0
             done
@@ -532,6 +570,7 @@ _resolve_via_runtime_registry() {
                     if [[ -f "$cwd_meta" ]]; then
                         # Cross-agent gate: cwd slot must belong to this agent.
                         if grep -q "\"agent_id\":[[:space:]]*\"${GODOT_MCP_AGENT_ID}\"" "$cwd_meta"; then
+                            _emit_stage_line "stage=WORKTREE_CANDIDATES" msg="registry_hit" strategy="b_cwd_anchor" worktree="$ws_base/$cwd_hash/workdir/${GODOT_MCP_REPO_DIRNAME}" hash="$cwd_hash"
                             printf '%s\n' "$ws_base/$cwd_hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
                             return 0
                         fi
@@ -540,6 +579,7 @@ _resolve_via_runtime_registry() {
                     else
                         # managed_env not yet written (daemon lag): trust cwd, same B1
                         # lazy-load trust (a2) extends to the runtime hash dir.
+                        _emit_stage_line "stage=WORKTREE_CANDIDATES" msg="registry_hit" strategy="b_cwd_anchor" worktree="$ws_base/$cwd_hash/workdir/${GODOT_MCP_REPO_DIRNAME}" hash="$cwd_hash" trusted="managed_env_pending"
                         printf '%s\n' "$ws_base/$cwd_hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
                         return 0
                     fi
@@ -565,6 +605,7 @@ _resolve_via_runtime_registry() {
             fi
         done
         if [[ -n "$best_hash" ]]; then
+            _emit_stage_line "stage=WORKTREE_CANDIDATES" msg="registry_hit" strategy="b_freshest_mtime" worktree="$ws_base/$best_hash/workdir/${GODOT_MCP_REPO_DIRNAME}" hash="$best_hash"
             printf '%s\n' "$ws_base/$best_hash/workdir/${GODOT_MCP_REPO_DIRNAME}"
             return 0
         fi

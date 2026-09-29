@@ -267,6 +267,8 @@ launch/tests/scripts/test_see1152_reaper_held_sweep.sh
 launch/tests/scripts/test_see1240_exec_constraints_proxy.sh
 launch/tests/scripts/test_see1240_proxy_integration.sh
 launch/tests/scripts/test_see1348_m4_gate_matrix.sh
+launch/tests/scripts/test_see1356_l7_seed_layout.sh
+launch/tests/scripts/test_see1356_status_segments.sh
 `;
 
 // FAST_NODE — same binning evidence as the shell bucket above (mkdtemp
@@ -291,6 +293,7 @@ launch/tests/scripts/test_see1338_p1_sot.mjs
 launch/tests/scripts/test_see1338_stale_takeover.mjs
 launch/tests/scripts/test_see1085_t7_resolver.mjs
 launch/tests/scripts/test_see1110_stage_parser.mjs
+launch/tests/scripts/test_see1356_proxy_units.mjs
 `;
 
 const LONG = `
@@ -318,8 +321,8 @@ const longEntries = parse(LONG);
 if (serialEntries.length !== 18) {
   throw new Error(`fast serial bucket expects 16 entries (8 + SEE-1344's 8 load-fragile graduates: tight internal timing windows proven to flake under 4-way load in r7-r9 sweeps), resolved ${serialEntries.length} — update the bucket in sync with the SEE-1291 graduation flow`);
 }
-if (serialEntries.length + fastEntries.length !== 94) {
-  throw new Error(`fast tier expects 94 entries (serial + parallel; SEE-1344 ⑫ graduates + SEE-1348 WP4 m4_gate_matrix/m4_editor_pid_state + WP7 m6_coldstart + F-QA-1 qa_relay_wiring), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
+if (serialEntries.length + fastEntries.length !== 97) {
+  throw new Error(`fast tier expects 97 entries (serial + parallel; SEE-1344 ⑫ graduates + SEE-1348 WP4 m4_gate_matrix/m4_editor_pid_state + WP7 m6_coldstart + F-QA-1 qa_relay_wiring + SEE-1356 l7_seed_layout/status_segments/proxy_units), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
 }
 if (longEntries.length !== 8) {
   throw new Error(`long tier expects 8 entries (SEE-1344 ⑫+: e5_concurrent joins the 7), resolved ${longEntries.length}`);

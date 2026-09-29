@@ -116,6 +116,39 @@ kol_lifecycle_path() {
 }
 
 
+# kol_workdir_hash <worktree>: SEE-1356 L2 (§SPEC-L2-01) — the SINGLE source
+# of truth for "which workdir is this?" observability across status/registry/
+# proxy/startup headers. No other site may compute a workdir hash itself.
+#
+#   slot 主口径  — mcp_slot_hash_for (the hex tail of the multica slot dir,
+#                  stable across turns, distinct per concurrent slot)
+#   path fallback — sha256(realpath)[:8] when no slot hash can be extracted
+#                  (a manually-launched checkout outside multica_workspaces)
+# Output contract: ONE line "<hash> <source>" where source ∈ slot|path. The
+# provenance rides the SAME stdout because $() subshells cannot propagate the
+# KOL_WORKDIR_HASH_SOURCE variable back to the caller (bash $() semantics).
+# In-shell callers additionally get KOL_WORKDIR_HASH_SOURCE set; empty output
+# = the call failed (empty input).
+#
+# Input is realpath-normalized first (realpath -m: the (a2)/B1 lazy-load
+# paths may legitimately not exist on disk yet — lexical normalization
+# still). Never fails when <worktree> is non-empty; returns 1 on empty input.
+kol_workdir_hash() {
+    local wt="${1:-}" wt_real h
+    KOL_WORKDIR_HASH_SOURCE=""
+    [[ -n "$wt" ]] || return 1
+    wt_real="$(realpath -m -- "$wt" 2>/dev/null || printf '%s' "$wt")"
+    h="$(mcp_slot_hash_for "$wt_real" || true)"
+    if [[ -n "$h" ]]; then
+        KOL_WORKDIR_HASH_SOURCE="slot"
+        printf '%s %s\n' "$h" "$KOL_WORKDIR_HASH_SOURCE"
+        return 0
+    fi
+    KOL_WORKDIR_HASH_SOURCE="path"
+    printf '%s %s\n' "$(printf '%s' "$wt_real" | sha256sum | cut -c1-8)" "$KOL_WORKDIR_HASH_SOURCE"
+    return 0
+}
+
 # --- legacy KOL_* aliases (SEE-1268 §4.5.3 T2): 存量调用零破坏 ---
 kol_slot_hash_for() { mcp_slot_hash_for "$@"; }
 kol_runtime_id_regex() { mcp_runtime_id_regex "$@"; }

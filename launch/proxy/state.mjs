@@ -91,6 +91,12 @@ export const S = {
     warmProbeFailures: 0,
     recoveryRound: 0,
     recoveryWindowStart: null,
+    // SEE-1356 L2/L5: workdir snapshot triple + proxy-state snapshot bookkeeping.
+    workdirSnapshot: null,        // {runtime_id, worktree, workdir_hash, hash_source}
+    lastTransitions: [],          // capped 10 — see proxy-state.mjs
+    recentProxyCalls: [],         // capped 10 held/rejected call summaries
+    lastProxyStatePersistMs: 0,
+    getInfoCallIds: new Set(),    // godot_project action=get_info — response echo
 };
 for (const s of STAGE_ENUM) S.stageTimestamps[s] = null;
 S.stageTimestamps.LAUNCHER_EXEC = S.startedAt; // t0 = proxy start (per §2.1)
