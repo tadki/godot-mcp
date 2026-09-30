@@ -10,13 +10,21 @@ static func success(result: Dictionary) -> Dictionary:
 	}
 
 
-static func error(code: String, message: String) -> Dictionary:
+static func error(code: String, message: String, detail: String = "") -> Dictionary:
+	# SEE-1356 L3 (§SPEC-L3-02): one CAPTURE_FAILED code, a `detail` field
+	# carrying the failure classification (unsupported_format /
+	# empty_buffer_after_convert / empty_viewport). Detail is optional — the
+	# game track's bridge errors and every other code keep the two-key shape,
+	# so the existing CAPTURE_FAILED consumption surface is unchanged.
+	var err := {
+		"code": code,
+		"message": message
+	}
+	if not detail.is_empty():
+		err["detail"] = detail
 	return {
 		"status": "error",
-		"error": {
-			"code": code,
-			"message": message
-		}
+		"error": err
 	}
 
 

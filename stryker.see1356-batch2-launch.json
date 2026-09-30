@@ -1,0 +1,42 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/api/schema/stryker-schema.json",
+  "//": [
+    "SEE-1356 batch-2 — scoped StrykerJS face for the launch/ modules TOUCHED by",
+    "batch 2 (Atlas ruling: the .mjs/.ts face is vitest + StrykerJS whitelist):",
+    "  launch/see1240-screenshot-contract.mjs (bad_base64 dead-branch cleanup)",
+    "  launch/proxy/proxy-state.mjs           (|| [] defensive-residue cleanup)",
+    "  launch/proxy/log.mjs                   (naming regex → runtime-id SSOT)",
+    "  launch/proxy/spawn.mjs:850-900         (same SSOT swap, giveup range)",
+    "  launch/proxy/runtime-id.mjs            (NEW SSOT module itself)",
+    "",
+    "Ratchet context: batch-1 hardener measured 84.59% on this file family",
+    "(stryker.see1356.json, floor 80 ONLY-UP). This scoped run proves the",
+    "cleanups did not regress the mutation face; floor kept at 80.",
+    "coverageAnalysis off mirrors stryker.see1356.json (in-process unit face)."
+  ],
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "buildCommand": "true",
+  "coverageAnalysis": "off",
+  "tempDirName": ".stryker-tmp-see1356-batch2",
+  "cleanTempDir": true,
+  "reporters": ["clear-text", "progress", "json"],
+  "mutate": [
+    "launch/see1240-screenshot-contract.mjs",
+    "launch/proxy/proxy-state.mjs",
+    "launch/proxy/log.mjs",
+    "launch/proxy/spawn.mjs:850-900",
+    "launch/proxy/runtime-id.mjs"
+  ],
+  "vitest": {
+    "configFile": "launch/vitest.see1356.config.ts",
+    "related": false
+  },
+  "concurrency": 4,
+  "timeoutMS": 30000,
+  "thresholds": {
+    "high": 100,
+    "low": 82,
+    "break": 80
+  }
+}

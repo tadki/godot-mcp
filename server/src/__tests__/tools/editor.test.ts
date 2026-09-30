@@ -228,6 +228,33 @@ describe('editorRead tool', () => {
       expect(result).toEqual({ type: 'image', data: 'abc', mimeType: 'image/png' });
     });
 
+    it('returns a structured CAPTURE_FAILED for an EMPTY editor capture payload (§SPEC-L3-04)', async () => {
+      // Direct-connect defense line: an addon predating the L3 段1 format
+      // normalization answers SUCCESS with empty base64 on HDR/float 3D
+      // viewports — the server must surface it, not emit a blank image.
+      mock.mockResponse({ image_base64: '', width: 0, height: 0 });
+      const ctx = createToolContext(mock);
+
+      const result = await editorRead.execute({ action: 'screenshot_editor' }, ctx);
+      const payload = structuredOf(result) as { error: { code: string; detail: string; message: string } };
+      expect(payload.error.code).toBe('CAPTURE_FAILED');
+      expect(payload.error.detail).toBe('empty_base64');
+      expect(payload.error.message).toContain('non-8-bit');
+    });
+
+    it('the GAME track keeps its existing envelope (ride-along scope is the editor track)', async () => {
+      // 终裁 pins the server-side pre-validation to the editor track
+      // (editor.ts:269-277): the game track's empty cases already surface as
+      // CAPTURE_FAILED through the addon error envelope (GodotCommandError),
+      // and its success payload comes from the bridge's own encode. This pin
+      // documents that scope boundary deliberately.
+      mock.mockResponse({ image_base64: '', width: 0, height: 0 });
+      const ctx = createToolContext(mock);
+
+      const result = await editorRead.execute({ action: 'screenshot_game' }, ctx);
+      expect(result).toEqual({ type: 'image', data: '', mimeType: 'image/png' });
+    });
+
     it('passes viewport and max_width params for editor screenshot', async () => {
       mock.mockResponse({ image_base64: 'abc', width: 800, height: 600 });
       const ctx = createToolContext(mock);

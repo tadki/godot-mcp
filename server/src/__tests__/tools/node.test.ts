@@ -156,6 +156,26 @@ describe('node edit tool', () => {
         name_pattern: '*Spawner*',
       }).success).toBe(false);
     });
+
+    it('add_node requires parent_path and node_type; index must be a non-negative int', () => {
+      expect(nodeEdit.schema.safeParse({ action: 'add_node', parent_path: '/root' }).success).toBe(false);
+      expect(nodeEdit.schema.safeParse({ action: 'add_node', node_type: 'Node2D' }).success).toBe(false);
+      expect(nodeEdit.schema.safeParse({ action: 'add_node', parent_path: '/root', node_type: 'Node2D' }).success).toBe(true);
+      expect(nodeEdit.schema.safeParse({ action: 'add_node', parent_path: '/root', node_type: 'Node2D', name: 'Turret', index: 2 }).success).toBe(true);
+      expect(nodeEdit.schema.safeParse({ action: 'add_node', parent_path: '/root', node_type: 'Node2D', index: -1 }).success).toBe(false);
+      expect(nodeEdit.schema.safeParse({ action: 'add_node', parent_path: '/root', node_type: 'Node2D', index: 1.5 }).success).toBe(false);
+    });
+
+    it('attach_script requires node_path and script_path', () => {
+      expect(nodeEdit.schema.safeParse({ action: 'attach_script', node_path: '/root/Test' }).success).toBe(false);
+      expect(nodeEdit.schema.safeParse({ action: 'attach_script', script_path: 'res://x.gd' }).success).toBe(false);
+      expect(nodeEdit.schema.safeParse({ action: 'attach_script', node_path: '/root/Test', script_path: 'res://x.gd' }).success).toBe(true);
+    });
+
+    it('connect_signal requires the full quadruple', () => {
+      expect(nodeEdit.schema.safeParse({ action: 'connect_signal', node_path: '/root/B', signal: 'pressed', target_path: '/root/M' }).success).toBe(false);
+      expect(nodeEdit.schema.safeParse({ action: 'connect_signal', node_path: '/root/B', signal: 'pressed', target_path: '/root/M', method: '_on_pressed' }).success).toBe(true);
+    });
   });
 
   describe('update/reparent', () => {
@@ -175,6 +195,88 @@ describe('node edit tool', () => {
         node_path: '/root/Old/Node',
         new_parent_path: '/root/New',
       }, ctx)).toBe('Reparented node to: /root/New/Node');
+    });
+  });
+
+  describe('add_node / attach_script / connect_signal (SEE-1356 L4)', () => {
+    it('forwards add_node params and surfaces the write contract (revert_hint + saved + save hint)', async () => {
+      mock.mockResponse({
+        path: '/root/Main/Turret',
+        saved: false,
+        save_hint: 'Write landed in the editor\'s memory only — call save_scene to persist it',
+        revert_hint: { command: 'add_node', node_path: '/root/Main/Turret' },
+      });
+      const ctx = createToolContext(mock);
+
+      const text = await nodeEdit.execute({
+        action: 'add_node',
+        parent_path: '/root/Main',
+        node_type: 'Node2D',
+        name: 'Turret',
+        index: 1,
+      }, ctx);
+
+      expect(mock.calls[0].command).toBe('add_node');
+      expect(mock.calls[0].params).toEqual({ parent_path: '/root/Main', node_type: 'Node2D', name: 'Turret', index: 1 });
+      expect(text).toContain('/root/Main/Turret');
+      expect(text).toContain('saved: false');
+      expect(text).toContain('save_scene');
+      expect(text).toContain('add_node');
+    });
+
+    it('forwards attach_script and returns the property snapshot', async () => {
+      mock.mockResponse({
+        path: '/root/Player',
+        saved: false,
+        save_hint: 'save hint',
+        revert_hint: { command: 'attach_script', node_path: '/root/Player', previous_script: '' },
+        properties: { speed: 300.0 },
+      });
+      const ctx = createToolContext(mock);
+
+      const text = await nodeEdit.execute({
+        action: 'attach_script',
+        node_path: '/root/Player',
+        script_path: 'res://player.gd',
+      }, ctx);
+
+      expect(mock.calls[0].command).toBe('attach_script');
+      expect(mock.calls[0].params).toEqual({ node_path: '/root/Player', script_path: 'res://player.gd' });
+      expect(text).toContain('res://player.gd');
+      expect(text).toContain('"speed":300');
+    });
+
+    it('forwards connect_signal as the connection quadruple', async () => {
+      mock.mockResponse({
+        path: '/root/Button',
+        saved: false,
+        save_hint: 'save hint',
+        revert_hint: { command: 'connect_signal', node_path: '/root/Button', signal: 'pressed', target_path: '/root/Main', method: '_on_pressed' },
+      });
+      const ctx = createToolContext(mock);
+
+      const text = await nodeEdit.execute({
+        action: 'connect_signal',
+        node_path: '/root/Button',
+        signal: 'pressed',
+        target_path: '/root/Main',
+        method: '_on_pressed',
+      }, ctx);
+
+      expect(mock.calls[0].command).toBe('connect_signal');
+      expect(mock.calls[0].params).toEqual({ node_path: '/root/Button', signal: 'pressed', target_path: '/root/Main', method: '_on_pressed' });
+      expect(text).toContain('pressed -> /root/Main._on_pressed');
+    });
+
+    it('the description no longer routes structure edits to hand-editing .tscn (§SPEC-L4-03)', () => {
+      expect(nodeEdit.description).not.toContain('edit the .tscn file directly');
+      expect(nodeEdit.description).toContain('add_node');
+      expect(nodeEdit.description).toContain('attach_script');
+      expect(nodeEdit.description).toContain('connect_signal');
+      // The instanced sub-scene rejection is named in the add_node action
+      // schema; the tool description states the behavior.
+      expect(nodeEdit.description).toContain('instanced sub-scene');
+      expect(nodeEdit.description).toContain('instanced sub-scene node are rejected');
     });
   });
 });

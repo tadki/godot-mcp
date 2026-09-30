@@ -53,7 +53,8 @@ func _on_screenshot_received(success: bool, image_base64: String, width: int, he
 		var payload := {
 			"image_base64": image_base64,
 			"width": width,
-			"height": height
+			"height": height,
+			"captured_at_ms": _captured_at_ms()
 		}
 		# Mesh-integrity warnings ride the same game message (no extra
 		# round-trip, no version-skew timeout); pass them through so the
@@ -89,9 +90,30 @@ func capture_editor_screenshot(params: Dictionary) -> Dictionary:
 
 # Lossless PNG, not JPEG: vision-token cost is set by resolution, not codec, so
 # JPEG only added compression artifacts. max_width bounds the resolution cost.
+#
+# Format normalization (SEE-1356 L3 段1, §SPEC-L3-02): non-8-bit textures
+# (HDR/float 3D viewports) silently produce an EMPTY PackedByteArray from
+# save_png_to_buffer() — the "偶发 [Unsupported Image]" root cause. Convert to
+# RGBA8 first; an already-RGBA8 2D viewport image is passed through untouched
+# (no needless resample). Every failure is the same CAPTURE_FAILED code with a
+# `detail` classification, so proxy/server consumers gain no new branches.
 func _process_and_encode_image(image: Image, max_width: int) -> Dictionary:
+	return process_and_encode_image(image, max_width)
+
+
+# Pure core of the editor capture path (Image in → response dict out, no
+# EditorInterface), so the classification branches are unit-testable headless.
+static func process_and_encode_image(image: Image, max_width: int) -> Dictionary:
 	if image == null:
-		return _error("CAPTURE_FAILED", "Failed to capture image from viewport")
+		return MCPUtils.error("CAPTURE_FAILED", "Failed to capture image from viewport", "empty_viewport")
+
+	# convert() has no effect on compressed (VRAM) textures — reporting that
+	# honestly beats letting them fall through to an empty-buffer misread.
+	if image.is_compressed():
+		return MCPUtils.error("CAPTURE_FAILED", "Viewport texture is in a compressed format that cannot be normalized to RGBA8", "unsupported_format")
+
+	if image.get_format() != Image.FORMAT_RGBA8:
+		image.convert(Image.FORMAT_RGBA8)
 
 	if max_width > 0 and image.get_width() > max_width:
 		var scale_factor := float(max_width) / float(image.get_width())
@@ -99,13 +121,22 @@ func _process_and_encode_image(image: Image, max_width: int) -> Dictionary:
 		image.resize(max_width, new_height, Image.INTERPOLATE_LANCZOS)
 
 	var png_buffer := image.save_png_to_buffer()
-	var base64 := Marshalls.raw_to_base64(png_buffer)
+	if png_buffer.is_empty():
+		return MCPUtils.error("CAPTURE_FAILED", "PNG encode produced an empty buffer after format normalization", "empty_buffer_after_convert")
 
-	return _success({
-		"image_base64": base64,
+	return MCPUtils.success({
+		"image_base64": Marshalls.raw_to_base64(png_buffer),
 		"width": image.get_width(),
-		"height": image.get_height()
+		"height": image.get_height(),
+		"captured_at_ms": _captured_at_ms()
 	})
+
+
+# Unix-epoch ms at capture, stamped on BOTH capture tracks so the dual-track
+# success payloads share one response schema (image_base64/width/height/
+# captured_at_ms). int64 fits easily in a Variant.
+static func _captured_at_ms() -> int:
+	return int(Time.get_unix_time_from_system() * 1000.0)
 
 
 # Returns the SubViewport of whichever main-screen tab (2D or 3D) is currently

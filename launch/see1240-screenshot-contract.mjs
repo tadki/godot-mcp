@@ -228,18 +228,22 @@ export async function enrichScreenshotResponse({
     let exportsInfo = null;
     let advisoryExtra = null;
     // SEE-1356 L3 段2 (§SPEC-L3-01): IHDR deep check on the proxy contract
-    // module — a decode failure is CLASSIFIED (empty base64 / bad base64 /
-    // bad PNG header) and stamped onto _screenshot.decode_error with the
-    // existing fallback hint attached. The addon-side format fix (L3 段1,
-    // batch 2) owns the root cause; this proxy-side gate is the defensive
-    // layer that makes "empty payload" VISIBLE instead of a silent export
-    // skip — the "偶发自愈" blind spot the capture contract cannot see.
+    // module — a decode failure is CLASSIFIED (empty base64 / bad PNG header)
+    // and stamped onto _screenshot.decode_error with the existing fallback
+    // hint attached. The addon-side format fix (L3 段1, batch 2) owns the
+    // root cause; this proxy-side gate is the defensive layer that makes
+    // "empty payload" VISIBLE instead of a silent export skip — the "偶发自愈"
+    // blind spot the capture contract cannot see.
+    //
+    // SEE-1356 batch-2 cleanup (hardener observation ①): the `bad_base64`
+    // classification was unreachable — enrich's find() above already
+    // guarantees a non-empty string payload, and Buffer.from on a string
+    // never returns null. Only two classifications remain.
     let decodeError = null;
-    if (typeof image.data !== 'string' || image.data.length === 0) {
+    if (image.data.length === 0) {
         decodeError = 'empty_base64';
     }
     const png = decodeError ? null : base64ToBuffer(image.data);
-    if (!decodeError && !png) decodeError = 'bad_base64';
     const dims = png ? pngDimensions(png) : null;
     if (!decodeError && !dims) decodeError = 'bad_png_header';
     if (png && dims) {
@@ -279,7 +283,7 @@ export async function enrichScreenshotResponse({
             decode_error: decodeError,
             error: decodeError === 'empty_base64'
                 ? 'capture payload is EMPTY base64 — the addon produced no decodable image (non-8-bit viewport format is the known root cause; L3 段1 fixes it in-batch)'
-                : 'image payload not decodable as a PNG (base64 decode or PNG header failed)',
+                : 'image payload not decodable as a PNG (PNG header check failed)',
         };
         if (fallbackHint) {
             advisoryExtra = advisoryExtra
