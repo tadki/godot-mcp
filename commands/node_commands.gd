@@ -133,6 +133,17 @@ func update_node(params: Dictionary) -> Dictionary:
 	if not node:
 		return _error("NODE_NOT_FOUND", "Node not found: %s" % node_path)
 
+	# SEE-1356 F1 (批 2 实机 QA): update_node missed the INSTANCED_SCENE gate —
+	# property writes into an instanced sub-scene's interior silently don't
+	# persist (the outer pack drops them). Same gate as the three write
+	# commands, scoped to the edited scene: nodes OUTSIDE the edited scene
+	# (runtime/play-mode tree) are transient state, not scene-file writes.
+	var scene_root := EditorInterface.get_edited_scene_root()
+	if scene_root != null and scene_root.is_ancestor_of(node):
+		var instanced_check := _reject_instanced_scene_writer(node, scene_root)
+		if not instanced_check.is_empty():
+			return instanced_check
+
 	for key in properties:
 		if key in node:
 			var deserialized := MCPUtils.deserialize_value(properties[key])
@@ -252,12 +263,18 @@ func attach_script(params: Dictionary) -> Dictionary:
 
 
 # connect_signal: wires one connection quadruple (node_path, signal,
-# target_path, method) through the scene's undo history — the same
-# create_action(do=connect / undo=disconnect) shape the editor's own
-# ConnectionsDock uses. Whether such a runtime connection survives save →
-# reload on the real editor chain is the plan's binary gate: the live
-# three-step proof belongs to QA; without it the command is shelved, never
-# downgraded to a non-persisting variant.
+# target_path, method) as a DIRECT write with CONNECT_PERSIST — that flag is
+# the only bit the scene serializer honors when packing `[connection]`
+# sections into the .tscn (plain connect() is runtime-only and silently
+# dropped by save_scene).
+#
+# SEE-1356 D-NEW (批 2 实机 QA FAIL → plan-debate 终裁预留退化分支): the
+# undo-action form (create_action + do=connect + undo=disconnect) provably
+# did NOT persist on the real editor chain — connect succeeded, save_scene
+# reported Saved, yet the .tscn carried no [connection] section. Per the
+# ruling, connect_signal writes directly and does NOT enter the editor's
+# undo stack — documented contract, not an accident: MCP 写不入 undo 栈.
+# Revert = manual disconnect using the returned quadruple (revert_hint).
 func connect_signal(params: Dictionary) -> Dictionary:
 	var scene_check := _require_scene_open()
 	if not scene_check.is_empty():
@@ -292,11 +309,7 @@ func connect_signal(params: Dictionary) -> Dictionary:
 	if node.is_connected(signal_name, callable):
 		return _error("ALREADY_CONNECTED", "%s is already connected to %s.%s" % [signal_name, target_path, method_name])
 
-	var undo := _plugin.get_undo_redo()
-	undo.create_action("MCP connect_signal")
-	undo.add_do_method(node, "connect", signal_name, callable)
-	undo.add_undo_method(node, "disconnect", signal_name, callable)
-	undo.commit_action()
+	node.connect(signal_name, callable, CONNECT_PERSIST)
 
 	return _write_result({
 		"command": "connect_signal",

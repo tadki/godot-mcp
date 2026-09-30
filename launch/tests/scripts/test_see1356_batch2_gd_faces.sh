@@ -224,6 +224,29 @@ func _run_node(NC: GDScript, _SC: GDScript) -> void:
 	var without_detail: Dictionary = MCPUtils.error("GAME_ERROR", "m")
 	check("error_envelope_detail", with_detail["error"].get("detail", "") == "empty_viewport" \
 		and not without_detail["error"].has("detail"), "optional detail field shape")
+
+	# N9 — D-NEW connect_signal direct-write contract (批 2 QA FAIL → 退化分支):
+	# the serializer packs ONLY CONNECT_PERSIST connections into [connection]
+	# sections; the undo-action form provably did not persist on the live chain.
+	# Defect class = wiring omission, so the pin is the SOURCE shape: the
+	# connect_signal body must carry `node.connect(..., CONNECT_PERSIST)` and
+	# must NOT re-introduce an undo action (create_action/commit_action).
+	var node_src: String = FileAccess.get_file_as_string("res://commands/node_commands.gd")
+	var cs_body := node_src.substr(node_src.find("func connect_signal"), \
+		node_src.find("func reparent_node") - node_src.find("func connect_signal"))
+	check("connect_signal_direct_persist", cs_body.contains("node.connect(signal_name, callable, CONNECT_PERSIST)"),
+		"connect() carries CONNECT_PERSIST (serializer-visible)")
+	check("connect_signal_no_undo_action", not cs_body.contains("create_action") and not cs_body.contains("commit_action"),
+		"undo action removed from connect_signal (D-NEW ruling)")
+
+	# N10 — F1 update_node gate wiring (批 2 QA MEDIUM): the gate call must sit
+	# in update_node's body, edited-scene-scoped. Source-shape pin for the
+	# omission defect; the live INSTANCED_SCENE rejection is the QA lane.
+	var un_body := node_src.substr(node_src.find("func update_node"), \
+		node_src.find("func add_node") - node_src.find("func update_node"))
+	check("update_node_instanced_gate_wired", un_body.contains("_reject_instanced_scene_writer(node, scene_root)") \
+		and un_body.contains("scene_root.is_ancestor_of(node)"),
+		"update_node carries the edited-scene-scoped INSTANCED_SCENE gate")
 EOF
 
 timeout 180 godot --headless --path "$TMP" --import >/dev/null 2>&1

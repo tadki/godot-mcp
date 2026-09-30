@@ -40,6 +40,14 @@ export HOME="$SB/home"
 export GODOT_MCP_HOME="$SB/home/.multica"
 # Minimal worktree: project.godot only, NO addons/, NO editor log source.
 printf 'config_version=5\n\napplication:\n  config/features=PackedStringArray("4.6")\n' > "$SB/scratch/project.godot"
+# Helper stubs (GODOT_MCP_*_SH overrides, config.mjs resolveHelper seam):
+# the proxy's lazy ensureEditor chain must NOT spawn a real editor in this
+# harness (a real editor would write root-owned .godot caches and leak an
+# orphan process). configure/start are no-ops; the warmup loop then probes a
+# port nothing listens on — exactly the D1 form under test.
+printf '#!/usr/bin/env bash\nexit 0\n' > "$SB/stub-configure.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$SB/stub-start.sh"
+chmod +x "$SB/stub-configure.sh" "$SB/stub-start.sh"
 # Runtime id mirrors the launcher's export so the snapshot lands at the slot
 # path (the direct-proxy form bypasses the launcher's derivation).
 RID="Bachi-1a2b3c4d"
@@ -48,15 +56,17 @@ PORT=6677
 section "D1: fork lane + no log tail → gate must NOT open on zero evidence"
 {
     # warmup window 2.5s; the held tools/call rides the cold window. stdin
-    # stays open ~4s so the proxy is alive across the T2 boundary, then EOF
-    # shuts it down (pipe EOF = the shutdown event, no fixed sleep kill).
+    # stays open ~10s so the proxy is alive past T2 even under 4-way parallel
+    # load (spawn chain latency delays the window start), then EOF shuts it
+    # down (pipe EOF = the shutdown event, no fixed sleep kill).
     ( printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"d1-pin"}}}'
       sleep 1
       printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}'
-      sleep 3.5 ) | env HOME="$HOME" GODOT_MCP_HOME="$GODOT_MCP_HOME" TMPDIR="$SB" \
+      sleep 9 ) | env HOME="$HOME" GODOT_MCP_HOME="$GODOT_MCP_HOME" TMPDIR="$SB" \
         "GODOT_MCP_RUNTIME_ID=$RID" \
         KOL_AGENT_NAME=Bachi GODOT_HOST=127.0.0.1 "GODOT_PORT=$PORT" \
         GODOT_MCP_WARMUP_TIMEOUT_MS=2500 GODOT_MCP_FAILED_EXIT_MS=120000 \
+        "GODOT_MCP_CONFIGURE_SH=$SB/stub-configure.sh" "GODOT_MCP_START_SH=$SB/stub-start.sh" \
         KOL_PROJECT_GODOT="$SB/scratch/project.godot" KOL_WORKTREE="$SB/scratch" \
         GODOT_MCP_FORK_CLI="$REPO/server/dist/cli.js" \
         timeout 20 node "$PROXY" >"$SB/proxy.out" 2>"$SB/proxy.err" &

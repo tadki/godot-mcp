@@ -93,7 +93,7 @@ const NodeEditSchema = z.discriminatedUnion('action', [
     action: z
       .literal('connect_signal')
       .describe(
-        'Connect a signal to a target method through the editor undo history (the same commit path the ConnectionsDock uses). Both endpoints must belong to the edited scene — instanced sub-scene nodes are rejected. Lands in memory until godot_scene save.'
+        'Connect a signal to a target method with CONNECT_PERSIST (the only flag the scene serializer packs into the .tscn [connection] section). Both endpoints must belong to the edited scene — instanced sub-scene nodes are rejected. MCP writes do NOT enter the editor undo stack — revert by disconnecting with the returned quadruple. Lands in memory until godot_scene save.'
       ),
     node_path: z.string().describe('Path to the node that owns the signal'),
     signal: z.string().describe('Signal name on the source node (e.g. "pressed")'),
@@ -174,7 +174,7 @@ export const nodeEdit = defineTool({
     openWorldHint: false,
   },
   description:
-    'Modify scene nodes in the editor: update a node\'s properties, reparent it, add a new node (add_node), attach an existing script (attach_script), or connect a signal (connect_signal) — structure edits go through the editor\'s own serialization on save, so load_steps/UID/ext_resource stay consistent without hand-editing .tscn. Every write lands in editor memory, joins the undo history, and returns a revert_hint plus a save hint; persist with godot_scene save. Writes targeting an instanced sub-scene node are rejected with a clear error (those nodes are owned by their sub-scene). To inspect properties, the scene tree, or search for nodes, use godot_node_read.',
+    'Modify scene nodes in the editor: update a node\'s properties, reparent it, add a new node (add_node), attach an existing script (attach_script), or connect a signal (connect_signal) — structure edits go through the editor\'s own serialization on save, so load_steps/UID/ext_resource stay consistent without hand-editing .tscn. add_node and attach_script join the editor\'s undo history; connect_signal writes the connection directly with CONNECT_PERSIST (the only flag the scene serializer packs) and does NOT enter the undo stack — MCP writes are not undoable, revert a connection by disconnecting with the returned quadruple. Every write lands in editor memory and returns a revert_hint plus a save hint; persist with godot_scene save. Writes targeting an instanced sub-scene node are rejected with a clear error (those nodes are owned by their sub-scene). To inspect properties, the scene tree, or search for nodes, use godot_node_read.',
   schema: NodeEditSchema,
   async execute(args: NodeEditArgs, { godot }) {
     switch (args.action) {
