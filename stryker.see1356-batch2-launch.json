@@ -20,7 +20,11 @@
   "coverageAnalysis": "off",
   "tempDirName": ".stryker-tmp-see1356-batch2",
   "cleanTempDir": true,
-  "reporters": ["clear-text", "progress", "json"],
+  "reporters": [
+    "clear-text",
+    "progress",
+    "json"
+  ],
   "mutate": [
     "launch/see1240-screenshot-contract.mjs",
     "launch/proxy/proxy-state.mjs",
@@ -36,7 +40,8 @@
   "timeoutMS": 30000,
   "thresholds": {
     "high": 100,
-    "low": 82,
-    "break": 80
-  }
+    "low": 85,
+    "break": 84
+  },
+  "//thresholds": "SEE-1356 batch-2 hardener ratchet (plan §8 ONLY-UP): launch-scoped score 87.15 (runtime-id.mjs direct face raised 68.97→86.21 via see1356-runtime-id.test.mjs; the 4 remaining runtime-id survivors are output-equivalent guard-arm mutants documented in the test file with kill attempts; the other 65 survivors are the batch-1 equivalence/defensive classes already adjudicated). Floor = 84 (measured minus headroom; batch-1 floor 80 superseded)."
 }
