@@ -1,6 +1,6 @@
 {
   "name": "godot_node_edit",
-  "description": "Modify scene nodes in the editor: update a node's properties, reparent it, add a new node (add_node), attach an existing script (attach_script), or connect a signal (connect_signal) — structure edits go through the editor's own serialization on save, so load_steps/UID/ext_resource stay consistent without hand-editing .tscn. add_node and attach_script join the editor's undo history; connect_signal writes the connection directly with CONNECT_PERSIST (the only flag the scene serializer packs) and does NOT enter the undo stack — MCP writes are not undoable, revert a connection by disconnecting with the returned quadruple. Every write lands in editor memory and returns a revert_hint plus a save hint; persist with godot_scene save. Writes targeting an instanced sub-scene node are rejected with a clear error (those nodes are owned by their sub-scene). To inspect properties, the scene tree, or search for nodes, use godot_node_read.",
+  "description": "Modify scene nodes in the editor: update a node's properties, reparent it, add a new node (add_node), attach an existing script (attach_script), or structure edits go through the editor's own serialization on save, so load_steps/UID/ext_resource stay consistent without hand-editing .tscn. add_node and attach_script join the editor's undo history. Every write lands in editor memory and returns a revert_hint plus a save hint; persist with godot_scene save. Writes targeting an instanced sub-scene node are rejected with a clear error (those nodes are owned by their sub-scene). To inspect properties, the scene tree, or search for nodes, use godot_node_read.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -10,14 +10,13 @@
           "update",
           "reparent",
           "add_node",
-          "attach_script",
-          "connect_signal"
+          "attach_script"
         ],
-        "description": "update: Update a node's properties\nreparent: Move a node to a new parent\nadd_node: Add a new node to the open scene: instantiated from an engine class or a global class_name script, owned by the scene root (an unset owner makes the node silently vanish from the saved .tscn), and inserted at `index` (default: append). Unknown types return a structured UNKNOWN_TYPE error; writes into an instanced sub-scene are rejected (INSTANCED_SCENE). The edit joins the editor undo history and lands in memory — save with godot_scene save to persist.\nattach_script: Attach an EXISTING script to a node (set_script) and return the post-attach property snapshot. Script creation/generation is not supported — write the .gd first, then attach it. Joins the editor undo history; lands in memory until godot_scene save.\nconnect_signal: Connect a signal to a target method with CONNECT_PERSIST (the only flag the scene serializer packs into the .tscn [connection] section). Both endpoints must belong to the edited scene — instanced sub-scene nodes are rejected. MCP writes do NOT enter the editor undo stack — revert by disconnecting with the returned quadruple. Lands in memory until godot_scene save."
+        "description": "update: Update a node's properties\nreparent: Move a node to a new parent\nadd_node: Add a new node to the open scene: instantiated from an engine class or a global class_name script, owned by the scene root (an unset owner makes the node silently vanish from the saved .tscn), and inserted at `index` (default: append). Unknown types return a structured UNKNOWN_TYPE error; writes into an instanced sub-scene are rejected (INSTANCED_SCENE). The edit joins the editor undo history and lands in memory — save with godot_scene save to persist.\nattach_script: Attach an EXISTING script to a node (set_script) and return the post-attach property snapshot. Script creation/generation is not supported — write the .gd first, then attach it. Joins the editor undo history; lands in memory until godot_scene save."
       },
       "node_path": {
         "type": "string",
-        "description": "for update: Path to the node; for reparent: Path to the node; for attach_script: Path to the node; for connect_signal: Path to the node that owns the signal (required for: update, reparent, attach_script, connect_signal)"
+        "description": "Path to the node (required for: update, reparent, attach_script)"
       },
       "properties": {
         "type": "object",
@@ -51,18 +50,6 @@
       "script_path": {
         "type": "string",
         "description": "Path of an existing script file (res:// or uid://) (required for: attach_script)"
-      },
-      "signal": {
-        "type": "string",
-        "description": "Signal name on the source node (e.g. \"pressed\") (required for: connect_signal)"
-      },
-      "target_path": {
-        "type": "string",
-        "description": "Path to the node that owns the handler method (required for: connect_signal)"
-      },
-      "method": {
-        "type": "string",
-        "description": "Method name on the target node (required for: connect_signal)"
       }
     },
     "required": [

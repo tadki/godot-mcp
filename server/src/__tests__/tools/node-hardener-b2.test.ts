@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createMockGodot, createToolContext, structuredOf, MockGodotConnection } from '../helpers/mock-godot.js';
 import { nodeRead, nodeEdit } from '../../tools/node.js';
+import { toInputSchema } from '../../core/schema.js';
 
 const writeResult = (over: Record<string, unknown> = {}) => ({
   path: '/root/New/Turret',
@@ -52,19 +53,25 @@ describe('nodeEdit L4 write envelopes — hardener survivor kills (batch-2)', ()
     );
   });
 
-  it('connect_signal: command + full quadruple verbatim; reply template exact', async () => {
-    mock.mockResponse(writeResult({ path: '/root/Test', revert_hint: { op: 'connect_signal', quad: ['/root/Test', 'pressed', '/root/Btn', '_on_pressed'] } }));
-    const out = await nodeEdit.execute({
+  it('per-branch node_path descriptions stay pinned (shelve-round survivor kill)', () => {
+    // SEE-1356 shelve round: removing the connect_signal branch dropped its
+    // killing tests, letting the remaining `node_path` description literals
+    // survive. Pin them so the ratchet floor holds ONLY-UP.
+    const props = (toInputSchema(nodeEdit.schema) as Record<string, unknown>).properties as Record<string, unknown>;
+    expect((props.node_path as Record<string, unknown>).description).toBe(
+      'Path to the node (required for: update, reparent, attach_script)',
+    );
+  });
+
+  it('connect_signal is SHELVED (SEE-1356 终裁): schema rejects the action', () => {
+    // The persistence binary gate was unproven across two live rounds; the
+    // action is removed from the published schema until proven on a stable
+    // session (the addon body is retained for re-enable).
+    const probe = nodeEdit.schema.safeParse({
       action: 'connect_signal', node_path: '/root/Test', signal: 'pressed',
       target_path: '/root/Btn', method: '_on_pressed',
-    } as never, createToolContext(mock));
-    expect(mock.calls.at(-1)!.command).toBe('connect_signal');
-    expect(mock.calls.at(-1)!.params).toEqual({
-      node_path: '/root/Test', signal: 'pressed', target_path: '/root/Btn', method: '_on_pressed',
     });
-    expect(out).toBe(
-      'Connected pressed -> /root/Btn._on_pressed (saved: false). Persist with godot_scene save. Revert hint: {"op":"connect_signal","quad":["/root/Test","pressed","/root/Btn","_on_pressed"]}',
-    );
+    expect(probe.success).toBe(false);
   });
 
   it('add_node sends name/index keys even when unset (undefined values, keys present)', async () => {

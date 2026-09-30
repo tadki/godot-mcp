@@ -9,14 +9,19 @@ var _find_nodes_result: Dictionary = {}
 
 
 func get_commands() -> Dictionary:
+	# connect_signal is SHELVED (SEE-1356 终裁): the persistence binary gate
+	# could not be proven across two live rounds (undo-action form failed the
+	# [connection]-section proof; the direct-write CONNECT_PERSIST retest was
+	# blocked by an unstable runtime session). The function body below is
+	# RETAINED for re-enable after a stable runtime session proves the
+	# three-step gate — do not re-register until then.
 	return {
 		"get_node_properties": get_node_properties,
 		"find_nodes": find_nodes,
 		"update_node": update_node,
 		"reparent_node": reparent_node,
 		"add_node": add_node,
-		"attach_script": attach_script,
-		"connect_signal": connect_signal
+		"attach_script": attach_script
 	}
 
 
@@ -262,18 +267,17 @@ func attach_script(params: Dictionary) -> Dictionary:
 	}, node_path, {"properties": snapshot_script_properties(node)})
 
 
-# connect_signal: wires one connection quadruple (node_path, signal,
-# target_path, method) as a DIRECT write with CONNECT_PERSIST — that flag is
-# the only bit the scene serializer honors when packing `[connection]`
-# sections into the .tscn (plain connect() is runtime-only and silently
-# dropped by save_scene).
+# connect_signal — DISABLED, not registered (SEE-1356 终裁: binary gate 未通过，
+# 禁用中——待实机三连复验后重启用; see get_commands() note above). The body is
+# retained verbatim so re-enabling is a one-line registry change.
 #
-# SEE-1356 D-NEW (批 2 实机 QA FAIL → plan-debate 终裁预留退化分支): the
-# undo-action form (create_action + do=connect + undo=disconnect) provably
-# did NOT persist on the real editor chain — connect succeeded, save_scene
-# reported Saved, yet the .tscn carried no [connection] section. Per the
-# ruling, connect_signal writes directly and does NOT enter the editor's
-# undo stack — documented contract, not an accident: MCP 写不入 undo 栈.
+# Form: DIRECT write with CONNECT_PERSIST — that flag is the only bit the
+# scene serializer honors when packing `[connection]` sections into the .tscn
+# (plain connect() is runtime-only and silently dropped by save_scene).
+# SEE-1356 D-NEW history: the undo-action form (create_action + do=connect +
+# undo=disconnect) provably did NOT persist on the real editor chain —
+# connect succeeded, save_scene reported Saved, yet the .tscn carried no
+# [connection] section. MCP 写不入 undo 栈 (documented contract).
 # Revert = manual disconnect using the returned quadruple (revert_hint).
 func connect_signal(params: Dictionary) -> Dictionary:
 	var scene_check := _require_scene_open()
