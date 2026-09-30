@@ -19,7 +19,7 @@ import { S } from './state.mjs';
 import { GODOT_MCP_HOME, GODOT_PORT, RUNTIME_ID } from './config.mjs';
 import { warmupDiagnostic } from './diagnostics.mjs';
 import { resolveWorkdirHash } from './workdir-hash.mjs';
-import { isSlotRuntimeId } from './runtime-id.mjs';
+import { isSlotRuntimeId, legacyFormName } from './runtime-id.mjs';
 import { log } from './log.mjs';
 
 export const PROXY_STATE_SCHEMA = 'see1356-l5-proxy-state/1';
@@ -30,15 +30,15 @@ export const RECENT_CALL_HISTORY_MAX = 10;
 // 2s registry heartbeat so the snapshot write rate stays low.
 export const HEARTBEAT_PERSIST_MS = 30000;
 
-const LEGACY_LABEL = (process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || 'unknown').toLowerCase();
+const LEGACY_LABEL = legacyFormName();
 
 function proxyStateDir() {
     return path.join(GODOT_MCP_HOME, 'godot-editor');
 }
 
-// The giveup-file naming rule (SSOT: isSlotRuntimeId): a real slot runtime_id
-// uses the per-slot directory form; -solo / manual runs fall back to the
-// legacy flat name so the two families never collide.
+// The giveup-file naming rule (SSOT: isSlotRuntimeId / legacyFormName): a real
+// slot runtime_id uses the per-slot directory form; -solo / manual runs fall
+// back to the legacy flat name so the two families never collide.
 export function proxyStatePathFor(runtimeId = RUNTIME_ID) {
     const dir = proxyStateDir();
     return isSlotRuntimeId(runtimeId)

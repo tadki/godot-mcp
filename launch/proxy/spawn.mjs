@@ -16,7 +16,7 @@ import {
 } from './config.mjs';
 import { STAGE_ENUM } from '../warmup-stage-parser.mjs';
 import { log, stageLog } from './log.mjs';
-import { isSlotRuntimeId } from './runtime-id.mjs';
+import { isSlotRuntimeId, legacyFormName } from './runtime-id.mjs';
 import { notifyWarmupProgress } from './diagnostics.mjs';
 import { startRenderStableMonitor, tcpProbe } from './probes.mjs';
 import { rejectQueue } from './router.mjs';
@@ -854,7 +854,8 @@ function giveUpAndRearm(bucket, message) {
 }
 
 // SEE-1240 WS-5 (C9 目标4): persist give-up/rearm counters to the WS-4 status
-// file so godot-status.sh / doctor can query them. Mirrors kol_lifecycle_path:
+// file so godot-status.sh / doctor can query them. Mirrors kol_lifecycle_path.
+// Naming rule (SSOT: isSlotRuntimeId / legacyFormName in runtime-id.mjs):
 // non-solo runtime_ids use the per-slot directory form; -solo/manual runs fall
 // back to the legacy flat name. Best-effort: a write failure is logged, never
 // thrown — the give-up path must not depend on observability.
@@ -862,10 +863,10 @@ function persistGiveUpStatus(event, bucket, message) {
     try {
         const dir = path.join(GODOT_MCP_HOME, 'godot-editor');
         const rid = process.env.GODOT_MCP_RUNTIME_ID || process.env.KOL_RUNTIME_ID || '';
-        const legacyLabel = (process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || '').toLowerCase();
+        const legacyLabel = legacyFormName();
         const file = isSlotRuntimeId(rid)
             ? path.join(dir, `${rid}.giveup.json`)
-            : path.join(dir, `godot-editor-${legacyLabel || 'unknown'}.giveup.json`);
+            : path.join(dir, `godot-editor-${legacyLabel}.giveup.json`);
         const doc = {
             schema: 'see1240-ws5-giveup/1',
             state: 'FAILED_CLEAN',

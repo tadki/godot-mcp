@@ -104,6 +104,17 @@ const NodeEditSchema = z.discriminatedUnion('action', [
 
 type NodeEditArgs = z.infer<typeof NodeEditSchema>;
 
+// Shared addon response contract for the L4 write commands (§SPEC-L4-02):
+// every write replies with revert_hint + saved + save_hint; attach_script
+// additionally carries the post-attach property snapshot.
+interface NodeWriteResult {
+  path: string;
+  saved: boolean;
+  save_hint: string;
+  revert_hint: Record<string, unknown>;
+  properties?: Record<string, unknown>;
+}
+
 export const nodeRead = defineTool({
   name: 'godot_node_read',
   annotations: {
@@ -187,12 +198,7 @@ export const nodeEdit = defineTool({
         // The addon response carries the write contract (revert_hint + saved +
         // save guidance, §SPEC-L4-02) — surface it verbatim so the caller can
         // verify or revert without a second round-trip.
-        const result = await godot.sendCommand<{
-          path: string;
-          saved: boolean;
-          save_hint: string;
-          revert_hint: Record<string, unknown>;
-        }>('add_node', {
+        const result = await godot.sendCommand<NodeWriteResult>('add_node', {
           parent_path: args.parent_path,
           node_type: args.node_type,
           name: args.name,
@@ -202,13 +208,7 @@ export const nodeEdit = defineTool({
       }
 
       case 'attach_script': {
-        const result = await godot.sendCommand<{
-          path: string;
-          saved: boolean;
-          save_hint: string;
-          revert_hint: Record<string, unknown>;
-          properties: Record<string, unknown>;
-        }>('attach_script', {
+        const result = await godot.sendCommand<NodeWriteResult>('attach_script', {
           node_path: args.node_path,
           script_path: args.script_path,
         });
@@ -216,12 +216,7 @@ export const nodeEdit = defineTool({
       }
 
       case 'connect_signal': {
-        const result = await godot.sendCommand<{
-          path: string;
-          saved: boolean;
-          save_hint: string;
-          revert_hint: Record<string, unknown>;
-        }>('connect_signal', {
+        const result = await godot.sendCommand<NodeWriteResult>('connect_signal', {
           node_path: args.node_path,
           signal: args.signal,
           target_path: args.target_path,
