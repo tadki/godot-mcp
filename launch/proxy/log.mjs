@@ -26,6 +26,7 @@ import process from 'node:process';
 import { S } from './state.mjs';
 import { GODOT_MCP_HOME, GODOT_PORT, RUNTIME_ID, STAGE_LOG_ENABLED } from './config.mjs';
 import { resolveWorkdirHash } from './workdir-hash.mjs';
+import { isSlotRuntimeId } from './runtime-id.mjs';
 
 export const PROXY_LOG_ROTATE_BYTES = 5 * 1024 * 1024;
 
@@ -39,7 +40,7 @@ let logPath = null;
 
 function proxyLogPath() {
     const dir = path.join(GODOT_MCP_HOME, 'godot-editor');
-    const file = (RUNTIME_ID && RUNTIME_ID !== '*' && !RUNTIME_ID.endsWith('-solo') && /^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8,12}$/.test(RUNTIME_ID))
+    const file = isSlotRuntimeId(RUNTIME_ID)
         ? path.join(dir, `${RUNTIME_ID}.proxy.log`)
         : path.join(dir, `godot-editor-${LEGACY_LABEL}.proxy.log`);
     return file;

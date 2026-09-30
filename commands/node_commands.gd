@@ -13,7 +13,10 @@ func get_commands() -> Dictionary:
 		"get_node_properties": get_node_properties,
 		"find_nodes": find_nodes,
 		"update_node": update_node,
-		"reparent_node": reparent_node
+		"reparent_node": reparent_node,
+		"add_node": add_node,
+		"attach_script": attach_script,
+		"connect_signal": connect_signal
 	}
 
 
@@ -136,6 +139,239 @@ func update_node(params: Dictionary) -> Dictionary:
 			node.set(key, deserialized)
 
 	return _success({})
+
+
+# add_node: scene-structure write per SEE-1356 L4 (§SPEC-L4-01). Three-stage
+# instantiation (engine class → class_name script → UNKNOWN_TYPE), the node is
+# ALWAYS owned by the edited scene root (an unset owner makes pack() silently
+# drop the node — the #1 trap), and `index` selects the insert position.
+# The whole edit is one EditorUndoRedoManager action (the editor's own
+# SceneTreeDock add path), so Ctrl+Z reverts MCP writes like native edits.
+func add_node(params: Dictionary) -> Dictionary:
+	var scene_check := _require_scene_open()
+	if not scene_check.is_empty():
+		return scene_check
+
+	var params_check := _validated_add_params(params)
+	if not params_check.is_empty():
+		return params_check
+
+	var parent := _get_node(params.get("parent_path", ""))
+	if not parent:
+		return _error("NODE_NOT_FOUND", "Parent node not found: %s" % params.get("parent_path", ""))
+
+	var scene_root := EditorInterface.get_edited_scene_root()
+	var instanced_check := _reject_instanced_scene_writer(parent, scene_root)
+	if not instanced_check.is_empty():
+		return instanced_check
+
+	var node := instantiate_node_type(params.get("node_type", ""))
+	if node == null:
+		return _error("UNKNOWN_TYPE", "Unknown node type: %s (not an engine class and not a class_name script)" % params.get("node_type", ""))
+
+	var node_name: String = params.get("name", "")
+	if not node_name.is_empty():
+		node.name = node_name
+
+	var index: int = int(params.get("index", -1))
+	if index > parent.get_child_count():
+		return _error("INVALID_PARAMS", "index %d out of range: parent has %d children" % [index, parent.get_child_count()])
+
+	var undo := _plugin.get_undo_redo()
+	undo.create_action("MCP add_node")
+	undo.add_do_method(parent, "add_child", node)
+	if index >= 0:
+		undo.add_do_method(parent, "move_child", node, index)
+	undo.add_do_method(node, "set_owner", scene_root)
+	undo.add_do_reference(node)
+	undo.add_undo_method(parent, "remove_child", node)
+	undo.commit_action()
+
+	var new_path := str(scene_root.get_path_to(node))
+	return _write_result({"command": "add_node", "node_path": new_path}, new_path)
+
+
+# Boundary validation for add_node's scalar params (required keys + node-name
+# character rules); returns an error Dictionary or {} when all pass.
+func _validated_add_params(params: Dictionary) -> Dictionary:
+	var parent_path: String = params.get("parent_path", "")
+	var node_type: String = params.get("node_type", "")
+	if parent_path.is_empty() or node_type.is_empty():
+		return _error("INVALID_PARAMS", "parent_path and node_type are required")
+	var node_name: String = params.get("name", "")
+	if not node_name.is_empty():
+		var name_check := _validated_node_name(node_name)
+		if not name_check.is_empty():
+			return name_check
+	return {}
+
+
+# attach_script: attaches an EXISTING script (set_script(load)); code
+# generation is a later decision (plan L4 终裁). Returns the post-attach
+# script-property snapshot as the caller's verification anchor.
+func attach_script(params: Dictionary) -> Dictionary:
+	var scene_check := _require_scene_open()
+	if not scene_check.is_empty():
+		return scene_check
+
+	var node_path: String = params.get("node_path", "")
+	var script_path: String = params.get("script_path", "")
+	if node_path.is_empty() or script_path.is_empty():
+		return _error("INVALID_PARAMS", "node_path and script_path are required")
+
+	var node := _get_node(node_path)
+	if not node:
+		return _error("NODE_NOT_FOUND", "Node not found: %s" % node_path)
+
+	var scene_root := EditorInterface.get_edited_scene_root()
+	var instanced_check := _reject_instanced_scene_writer(node, scene_root)
+	if not instanced_check.is_empty():
+		return instanced_check
+
+	if not FileAccess.file_exists(script_path):
+		return _error("SCRIPT_NOT_FOUND", "Script file not found: %s" % script_path)
+	var script: Script = load(script_path)
+	if not (script is Script):
+		return _error("INVALID_PARAMS", "Resource at %s is not a Script" % script_path)
+
+	var old_script: Script = node.get_script()
+	var undo := _plugin.get_undo_redo()
+	undo.create_action("MCP attach_script")
+	undo.add_do_method(node, "set_script", script)
+	undo.add_do_reference(script)
+	undo.add_undo_method(node, "set_script", old_script)
+	if old_script != null:
+		undo.add_undo_reference(old_script)
+	undo.commit_action()
+
+	return _write_result({
+		"command": "attach_script",
+		"node_path": node_path,
+		"previous_script": old_script.resource_path if old_script != null else ""
+	}, node_path, {"properties": snapshot_script_properties(node)})
+
+
+# connect_signal: wires one connection quadruple (node_path, signal,
+# target_path, method) through the scene's undo history — the same
+# create_action(do=connect / undo=disconnect) shape the editor's own
+# ConnectionsDock uses. Whether such a runtime connection survives save →
+# reload on the real editor chain is the plan's binary gate: the live
+# three-step proof belongs to QA; without it the command is shelved, never
+# downgraded to a non-persisting variant.
+func connect_signal(params: Dictionary) -> Dictionary:
+	var scene_check := _require_scene_open()
+	if not scene_check.is_empty():
+		return scene_check
+
+	var node_path: String = params.get("node_path", "")
+	var signal_name: String = params.get("signal", "")
+	var target_path: String = params.get("target_path", "")
+	var method_name: String = params.get("method", "")
+	if node_path.is_empty() or signal_name.is_empty() or target_path.is_empty() or method_name.is_empty():
+		return _error("INVALID_PARAMS", "node_path, signal, target_path and method are required")
+
+	var node := _get_node(node_path)
+	if not node:
+		return _error("NODE_NOT_FOUND", "Node not found: %s" % node_path)
+	var target := _get_node(target_path)
+	if not target:
+		return _error("NODE_NOT_FOUND", "Target node not found: %s" % target_path)
+
+	var scene_root := EditorInterface.get_edited_scene_root()
+	for writer: Node in [node, target]:
+		var instanced_check := _reject_instanced_scene_writer(writer, scene_root)
+		if not instanced_check.is_empty():
+			return instanced_check
+
+	if not node.has_signal(signal_name):
+		return _error("UNKNOWN_SIGNAL", "Node %s has no signal: %s" % [node_path, signal_name])
+	if not target.has_method(method_name):
+		return _error("METHOD_NOT_FOUND", "Target %s has no method: %s" % [target_path, method_name])
+
+	var callable := Callable(target, method_name)
+	if node.is_connected(signal_name, callable):
+		return _error("ALREADY_CONNECTED", "%s is already connected to %s.%s" % [signal_name, target_path, method_name])
+
+	var undo := _plugin.get_undo_redo()
+	undo.create_action("MCP connect_signal")
+	undo.add_do_method(node, "connect", signal_name, callable)
+	undo.add_undo_method(node, "disconnect", signal_name, callable)
+	undo.commit_action()
+
+	return _write_result({
+		"command": "connect_signal",
+		"node_path": node_path,
+		"signal": signal_name,
+		"target_path": target_path,
+		"method": method_name
+	}, node_path)
+
+
+# ── shared write-command scaffolding ─────────────────────────────────────────
+
+# Every write command responds with revert_hint + saved + save guidance
+# (plan L4 终裁). `saved` is false at response time by definition — MCP writes
+# land in the editor's memory and never persist implicitly; save_hint names the
+# one canonical persist path (save_scene).
+func _write_result(revert_hint: Dictionary, subject_path: String, extra: Dictionary = {}) -> Dictionary:
+	var payload := {
+		"path": subject_path,
+		"saved": false,
+		"save_hint": "Write landed in the editor's memory only — call save_scene to persist it",
+		"revert_hint": revert_hint
+	}
+	payload.merge(extra, true)
+	return _success(payload)
+
+
+# Write-operations on nodes inside an instanced sub-scene don't persist: the
+# node is owned by the sub-scene's PackedScene, so the outer scene's pack
+# silently drops the change. Reject up front with a clear error (§SPEC-L4-03).
+func _reject_instanced_scene_writer(writer: Node, scene_root: Node) -> Dictionary:
+	if is_instanced_scene_node(writer, scene_root):
+		return _error("INSTANCED_SCENE", "Node %s belongs to an instanced sub-scene and cannot be written from the outer scene" % str(scene_root.get_path_to(writer)))
+	return {}
+
+
+# True when `node` is editable only through its own sub-scene, not through the
+# currently edited scene (the scene root itself is always writable).
+static func is_instanced_scene_node(node: Node, scene_root: Node) -> bool:
+	return node != scene_root and node.owner != scene_root
+
+
+# Pure three-stage instantiation (§SPEC-L4-01): engine-registered class →
+# ClassDB; class_name script class → global class list lookup → load().new();
+# anything else → null (the caller reports UNKNOWN_TYPE). ClassDB and
+# ProjectSettings are reachable headless, so this is unit-testable.
+static func instantiate_node_type(node_type: String) -> Node:
+	if ClassDB.class_exists(node_type) and ClassDB.is_parent_class(node_type, "Node"):
+		return ClassDB.instantiate(node_type)
+	for info in ProjectSettings.get_global_class_list():
+		if info.get("class") == node_type:
+			var instance: Variant = load(info["path"]).new()
+			return instance if instance is Node else null
+	return null
+
+
+# Post-attach snapshot of the script's variables (PROPERTY_USAGE_SCRIPT_
+# VARIABLE set) with their current values, through the shared serializer.
+static func snapshot_script_properties(node: Node) -> Dictionary:
+	var snapshot := {}
+	for prop in node.get_property_list():
+		if prop["usage"] & PROPERTY_USAGE_SCRIPT_VARIABLE == 0:
+			continue
+		var prop_name: String = prop["name"]
+		snapshot[prop_name] = MCPUtils.serialize_value(node.get(prop_name))
+	return snapshot
+
+
+# Godot node names exclude exactly these five characters; reject early so the
+# caller gets a structured error instead of a silently path-breaking name.
+func _validated_node_name(node_name: String) -> Dictionary:
+	for ch in [".", ":", "@", "/", "\""]:
+		if node_name.contains(ch):
+			return _error("INVALID_PARAMS", "Node name must not contain %s" % ch)
+	return {}
 
 
 func reparent_node(params: Dictionary) -> Dictionary:

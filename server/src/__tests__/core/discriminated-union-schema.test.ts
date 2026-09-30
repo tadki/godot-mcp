@@ -23,12 +23,19 @@ describe('discriminated-union tool schemas', () => {
 
   it('keep fields required by every branch as top-level required', () => {
     const schema = schemaOf(nodeEdit);
-    // node_path is required by both update and reparent, so it stays required;
-    // branch-specific fields surface as optionals with scope markers.
-    expect(schema.required).toEqual(['action', 'node_path']);
+    // SEE-1356 L4 (§SPEC-L4-03): add_node / attach_script / connect_signal
+    // joined the union, so no field beyond `action` is common to every branch
+    // anymore — node_path dropped out of the top-level required set and each
+    // write branch's required fields surface as optionals with scope markers.
+    expect(schema.required).toEqual(['action']);
     const props = schema.properties as JsonSchema;
     expect(props).toHaveProperty('new_parent_path');
     expect(props).toHaveProperty('properties');
+    expect(props).toHaveProperty('parent_path');
+    expect(props).toHaveProperty('node_type');
+    expect(props).toHaveProperty('script_path');
+    expect(props).toHaveProperty('signal');
+    expect(props).toHaveProperty('method');
     expect((props.new_parent_path as JsonSchema).description).toContain('(required for: reparent)');
   });
 

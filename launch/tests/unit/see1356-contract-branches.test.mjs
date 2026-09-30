@@ -241,14 +241,17 @@ describe('enrichScreenshotResponse guard + classification branches (§SPEC-L3-01
         expect(r.advisoryText).toBe('CAPTURE decode_error=empty_base64.[hint: FB]');
         expect(r.advisoryText).toContain('FB');
     });
-    test('bad base64→bad_png_header classification WITHOUT hint → no advisory, exports still marked', async () => {
+    test('undecodable payload (junk bytes) → bad_png_header classification WITHOUT hint → no advisory, exports still marked', async () => {
         const wt = mkdtempSync(path.join(tmpdir(), 'see1356-ct-'));
         const r = await enrichScreenshotResponse({
             ...ENRICH_BASE, resultContent: imgContent(Buffer.from('plain text junk').toString('base64')), worktree: wt,
         });
+        // SEE-1356 batch-2 cleanup: the bad_base64 classification is gone —
+        // junk that decodes but carries no PNG signature classifies as
+        // bad_png_header (the only decode failure below empty_base64).
         expect(r._screenshot.decode_error).toBe('bad_png_header');
         expect(r.exports.decode_error).toBe('bad_png_header');
-        expect(r.exports.error).toBe('image payload not decodable as a PNG (base64 decode or PNG header failed)');
+        expect(r.exports.error).toBe('image payload not decodable as a PNG (PNG header check failed)');
         expect(r.advisoryText).toBeNull();
     });
     test('mixed content: the IMAGE entry is found, non-image entries skipped', async () => {

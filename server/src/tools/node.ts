@@ -69,6 +69,37 @@ const NodeEditSchema = z.discriminatedUnion('action', [
     node_path: z.string().describe('Path to the node'),
     new_parent_path: z.string().describe('Path to the new parent node'),
   }),
+  z.object({
+    action: z
+      .literal('add_node')
+      .describe(
+        'Add a new node to the open scene: instantiated from an engine class or a global class_name script, owned by the scene root (an unset owner makes the node silently vanish from the saved .tscn), and inserted at `index` (default: append). Unknown types return a structured UNKNOWN_TYPE error; writes into an instanced sub-scene are rejected (INSTANCED_SCENE). The edit joins the editor undo history and lands in memory — save with godot_scene save to persist.'
+      ),
+    parent_path: z.string().describe('Path to the parent node (the scene root path or "/" adds a root-level child)'),
+    node_type: z.string().describe('Engine class name ("Node2D", "Label", "CharacterBody2D", ...) or a project class_name script class'),
+    name: z.string().optional().describe('Node name (must not contain . : @ / or ")'),
+    index: z.number().int().min(0).optional().describe('Insert position among the parent\'s children (0 = first). Default: append.'),
+  }),
+  z.object({
+    action: z
+      .literal('attach_script')
+      .describe(
+        'Attach an EXISTING script to a node (set_script) and return the post-attach property snapshot. Script creation/generation is not supported — write the .gd first, then attach it. Joins the editor undo history; lands in memory until godot_scene save.'
+      ),
+    node_path: z.string().describe('Path to the node'),
+    script_path: z.string().describe('Path of an existing script file (res:// or uid://)'),
+  }),
+  z.object({
+    action: z
+      .literal('connect_signal')
+      .describe(
+        'Connect a signal to a target method through the editor undo history (the same commit path the ConnectionsDock uses). Both endpoints must belong to the edited scene — instanced sub-scene nodes are rejected. Lands in memory until godot_scene save.'
+      ),
+    node_path: z.string().describe('Path to the node that owns the signal'),
+    signal: z.string().describe('Signal name on the source node (e.g. "pressed")'),
+    target_path: z.string().describe('Path to the node that owns the handler method'),
+    method: z.string().describe('Method name on the target node'),
+  }),
 ]);
 
 type NodeEditArgs = z.infer<typeof NodeEditSchema>;
@@ -126,11 +157,13 @@ export const nodeEdit = defineTool({
     title: 'Node (edit)',
     readOnlyHint: false,
     destructiveHint: false,
-    idempotentHint: true,
+    // add_node / attach_script / connect_signal are not repeatable without
+    // changing state, so the tool-level idempotent hint no longer holds.
+    idempotentHint: false,
     openWorldHint: false,
   },
   description:
-    'Modify scene nodes in the editor: update a node\'s properties, or reparent it (the editor rewrites child paths and signal connections correctly; hand-editing .tscn for a reparent does not). Use it to change existing nodes in the open scene. To inspect properties, the scene tree, or search for nodes, use godot_node_read; to add or remove nodes, or attach scripts and connect signals, edit the .tscn file directly, then verify with godot_node_read\'s get_scene_tree.',
+    'Modify scene nodes in the editor: update a node\'s properties, reparent it, add a new node (add_node), attach an existing script (attach_script), or connect a signal (connect_signal) — structure edits go through the editor\'s own serialization on save, so load_steps/UID/ext_resource stay consistent without hand-editing .tscn. Every write lands in editor memory, joins the undo history, and returns a revert_hint plus a save hint; persist with godot_scene save. Writes targeting an instanced sub-scene node are rejected with a clear error (those nodes are owned by their sub-scene). To inspect properties, the scene tree, or search for nodes, use godot_node_read.',
   schema: NodeEditSchema,
   async execute(args: NodeEditArgs, { godot }) {
     switch (args.action) {
@@ -148,6 +181,53 @@ export const nodeEdit = defineTool({
           new_parent_path: args.new_parent_path,
         });
         return `Reparented node to: ${result.new_path}`;
+      }
+
+      case 'add_node': {
+        // The addon response carries the write contract (revert_hint + saved +
+        // save guidance, §SPEC-L4-02) — surface it verbatim so the caller can
+        // verify or revert without a second round-trip.
+        const result = await godot.sendCommand<{
+          path: string;
+          saved: boolean;
+          save_hint: string;
+          revert_hint: Record<string, unknown>;
+        }>('add_node', {
+          parent_path: args.parent_path,
+          node_type: args.node_type,
+          name: args.name,
+          index: args.index,
+        });
+        return `Added node at: ${result.path} (saved: ${result.saved}). ${result.save_hint}. Revert hint: ${JSON.stringify(result.revert_hint)}`;
+      }
+
+      case 'attach_script': {
+        const result = await godot.sendCommand<{
+          path: string;
+          saved: boolean;
+          save_hint: string;
+          revert_hint: Record<string, unknown>;
+          properties: Record<string, unknown>;
+        }>('attach_script', {
+          node_path: args.node_path,
+          script_path: args.script_path,
+        });
+        return `Attached ${args.script_path} to ${result.path} (saved: ${result.saved}). ${result.save_hint}. Revert hint: ${JSON.stringify(result.revert_hint)}. Properties: ${JSON.stringify(result.properties)}`;
+      }
+
+      case 'connect_signal': {
+        const result = await godot.sendCommand<{
+          path: string;
+          saved: boolean;
+          save_hint: string;
+          revert_hint: Record<string, unknown>;
+        }>('connect_signal', {
+          node_path: args.node_path,
+          signal: args.signal,
+          target_path: args.target_path,
+          method: args.method,
+        });
+        return `Connected ${args.signal} -> ${args.target_path}.${args.method} (saved: ${result.saved}). ${result.save_hint}. Revert hint: ${JSON.stringify(result.revert_hint)}`;
       }
     }
   },

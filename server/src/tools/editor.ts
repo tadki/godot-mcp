@@ -271,6 +271,21 @@ export const editorRead = defineTool({
           'capture_editor_screenshot',
           { viewport: args.viewport, max_width: args.max_width }
         );
+        // SEE-1356 L3 段2 ride-along (§SPEC-L3-04): an EMPTY success payload
+        // (non-8-bit viewport format on addons predating the L3 段1 fix) must
+        // surface as a structured CAPTURE_FAILED, not a blank image. Covers
+        // direct-connect calls that bypass the proxy's IHDR deep check; the
+        // detail matches the proxy contract's `empty_base64` classification.
+        if (result.image_base64.length === 0) {
+          return structured({
+            error: {
+              code: 'CAPTURE_FAILED',
+              detail: 'empty_base64',
+              message:
+                'The addon returned a successful capture with an EMPTY image payload — the known root cause is a non-8-bit viewport format (HDR/float 3D viewport) on an addon predating the SEE-1356 L3 format normalization. Update the addon, or re-capture after switching the editor viewport.',
+            },
+          });
+        }
         return toImageContent(result.image_base64);
       }
     }

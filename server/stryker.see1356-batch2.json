@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/api/schema/stryker-schema.json",
+  "//": [
+    "SEE-1356 batch-2 — scoped StrykerJS face for the server/src/tools files",
+    "delivered by L3 段2 ride-along + L4 (§SPEC-L3-04 / §SPEC-L4-03):",
+    "  server/src/tools/editor.ts (empty-base64 structured CAPTURE_FAILED)",
+    "  server/src/tools/node.ts   (add_node/attach_script/connect_signal schema)",
+    "",
+    "This is the 分域 mutation evidence for the .ts face (gqt mutation stays",
+    "GDScript-only). The resident server ratchet (stryker.config.json, break=100)",
+    "is UNTOUCHED — its whitelist does not include these files yet; hardener",
+    "owns whitelisting them at the ratchet floor once survivor classes are",
+    "adjudicated. Run from server/:  ../node_modules/.bin/stryker run stryker.see1356-batch2.json"
+  ],
+  "packageManager": "npm",
+  "testRunner": "vitest",
+  "buildCommand": "true",
+  "coverageAnalysis": "off",
+  "tempDirName": ".stryker-tmp-see1356-batch2-server",
+  "cleanTempDir": true,
+  "reporters": ["clear-text", "progress", "json"],
+  "mutate": [
+    "src/tools/editor.ts",
+    "src/tools/node.ts"
+  ],
+  "vitest": {
+    "configFile": "vitest.config.ts",
+    "related": false
+  },
+  "concurrency": 4,
+  "timeoutMS": 60000,
+  "thresholds": {
+    "high": 100,
+    "low": 80,
+    "break": 0
+  }
+}

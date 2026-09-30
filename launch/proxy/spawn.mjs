@@ -16,6 +16,7 @@ import {
 } from './config.mjs';
 import { STAGE_ENUM } from '../warmup-stage-parser.mjs';
 import { log, stageLog } from './log.mjs';
+import { isSlotRuntimeId } from './runtime-id.mjs';
 import { notifyWarmupProgress } from './diagnostics.mjs';
 import { startRenderStableMonitor, tcpProbe } from './probes.mjs';
 import { rejectQueue } from './router.mjs';
@@ -862,7 +863,7 @@ function persistGiveUpStatus(event, bucket, message) {
         const dir = path.join(GODOT_MCP_HOME, 'godot-editor');
         const rid = process.env.GODOT_MCP_RUNTIME_ID || process.env.KOL_RUNTIME_ID || '';
         const legacyLabel = (process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || '').toLowerCase();
-        const file = (rid && rid !== '*' && !rid.endsWith('-solo') && rid.match(/^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8,12}$/))
+        const file = isSlotRuntimeId(rid)
             ? path.join(dir, `${rid}.giveup.json`)
             : path.join(dir, `godot-editor-${legacyLabel || 'unknown'}.giveup.json`);
         const doc = {

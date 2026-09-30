@@ -19,6 +19,7 @@ import { S } from './state.mjs';
 import { GODOT_MCP_HOME, GODOT_PORT, RUNTIME_ID } from './config.mjs';
 import { warmupDiagnostic } from './diagnostics.mjs';
 import { resolveWorkdirHash } from './workdir-hash.mjs';
+import { isSlotRuntimeId } from './runtime-id.mjs';
 import { log } from './log.mjs';
 
 export const PROXY_STATE_SCHEMA = 'see1356-l5-proxy-state/1';
@@ -35,12 +36,12 @@ function proxyStateDir() {
     return path.join(GODOT_MCP_HOME, 'godot-editor');
 }
 
-// The giveup-file naming rule, mirrored: a real slot runtime_id uses the
-// per-slot directory form; -solo / manual runs fall back to the legacy flat
-// name so the two families never collide.
+// The giveup-file naming rule (SSOT: isSlotRuntimeId): a real slot runtime_id
+// uses the per-slot directory form; -solo / manual runs fall back to the
+// legacy flat name so the two families never collide.
 export function proxyStatePathFor(runtimeId = RUNTIME_ID) {
     const dir = proxyStateDir();
-    return (runtimeId && runtimeId !== '*' && !runtimeId.endsWith('-solo') && /^[A-Za-z][A-Za-z0-9_-]*-[0-9a-f]{8,12}$/.test(runtimeId))
+    return isSlotRuntimeId(runtimeId)
         ? path.join(dir, `${runtimeId}.proxy-state.json`)
         : path.join(dir, `godot-editor-${LEGACY_LABEL}.proxy-state.json`);
 }
@@ -85,7 +86,10 @@ export function rememberWorkdirSnapshot() {
 // (capped) + an immediate snapshot persist — the transition point IS the
 // write trigger (T1/T2/T4/spawn_terminal/lease_exit/rearm call sites).
 export function recordProxyTransition(trigger, detail = '') {
-    const list = S.lastTransitions || (S.lastTransitions = []);
+    // S.lastTransitions is fully initialized by state.mjs — no fallback chain
+    // here (SEE-1356 batch-2 cleanup, hardener observation ②: defensive
+    // residues under the no-defensive-programming rule).
+    const list = S.lastTransitions;
     list.push({
         at: new Date().toISOString(),
         trigger,
@@ -105,7 +109,7 @@ export function noteProxyCallSummary(msg, kind) {
         const name = typeof (params && params.name) === 'string' ? params.name : '<unknown>';
         const args = (params && params.arguments) || {};
         const keys = Object.keys(args).slice(0, 12);
-        const list = S.recentProxyCalls || (S.recentProxyCalls = []);
+        const list = S.recentProxyCalls;
         list.push({
             at: new Date().toISOString(),
             kind: kind === 'held' ? 'held' : 'rejected',
@@ -177,8 +181,8 @@ export function persistProxyState(trigger = 'unspecified') {
             give_up_count: S.giveUpCount,
             warm: S.warm === true,
             warmupDiagnostic: warmupDiagnostic(),
-            last_transitions: [...(S.lastTransitions || [])],
-            recent_calls: [...(S.recentProxyCalls || [])],
+            last_transitions: [...S.lastTransitions],
+            recent_calls: [...S.recentProxyCalls],
             heartbeat_at: new Date(now).toISOString(),
         };
         const { doc: fitted } = fitSnapshotWithin(doc);

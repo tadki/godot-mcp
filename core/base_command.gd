@@ -17,8 +17,8 @@ func _success(result: Dictionary) -> Dictionary:
 	return MCPUtils.success(result)
 
 
-func _error(code: String, message: String) -> Dictionary:
-	return MCPUtils.error(code, message)
+func _error(code: String, message: String, detail: String = "") -> Dictionary:
+	return MCPUtils.error(code, message, detail)
 
 
 func _get_node(path: String) -> Node:
