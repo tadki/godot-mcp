@@ -21,11 +21,16 @@ export class GodotConnectionClosedError extends GodotConnectionError {
 
 export class GodotCommandError extends Error {
   public readonly code: string;
+  // SEE-1356 batch-2: the addon's optional failure classification (protocol.ts
+  // ErrorResponseSchema keeps it now instead of stripping). Absent for every
+  // pre-batch-2 code path.
+  public readonly detail?: string;
 
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, detail?: string) {
     super(message);
     this.name = 'GodotCommandError';
     this.code = code;
+    this.detail = detail;
   }
 }
 
@@ -38,7 +43,11 @@ export class GodotTimeoutError extends Error {
 
 export function formatError(error: unknown): string {
   if (error instanceof GodotCommandError) {
-    return `[${error.code}] ${error.message}`;
+    // Detail renders only when present — the no-detail form stays
+    // byte-identical to the pre-batch-2 surface.
+    return error.detail !== undefined
+      ? `[${error.code}] ${error.message} [detail: ${error.detail}]`
+      : `[${error.code}] ${error.message}`;
   }
   if (error instanceof GodotConnectionClosedError) {
     return `[${error.code}] ${error.message}`;

@@ -20,6 +20,12 @@ export const ErrorResponseSchema = z.object({
   error: z.object({
     code: z.string(),
     message: z.string(),
+    // SEE-1356 batch-2 ride-along (Atlas-ruled): optional failure-classification
+    // field (e.g. CAPTURE_FAILED detail: empty_viewport / unsupported_format /
+    // empty_buffer_after_convert). Optional, so pre-batch-2 addons validate
+    // unchanged; the field is kept (not stripped) so the code+message surface
+    // can render it end-to-end.
+    detail: z.string().optional(),
   }),
 });
 
