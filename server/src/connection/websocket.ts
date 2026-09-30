@@ -462,7 +462,7 @@ export class GodotConnection extends EventEmitter {
     if (isSuccessResponse(response)) {
       pending.resolve(response.result);
     } else if (isErrorResponse(response)) {
-      pending.reject(new GodotCommandError(response.error.code, response.error.message));
+      pending.reject(new GodotCommandError(response.error.code, response.error.message, response.error.detail));
     }
   }
 
