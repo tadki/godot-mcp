@@ -26,11 +26,11 @@ import process from 'node:process';
 import { S } from './state.mjs';
 import { GODOT_MCP_HOME, GODOT_PORT, RUNTIME_ID, STAGE_LOG_ENABLED } from './config.mjs';
 import { resolveWorkdirHash } from './workdir-hash.mjs';
-import { isSlotRuntimeId } from './runtime-id.mjs';
+import { isSlotRuntimeId, legacyFormName } from './runtime-id.mjs';
 
 export const PROXY_LOG_ROTATE_BYTES = 5 * 1024 * 1024;
 
-const LEGACY_LABEL = (process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || 'unknown').toLowerCase();
+const LEGACY_LABEL = legacyFormName();
 const PID_TAG = `[pid=${process.pid}]`;
 
 // Lazy single open: an append fd held for the process lifetime. null = not
@@ -38,6 +38,7 @@ const PID_TAG = `[pid=${process.pid}]`;
 let logFd = null;
 let logPath = null;
 
+// Naming rule (SSOT: isSlotRuntimeId / legacyFormName in runtime-id.mjs).
 function proxyLogPath() {
     const dir = path.join(GODOT_MCP_HOME, 'godot-editor');
     const file = isSlotRuntimeId(RUNTIME_ID)
