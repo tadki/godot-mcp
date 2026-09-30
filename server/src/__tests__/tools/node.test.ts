@@ -56,6 +56,15 @@ describe('node read tool', () => {
         target_path: '/root/Main',
         method_name: '_on_pressed',
       }).success).toBe(false);
+      // SEE-1356 终裁: connect_signal is shelved — godot_node_edit must not
+      // publish the action at all.
+      expect(nodeEdit.schema.safeParse({
+        action: 'connect_signal',
+        node_path: '/root/Button',
+        signal: 'pressed',
+        target_path: '/root/Main',
+        method: '_on_pressed',
+      }).success).toBe(false);
     });
 
     it('rejects edit actions belonging to godot_node_edit', () => {
@@ -172,9 +181,9 @@ describe('node edit tool', () => {
       expect(nodeEdit.schema.safeParse({ action: 'attach_script', node_path: '/root/Test', script_path: 'res://x.gd' }).success).toBe(true);
     });
 
-    it('connect_signal requires the full quadruple', () => {
+    it('connect_signal is shelved: every shape rejected (SEE-1356 终裁)', () => {
       expect(nodeEdit.schema.safeParse({ action: 'connect_signal', node_path: '/root/B', signal: 'pressed', target_path: '/root/M' }).success).toBe(false);
-      expect(nodeEdit.schema.safeParse({ action: 'connect_signal', node_path: '/root/B', signal: 'pressed', target_path: '/root/M', method: '_on_pressed' }).success).toBe(true);
+      expect(nodeEdit.schema.safeParse({ action: 'connect_signal', node_path: '/root/B', signal: 'pressed', target_path: '/root/M', method: '_on_pressed' }).success).toBe(false);
     });
   });
 
@@ -198,7 +207,7 @@ describe('node edit tool', () => {
     });
   });
 
-  describe('add_node / attach_script / connect_signal (SEE-1356 L4)', () => {
+  describe('add_node / attach_script (SEE-1356 L4; connect_signal shelved)', () => {
     it('forwards add_node params and surfaces the write contract (revert_hint + saved + save hint)', async () => {
       mock.mockResponse({
         path: '/root/Main/Turret',
@@ -246,33 +255,12 @@ describe('node edit tool', () => {
       expect(text).toContain('"speed":300');
     });
 
-    it('forwards connect_signal as the connection quadruple', async () => {
-      mock.mockResponse({
-        path: '/root/Button',
-        saved: false,
-        save_hint: 'save hint',
-        revert_hint: { command: 'connect_signal', node_path: '/root/Button', signal: 'pressed', target_path: '/root/Main', method: '_on_pressed' },
-      });
-      const ctx = createToolContext(mock);
-
-      const text = await nodeEdit.execute({
-        action: 'connect_signal',
-        node_path: '/root/Button',
-        signal: 'pressed',
-        target_path: '/root/Main',
-        method: '_on_pressed',
-      }, ctx);
-
-      expect(mock.calls[0].command).toBe('connect_signal');
-      expect(mock.calls[0].params).toEqual({ node_path: '/root/Button', signal: 'pressed', target_path: '/root/Main', method: '_on_pressed' });
-      expect(text).toContain('pressed -> /root/Main._on_pressed');
-    });
 
     it('the description no longer routes structure edits to hand-editing .tscn (§SPEC-L4-03)', () => {
       expect(nodeEdit.description).not.toContain('edit the .tscn file directly');
       expect(nodeEdit.description).toContain('add_node');
       expect(nodeEdit.description).toContain('attach_script');
-      expect(nodeEdit.description).toContain('connect_signal');
+      expect(nodeEdit.description).not.toContain('connect_signal'); // shelved (SEE-1356 终裁)
       // The instanced sub-scene rejection is named in the add_node action
       // schema; the tool description states the behavior.
       expect(nodeEdit.description).toContain('instanced sub-scene');

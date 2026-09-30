@@ -170,12 +170,16 @@ func _run_capture(SC: GDScript) -> void:
 
 
 func _run_node(NC: GDScript, _SC: GDScript) -> void:
-	# N1 — the write-command registry (SSOT get_commands) exposes all seven.
+	# N1 — the write-command registry (SSOT get_commands): six commands live;
+	# connect_signal is SHELVED (SEE-1356 终裁: binary gate unproven) and must
+	# NOT be registered until the three-step gate is proven on a stable session.
 	var cmds: Array = NC.new().get_commands().keys()
-	check("node_registration", cmds.has("add_node") and cmds.has("attach_script") and cmds.has("connect_signal") \
+	check("node_registration", cmds.has("add_node") and cmds.has("attach_script") \
 		and cmds.has("update_node") and cmds.has("reparent_node") \
 		and cmds.has("get_node_properties") and cmds.has("find_nodes"),
-		"node command registry incl. three writes")
+		"node command registry (connect_signal shelved)")
+	check("connect_signal_shelved", not cmds.has("connect_signal"),
+		"connect_signal absent from the registry (SEE-1356 终裁搁置)")
 
 	# N2 — UNKNOWN_TYPE: neither an engine class nor a class_name script;
 	# also an engine class that is NOT a Node must not instantiate.
@@ -225,12 +229,11 @@ func _run_node(NC: GDScript, _SC: GDScript) -> void:
 	check("error_envelope_detail", with_detail["error"].get("detail", "") == "empty_viewport" \
 		and not without_detail["error"].has("detail"), "optional detail field shape")
 
-	# N9 — D-NEW connect_signal direct-write contract (批 2 QA FAIL → 退化分支):
-	# the serializer packs ONLY CONNECT_PERSIST connections into [connection]
-	# sections; the undo-action form provably did not persist on the live chain.
-	# Defect class = wiring omission, so the pin is the SOURCE shape: the
-	# connect_signal body must carry `node.connect(..., CONNECT_PERSIST)` and
-	# must NOT re-introduce an undo action (create_action/commit_action).
+	# N9 — D-NEW connect_signal retained-body contract (shelved SEE-1356 终裁:
+	# body kept for re-enable after the three-step gate is proven). The source
+	# shape pins hold on the retained body: `node.connect(..., CONNECT_PERSIST)`
+	# (serializer-visible) and NO undo action (the provably-non-persisting
+	# form) — so a future re-enable cannot silently regress to it.
 	var node_src: String = FileAccess.get_file_as_string("res://commands/node_commands.gd")
 	var cs_body := node_src.substr(node_src.find("func connect_signal"), \
 		node_src.find("func reparent_node") - node_src.find("func connect_signal"))

@@ -89,17 +89,10 @@ const NodeEditSchema = z.discriminatedUnion('action', [
     node_path: z.string().describe('Path to the node'),
     script_path: z.string().describe('Path of an existing script file (res:// or uid://)'),
   }),
-  z.object({
-    action: z
-      .literal('connect_signal')
-      .describe(
-        'Connect a signal to a target method with CONNECT_PERSIST (the only flag the scene serializer packs into the .tscn [connection] section). Both endpoints must belong to the edited scene — instanced sub-scene nodes are rejected. MCP writes do NOT enter the editor undo stack — revert by disconnecting with the returned quadruple. Lands in memory until godot_scene save.'
-      ),
-    node_path: z.string().describe('Path to the node that owns the signal'),
-    signal: z.string().describe('Signal name on the source node (e.g. "pressed")'),
-    target_path: z.string().describe('Path to the node that owns the handler method'),
-    method: z.string().describe('Method name on the target node'),
-  }),
+  // connect_signal is SHELVED (SEE-1356 终裁: the persistence binary gate was
+  // not provable across two live rounds — see commands/node_commands.gd, the
+  // addon body is retained for re-enable). Not published in this schema until
+  // the gate is proven on a stable runtime session.
 ]);
 
 type NodeEditArgs = z.infer<typeof NodeEditSchema>;
@@ -168,13 +161,13 @@ export const nodeEdit = defineTool({
     title: 'Node (edit)',
     readOnlyHint: false,
     destructiveHint: false,
-    // add_node / attach_script / connect_signal are not repeatable without
+    // add_node / attach_script are not repeatable without
     // changing state, so the tool-level idempotent hint no longer holds.
     idempotentHint: false,
     openWorldHint: false,
   },
   description:
-    'Modify scene nodes in the editor: update a node\'s properties, reparent it, add a new node (add_node), attach an existing script (attach_script), or connect a signal (connect_signal) — structure edits go through the editor\'s own serialization on save, so load_steps/UID/ext_resource stay consistent without hand-editing .tscn. add_node and attach_script join the editor\'s undo history; connect_signal writes the connection directly with CONNECT_PERSIST (the only flag the scene serializer packs) and does NOT enter the undo stack — MCP writes are not undoable, revert a connection by disconnecting with the returned quadruple. Every write lands in editor memory and returns a revert_hint plus a save hint; persist with godot_scene save. Writes targeting an instanced sub-scene node are rejected with a clear error (those nodes are owned by their sub-scene). To inspect properties, the scene tree, or search for nodes, use godot_node_read.',
+    'Modify scene nodes in the editor: update a node\'s properties, reparent it, add a new node (add_node), attach an existing script (attach_script), or structure edits go through the editor\'s own serialization on save, so load_steps/UID/ext_resource stay consistent without hand-editing .tscn. add_node and attach_script join the editor\'s undo history. Every write lands in editor memory and returns a revert_hint plus a save hint; persist with godot_scene save. Writes targeting an instanced sub-scene node are rejected with a clear error (those nodes are owned by their sub-scene). To inspect properties, the scene tree, or search for nodes, use godot_node_read.',
   schema: NodeEditSchema,
   async execute(args: NodeEditArgs, { godot }) {
     switch (args.action) {
@@ -215,15 +208,6 @@ export const nodeEdit = defineTool({
         return `Attached ${args.script_path} to ${result.path} (saved: ${result.saved}). ${result.save_hint}. Revert hint: ${JSON.stringify(result.revert_hint)}. Properties: ${JSON.stringify(result.properties)}`;
       }
 
-      case 'connect_signal': {
-        const result = await godot.sendCommand<NodeWriteResult>('connect_signal', {
-          node_path: args.node_path,
-          signal: args.signal,
-          target_path: args.target_path,
-          method: args.method,
-        });
-        return `Connected ${args.signal} -> ${args.target_path}.${args.method} (saved: ${result.saved}). ${result.save_hint}. Revert hint: ${JSON.stringify(result.revert_hint)}`;
-      }
     }
   },
 });
