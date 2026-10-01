@@ -170,15 +170,32 @@ func _run_capture(SC: GDScript) -> void:
 
 
 func _run_node(NC: GDScript, _SC: GDScript) -> void:
-	# N1 — the write-command registry (SSOT get_commands): all seven commands
+	# N1 — the write-command registry (SSOT get_commands): all nine commands
 	# live; connect_signal RE-ENABLED (Owner 2026-10-01 终局指示) — its
-	# persistence gate returns to the live QA lane.
+	# persistence gate returns to the live QA lane; editor_undo/editor_redo
+	# (方案A) expose the shared history stack.
 	var cmds: Array = NC.new().get_commands().keys()
 	check("node_registration", cmds.has("add_node") and cmds.has("attach_script") \
 		and cmds.has("connect_signal") \
+		and cmds.has("editor_undo") and cmds.has("editor_redo") \
 		and cmds.has("update_node") and cmds.has("reparent_node") \
 		and cmds.has("get_node_properties") and cmds.has("find_nodes"),
-		"node command registry incl. three writes (connect_signal re-enabled)")
+		"node command registry incl. three writes + undo/redo (connect_signal re-enabled)")
+
+	# N11 — 方案A undo/redo pure faces. EditorInterface is editor-only (a
+	# bare headless SceneTree run lacks get_edited_scene_root — the call
+	# itself is the QA lane), so what IS probe-able here is the registration
+	# and the source contract: the op routes through the same manager stack
+	# and the empty/absent cases error instead of silently no-oping.
+	check("editor_undo_redo_registered", cmds.has("editor_undo") and cmds.has("editor_redo"),
+		"undo/redo both registered")
+	var node_src2: String = FileAccess.get_file_as_string("res://commands/node_commands.gd")
+	var eo_body := node_src2.substr(node_src2.find("func _editor_history_op"))
+	eo_body = eo_body.substr(0, eo_body.find("\nfunc ", 1))
+	check("editor_undo_same_stack", eo_body.contains("get_undo_redo()") and eo_body.contains("get_history_undo_redo"),
+		"undo/redo route through EditorUndoRedoManager (same stack as writes)")
+	check("editor_undo_structured_empty", eo_body.contains("EMPTY_HISTORY") and eo_body.contains("_require_scene_open"),
+		"empty stack / no scene → structured errors, never silent no-op")
 
 	# N2 — UNKNOWN_TYPE: neither an engine class nor a class_name script;
 	# also an engine class that is NOT a Node must not instantiate.

@@ -253,9 +253,12 @@ describe('node edit tool', () => {
       expect(nodeEdit.description).toContain('add_node');
       expect(nodeEdit.description).toContain('attach_script');
       // connect_signal re-enabled (Owner 2026-10-01 终局指示): the description
-      // documents its direct-write/no-undo-stack contract.
+      // documents its direct-write contract; editor_undo/editor_redo (方案A)
+      // expose the shared history stack.
       expect(nodeEdit.description).toContain('connect_signal');
-      expect(nodeEdit.description).toContain('undo stack');
+      expect(nodeEdit.description).toContain('editor_undo');
+      expect(nodeEdit.description).toContain('editor_redo');
+      expect(nodeEdit.description).toContain('undoable');
       // The instanced sub-scene rejection is named in the add_node action
       // schema; the tool description states the behavior.
       expect(nodeEdit.description).toContain('instanced sub-scene');
@@ -283,6 +286,26 @@ describe('node edit tool', () => {
       expect(mock.calls[0].params).toEqual({ node_path: '/root/Button', signal: 'pressed', target_path: '/root/Main', method: '_on_pressed' });
       expect(text).toContain('pressed -> /root/Main._on_pressed');
       expect(text).toContain('saved: false');
+    });
+
+    it('forwards editor_undo/editor_redo and surfaces the history-cursor signals (方案A)', async () => {
+      const ctx = createToolContext(mock);
+
+      mock.mockResponse({ op: 'undo', has_undo: true, has_redo: true, next_action: 'MCP add_node' });
+      const undoText = await nodeEdit.execute({ action: 'editor_undo' }, ctx);
+      expect(mock.calls[0].command).toBe('editor_undo');
+      expect(mock.calls[0].params).toEqual({});
+      expect(undoText).toBe('Undid one action (next: MCP add_node; has_undo: true, has_redo: true)');
+
+      mock.mockResponse({ op: 'redo', has_undo: true, has_redo: false, next_action: '' });
+      const redoText = await nodeEdit.execute({ action: 'editor_redo' }, ctx);
+      expect(mock.calls[1].command).toBe('editor_redo');
+      expect(redoText).toBe('Redid one action (next: <none>; has_undo: true, has_redo: false)');
+    });
+
+    it('accepts the editor_undo/editor_redo actions in the schema (方案A)', () => {
+      expect(nodeEdit.schema.safeParse({ action: 'editor_undo' }).success).toBe(true);
+      expect(nodeEdit.schema.safeParse({ action: 'editor_redo' }).success).toBe(true);
     });
   });
 });

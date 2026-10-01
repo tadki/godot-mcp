@@ -8,7 +8,8 @@ func get_commands() -> Dictionary:
 		"get_editor_state": get_editor_state,
 		"get_selected_nodes": get_selected_nodes,
 		"select_node": select_node,
-		"set_2d_viewport": set_2d_viewport
+		"set_2d_viewport": set_2d_viewport,
+		"set_main_screen": set_main_screen
 	}
 
 
@@ -181,3 +182,26 @@ func select_node(params: Dictionary) -> Dictionary:
 	selection.clear()
 	selection.add_node(node)
 	return _success({})
+
+
+const MAIN_SCREEN_NAMES := ["2D", "3D", "Script", "AssetLib"]
+
+
+# SEE-1356 方案A (Owner 2026-10-01 终裁): programmatic main-screen switch —
+# the engine's cross-platform EditorInterface.set_main_screen_editor() behind
+# a param enum, so QA/debug flows never need OS-level key injection (the
+# Ctrl+F3 channel that stalled on non-interactive sessions). The response
+# echoes the ACTUAL screen read back through the existing get-side
+# (_get_current_main_screen) as the verification witness.
+func set_main_screen(params: Dictionary) -> Dictionary:
+	var screen: String = params.get("screen", "")
+	if not screen in MAIN_SCREEN_NAMES:
+		return _error("INVALID_PARAMS", "screen must be one of %s (got: %s)" % [", ".join(MAIN_SCREEN_NAMES), screen])
+
+	EditorInterface.set_main_screen_editor(screen)
+
+	var actual := _get_current_main_screen()
+	if actual != screen:
+		return _error("SWITCH_FAILED", "Requested main screen %s but the editor reports %s" % [screen, actual])
+
+	return _success({"main_screen": actual})

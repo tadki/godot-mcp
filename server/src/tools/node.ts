@@ -103,6 +103,20 @@ const NodeEditSchema = z.discriminatedUnion('action', [
   // (SEE-1356 history) connect_signal was shelved 2026-09-30 after the
   // persistence binary gate could not be proven live; Owner 2026-10-01
   // 终局指示 re-enabled it (LOW fixes + full live QA, no degradation).
+  z.object({
+    action: z
+      .literal('editor_undo')
+      .describe(
+        'Undo the editor\'s last reversible action for the open scene — the SAME EditorUndoRedoManager stack godot_node_edit\'s add_node/attach_script commit into, so MCP scene writes are undoable exactly like native editor edits. Empty history returns a structured EMPTY_HISTORY error; the response reports the remaining has_undo/has_redo and the action name the NEXT op would consume.'
+      ),
+  }),
+  z.object({
+    action: z
+      .literal('editor_redo')
+      .describe(
+        'Redo the most recently undone editor action for the open scene (same history stack as editor_undo). Empty redo history returns a structured EMPTY_HISTORY error; the response reports the remaining has_undo/has_redo and the next action name.'
+      ),
+  }),
 ]);
 
 type NodeEditArgs = z.infer<typeof NodeEditSchema>;
@@ -177,7 +191,7 @@ export const nodeEdit = defineTool({
     openWorldHint: false,
   },
   description:
-    'Modify scene nodes in the editor: update a node\'s properties, reparent it, add a new node (add_node), attach an existing script (attach_script), or connect a signal (connect_signal) — structure edits go through the editor\'s own serialization on save, so load_steps/UID/ext_resource stay consistent without hand-editing .tscn. add_node and attach_script join the editor\'s undo history; connect_signal is a direct write that does not (MCP writes bypass the undo stack — its revert_hint carries the quadruple for a manual disconnect). Every write lands in editor memory and returns a revert_hint plus a save hint; persist with godot_scene save. Writes targeting an instanced sub-scene node are rejected with a clear error (those nodes are owned by their sub-scene). To inspect properties, the scene tree, or search for nodes, use godot_node_read.',
+    'Modify scene nodes in the editor: update a node\'s properties, reparent it, add a new node (add_node), attach an existing script (attach_script), connect a signal (connect_signal), or step the editor\'s undo history (editor_undo / editor_redo — the same stack add_node and attach_script commit into, so MCP scene writes are undoable like native edits; connect_signal is a direct write that does not join the stack). Structure edits go through the editor\'s own serialization on save, so load_steps/UID/ext_resource stay consistent without hand-editing .tscn. Every write lands in editor memory and returns a revert_hint plus a save hint; persist with godot_scene save. Writes targeting an instanced sub-scene node are rejected with a clear error (those nodes are owned by their sub-scene). To inspect properties, the scene tree, or search for nodes, use godot_node_read.',
   schema: NodeEditSchema,
   async execute(args: NodeEditArgs, { godot }) {
     switch (args.action) {
@@ -226,6 +240,18 @@ export const nodeEdit = defineTool({
           method: args.method,
         });
         return `Connected ${args.signal} -> ${args.target_path}.${args.method} (saved: ${result.saved}). ${result.save_hint}. Revert hint: ${JSON.stringify(result.revert_hint)}`;
+      }
+
+      case 'editor_undo':
+      case 'editor_redo': {
+        const command = args.action; // addon command name === action name
+        const result = await godot.sendCommand<{
+          op: string;
+          has_undo: boolean;
+          has_redo: boolean;
+          next_action: string;
+        }>(command, {});
+        return `${result.op === 'undo' ? 'Undid' : 'Redid'} one action (next: ${result.next_action || '<none>'}; has_undo: ${result.has_undo}, has_redo: ${result.has_redo})`;
       }
 
     }

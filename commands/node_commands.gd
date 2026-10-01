@@ -20,7 +20,9 @@ func get_commands() -> Dictionary:
 		"reparent_node": reparent_node,
 		"add_node": add_node,
 		"attach_script": attach_script,
-		"connect_signal": connect_signal
+		"connect_signal": connect_signal,
+		"editor_undo": editor_undo,
+		"editor_redo": editor_redo
 	}
 
 
@@ -423,3 +425,52 @@ func reparent_node(params: Dictionary) -> Dictionary:
 	return _success({"new_path": str(root.get_path_to(node))})
 
 
+
+
+# editor_undo / editor_redo — SEE-1356 方案A (Owner 2026-10-01 终裁): expose
+# the editor's global undo/redo through the SAME EditorUndoRedoManager stack
+# the MCP write commands commit into (add_node / attach_script join history;
+# connect_signal is the documented direct-write exception). The manager owns
+# per-scene histories; get_undo_redo() resolves the currently edited scene's.
+# The response carries the manager's own verdict signals so the caller can
+# verify what happened: has_history (a reversible action exists) and the
+# action's name when one was consumed. An empty stack is a structured error,
+# not a silent no-op.
+func editor_undo(_params: Dictionary) -> Dictionary:
+	return _editor_history_op("undo")
+
+
+func editor_redo(_params: Dictionary) -> Dictionary:
+	return _editor_history_op("redo")
+
+
+func _editor_history_op(op: String) -> Dictionary:
+	var scene_check := _require_scene_open()
+	if not scene_check.is_empty():
+		return scene_check
+
+	# The manager routes each object to its scene's history (the scene is
+	# deduced from the first operation's object); the scene root is the anchor
+	# for the edited scene's global history — the same stack the MCP write
+	# commands commit into.
+	var scene_root := EditorInterface.get_edited_scene_root()
+	var history := _plugin.get_undo_redo().get_history_undo_redo(
+		_plugin.get_undo_redo().get_object_history_id(scene_root))
+	if not history.has_undo() and op == "undo":
+		return _error("EMPTY_HISTORY", "No undo available: the edited scene's undo history has nothing to step back")
+	if not history.has_redo() and op == "redo":
+		return _error("EMPTY_HISTORY", "No redo available: the edited scene's redo history has nothing to step forward")
+
+	if op == "undo":
+		history.undo()
+	else:
+		history.redo()
+
+	return _success({
+		"op": op,
+		"has_undo": history.has_undo(),
+		"has_redo": history.has_redo(),
+		# What the NEXT op in this direction would consume — a caller chaining
+		# undo/redo can read where the history cursor sits.
+		"next_action": history.get_current_action_name()
+	})

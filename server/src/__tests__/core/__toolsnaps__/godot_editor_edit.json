@@ -1,6 +1,6 @@
 {
   "name": "godot_editor_edit",
-  "description": "Drive the editor: select a node, run or stop the project, restart the editor, and center/zoom the 2D viewport. Use run with frozen=true as the deterministic-playtest entry point (game time holds at frame 0 until godot_game_time steps or thaws it). To test edited gameplay scripts just stop then run — the launched game loads .gd/.tscn fresh from disk; reserve restart for EDITOR-side staleness (edited @tool/addon code, a stale project.godot, or a cached .gdshader). For observation only (state, selection, logs, screenshots) use godot_editor_read instead; restart does not start a cold editor, so one must already be running.",
+  "description": "Drive the editor: select a node, run or stop the project, restart the editor, center/zoom the 2D viewport, or switch the main screen (set_main_screen: 2D/3D/Script/AssetLib — the programmatic cross-platform form of the editor tab switch, self-verifying via the echoed actual screen). Use run with frozen=true as the deterministic-playtest entry point (game time holds at frame 0 until godot_game_time steps or thaws it). To test edited gameplay scripts just stop then run — the launched game loads .gd/.tscn fresh from disk; reserve restart for EDITOR-side staleness (edited @tool/addon code, a stale project.godot, or a cached .gdshader). For observation only (state, selection, logs, screenshots) use godot_editor_read instead; restart does not start a cold editor, so one must already be running.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -11,9 +11,10 @@
           "run",
           "stop",
           "restart",
-          "set_viewport_2d"
+          "set_viewport_2d",
+          "set_main_screen"
         ],
-        "description": "select: Select a node in the editor\nrun: Run the project\nstop: Stop the running project\nrestart: Restart the editor, reloading project.godot (autoloads, input map), addon code, and plugins from disk. Use it for EDITOR-side staleness only: edited @tool/addon/plugin code, changed autoloads or input map, or a .gdshader the editor still renders from a cached compile. NOT needed to test edited gameplay scripts — a launched game loads .gd/.tscn fresh from disk, so godot_editor_edit stop then run already runs the new code. Fire-and-forget: the bridge drops and auto-reconnects within a few seconds. Does not start a cold editor - the editor must already be running.\nset_viewport_2d: Center and/or zoom the 2D editor viewport. Pass at least one parameter; omitted parameters PRESERVE the current view (e.g. pass only zoom to zoom in on the current center). The addon reads the live viewport transform to fill in whatever you leave out."
+        "description": "select: Select a node in the editor\nrun: Run the project\nstop: Stop the running project\nrestart: Restart the editor, reloading project.godot (autoloads, input map), addon code, and plugins from disk. Use it for EDITOR-side staleness only: edited @tool/addon/plugin code, changed autoloads or input map, or a .gdshader the editor still renders from a cached compile. NOT needed to test edited gameplay scripts — a launched game loads .gd/.tscn fresh from disk, so godot_editor_edit stop then run already runs the new code. Fire-and-forget: the bridge drops and auto-reconnects within a few seconds. Does not start a cold editor - the editor must already be running.\nset_viewport_2d: Center and/or zoom the 2D editor viewport. Pass at least one parameter; omitted parameters PRESERVE the current view (e.g. pass only zoom to zoom in on the current center). The addon reads the live viewport transform to fill in whatever you leave out.\nset_main_screen: Switch the editor's main screen (2D / 3D / Script / AssetLib) — the same switch as the top-right editor tabs, programmatic and cross-platform. The response echoes the screen the editor reports AFTER the switch, so the effect is self-verifying."
       },
       "node_path": {
         "type": "string",
@@ -43,6 +44,16 @@
         "description": "Zoom level, e.g. 1.0 = 100%, 2.0 = 200% (omitted = keep current zoom) (for: set_viewport_2d)",
         "type": "number",
         "exclusiveMinimum": 0
+      },
+      "screen": {
+        "type": "string",
+        "enum": [
+          "2D",
+          "3D",
+          "Script",
+          "AssetLib"
+        ],
+        "description": "Main screen to switch to (required for: set_main_screen)"
       }
     },
     "required": [
