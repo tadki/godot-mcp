@@ -197,6 +197,22 @@ func _run_node(NC: GDScript, _SC: GDScript) -> void:
 	check("editor_undo_structured_empty", eo_body.contains("EMPTY_HISTORY") and eo_body.contains("_require_scene_open"),
 		"empty stack / no scene → structured errors, never silent no-op")
 
+	# N12 — D-SCRIPT read-side drill-down (方案A 实机 QA 实锤): the Script
+	# screen lives inside a WindowWrapper on Godot 4.6, so the read side must
+	# drill one level into a WindowWrapper child; the wrapped screen content
+	# IS matched. Source-shape pins (the matcher itself is editor-only):
+	# the drill-down arm exists, the direct-child arm stays (bare-form
+	# screens), and the wrapped matcher is the shared single classifier.
+	var sel_src: String = FileAccess.get_file_as_string("res://commands/selection_commands.gd")
+	var ms_body := sel_src.substr(sel_src.find("func _get_current_main_screen"))
+	ms_body = ms_body.substr(0, ms_body.find("\nfunc ", 1))
+	check("main_screen_drill_down", ms_body.contains("WINDOW_WRAPPER_CLASS") and ms_body.contains("_match_screen_name(wrapped)"),
+		"read side drills into WindowWrapper children (D-SCRIPT fix)")
+	var matcher_body := sel_src.substr(sel_src.find("func _match_screen_name"))
+	matcher_body = matcher_body.substr(0, matcher_body.find("\nfunc ", 1))
+	check("main_screen_single_classifier", matcher_body.contains("MAIN_SCREEN_PATTERNS") and ms_body.contains("_match_screen_name(child)"),
+		"one shared classifier for bare + wrapped screen content")
+
 	# N2 — UNKNOWN_TYPE: neither an engine class nor a class_name script;
 	# also an engine class that is NOT a Node must not instantiate.
 	check("unknown_type", NC.instantiate_node_type("DefinitelyNotAClass") == null \

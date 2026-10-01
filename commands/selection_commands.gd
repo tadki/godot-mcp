@@ -131,6 +131,18 @@ const MAIN_SCREEN_PATTERNS := {
 	"AssetLib": ["AssetLib", "Asset"],
 }
 
+# D-SCRIPT (方案A 实机 QA 实锤, 两 runtime 复现): Godot 4.6 wraps some main
+# screens (Script, and the future Game screen @WindowWrapper@…) inside a
+# WindowWrapper — the detachable-window container — so the visible DIRECT
+# child of the main screen is class=WindowWrapper whose name matches no
+# pattern and the read side reported a constant "unknown". The fix is a
+# structural correction, not a parallel probe: match against the screen
+# content itself, reached by drilling one level into a WindowWrapper child.
+# The direct-child match stays as-is for the screens the engine still mounts
+# bare (engine-version differences recorded here: bare-form screens keep
+# working unchanged).
+const WINDOW_WRAPPER_CLASS := "WindowWrapper"
+
 
 func _get_current_main_screen() -> String:
 	var main_screen := EditorInterface.get_editor_main_screen()
@@ -138,16 +150,33 @@ func _get_current_main_screen() -> String:
 		return "unknown"
 
 	for child in main_screen.get_children():
-		if child.visible and child is Control:
-			var cls := child.get_class()
-			var node_name := child.name
-
-			for screen_name in MAIN_SCREEN_PATTERNS:
-				var patterns: Array = MAIN_SCREEN_PATTERNS[screen_name]
-				if patterns[0] in cls or patterns[1] in node_name:
+		if not (child.visible and child is Control):
+			continue
+		var screen_name := _match_screen_name(child)
+		if not screen_name.is_empty():
+			return screen_name
+		# WindowWrapper drill-down: the wrapped screen content is the
+		# wrapper's child (the wrapper itself never matches any pattern).
+		if child.get_class() == WINDOW_WRAPPER_CLASS:
+			for wrapped in child.get_children():
+				if not (wrapped.visible and wrapped is Control):
+					continue
+				screen_name = _match_screen_name(wrapped)
+				if not screen_name.is_empty():
 					return screen_name
 
 	return "unknown"
+
+
+# Pattern match for one screen-content control; "" = no screen matched.
+func _match_screen_name(control: Control) -> String:
+	var cls := control.get_class()
+	var node_name := control.name
+	for screen_name in MAIN_SCREEN_PATTERNS:
+		var patterns: Array = MAIN_SCREEN_PATTERNS[screen_name]
+		if patterns[0] in cls or patterns[1] in node_name:
+			return screen_name
+	return ""
 
 
 func get_selected_nodes(_params: Dictionary) -> Dictionary:
