@@ -1,0 +1,13 @@
+{
+  "schema_version": 2,
+  "runtime_id": "C0Probe-solo",
+  "port": 64777,
+  "agent": "C0Probe",
+  "state": "active",
+  "lease_id": "5756a09e-7d76-4471-a723-b00605be50a8",
+  "worktree": "/home/jerry/c0-see1328-worktree",
+  "configured_at": "2026-09-19T21:52:53.623Z",
+  "configured_by_pid": 291199,
+  "released_at": null,
+  "proxy_pid": 291265
+}

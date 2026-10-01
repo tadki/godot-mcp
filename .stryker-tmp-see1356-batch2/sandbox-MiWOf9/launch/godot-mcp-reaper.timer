@@ -1,0 +1,14 @@
+[Unit]
+Description=KingOfLikes godot-mcp resident stale-lease reaper (every 5 min)
+
+[Timer]
+# §2.5 第三层: 常驻 reaper, 每 5min. First tick 2min after boot/login so a cold
+# machine settles before the first sweep; thereafter a fixed 5min cadence.
+OnBootSec=2min
+OnUnitActiveSec=5min
+# If the machine was off / the user session was down when a tick was due, run
+# ONE catch-up sweep on return instead of never reaping that window.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

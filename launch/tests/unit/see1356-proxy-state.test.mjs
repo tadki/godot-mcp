@@ -403,18 +403,29 @@ describe('readProxyStateSnapshot / workdirEchoForGetInfo degradation', () => {
         writeFileSync(SLOT_FILE, '{}', 'utf8');
         expect(workdirEchoForGetInfo()).toEqual({ runtime_id: null, worktree: null, workdir_hash: null, hash_source: 'snapshot_absent' });
     });
-    test('doc with worktree but NO workdir_hash → triple echoes with null hash', () => {
+    test('LOW1: doc missing EITHER schema key (workdir_hash XOR worktree) → snapshot_absent, no fabricated echo', () => {
+        // The snapshot schema always writes BOTH keys; a doc carrying only one
+        // is not a workdir snapshot — echoing its half-truth as evidence would
+        // fabricate nulls, so the explicit contract classifies it absent.
         writeFileSync(SLOT_FILE, JSON.stringify({ worktree: '/wt', runtime_id: 'R-111122223333' }), 'utf8');
+        expect(workdirEchoForGetInfo()).toEqual({ runtime_id: null, worktree: null, workdir_hash: null, hash_source: 'snapshot_absent' });
+        writeFileSync(SLOT_FILE, JSON.stringify({ workdir_hash: 'ab12cd34' }), 'utf8');
+        expect(workdirEchoForGetInfo()).toEqual({ runtime_id: null, worktree: null, workdir_hash: null, hash_source: 'snapshot_absent' });
+    });
+    test('both schema keys present → triple echoes (hash may be the stored null-degradation)', () => {
+        writeFileSync(SLOT_FILE, JSON.stringify({ worktree: '/wt', workdir_hash: null, hash_source: 'slot', runtime_id: 'R-111122223333' }), 'utf8');
         expect(workdirEchoForGetInfo()).toEqual({
-            runtime_id: 'R-111122223333', worktree: '/wt', workdir_hash: null, hash_source: null,
+            runtime_id: 'R-111122223333', worktree: '/wt', workdir_hash: null, hash_source: 'slot',
         });
     });
-    test('absent → snapshot_absent; legacy-named rid also reads by its own name', () => {
+    test('absent → snapshot_absent; legacy-named rid reads by its own name when the schema is complete', () => {
         rmSync(SLOT_FILE, { force: true });
         expect(workdirEchoForGetInfo('Nobody-99998888')).toEqual({ runtime_id: null, worktree: null, workdir_hash: null, hash_source: 'snapshot_absent' });
-        writeFileSync(LEGACY_FILE, JSON.stringify({ workdir_hash: 'ab12cd34' }), 'utf8');
+        // LOW1 contract: only a COMPLETE schema doc echoes — the legacy file
+        // gains a worktree key so the both-keys-present gate passes.
+        writeFileSync(LEGACY_FILE, JSON.stringify({ workdir_hash: 'ab12cd34', worktree: '/legacy-wt' }), 'utf8');
         const echo = workdirEchoForGetInfo('Weird#Name-1');
-        expect(echo).toEqual({ runtime_id: null, worktree: null, workdir_hash: 'ab12cd34', hash_source: null });
+        expect(echo).toEqual({ runtime_id: null, worktree: '/legacy-wt', workdir_hash: 'ab12cd34', hash_source: null });
         rmSync(LEGACY_FILE, { force: true });
     });
 });

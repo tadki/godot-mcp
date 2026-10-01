@@ -1,0 +1,172 @@
+// @ts-nocheck
+// SEE-1085 usability: resolve how to launch @satelliteoflove/godot-mcp.
+//
+// Extracted from the proxy so the resolution logic (override → local install →
+// npx cache walk → fallback) is unit-testable without booting the proxy.
+//
+// Why this exists: `npx -y @satelliteoflove/godot-mcp` pays ~2.9s of
+// resolution/registry overhead per cold spawn (measured), vs ~0.3s for
+// `node <bin>` on the same cached package — an order of magnitude. Fronti's
+// 5.77s/5.80s initialize/tools-list cold handshake is this npx cost. Spawning
+// `node <bin>` directly when the package is already on disk cuts the cold
+// handshake from ~6s toward ~0.6s. npx content-addresses each specifier under
+// an unstable hash (~/.npm/_npx/<hash>/...), so the path cannot be hardcoded;
+// this resolver walks the cache and picks the newest entry.
+
+import { createRequire } from 'node:module';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+
+export const GODOT_MCP_PKG = '@satelliteoflove/godot-mcp';
+
+// SEE-1111 (cold-start one-shot): the owner's fork fixes the upstream cold-start
+// 'Not connected' failure by making the server's QUICK_TIMEOUT_MS configurable
+// (GODOT_MCP_QUICK_TIMEOUT_MS, default stays 30s upstream) and by connecting /
+// reconnecting in the background so a tools/call forwarded at WARM waits for the
+// WS instead of erroring instantly. The platform spawns the PROXY directly via
+// an absolute D-drive path (it does NOT run godot-mcp-launcher.sh), so the
+// launcher's fork wiring never applies in production — the resolver must prefer
+// the fork itself. The fork is required (upstream has no GODOT_MCP_QUICK_TIMEOUT
+// support), so it is NOT opt-in; the explicit override
+// (canonical GODOT_MCP_GODOT_MCP_CMD — legacy alias KOL_GODOT_MCP_CMD — kept one
+// round) remains the escape hatch and the npx path stays the fallback when the
+// fork is absent (offline / fresh machine / CI test harness).
+// §4.5.3 T2 / K5 / SEE-1292 §DECPL-003: the fork CLI path is env-overridable
+// (GODOT_MCP_FORK_CLI) and by default resolves relative to this library's OWN
+// location (this file lives in launch/, so the fork CLI is ../server/dist/cli.js)
+// — no D-drive literal. GODOT_MCP_FORK_CLI is the single explicit override seam.
+const DEFAULT_FORK_CLI = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..', 'server', 'dist', 'cli.js',
+);
+const FORK_CLI = process.env.GODOT_MCP_FORK_CLI || DEFAULT_FORK_CLI;
+function resolveFork() {
+    try {
+        statSync(FORK_CLI);
+        return { cmd: process.execPath, args: [FORK_CLI], source: `node ${FORK_CLI} (owner fork)` };
+    } catch {
+        return null;
+    }
+}
+
+// Resolve the package's bin entry to an absolute path, or null. Accepts a
+// pre-parsed package.json (avoids a second read in the cache-walk path).
+function readBinEntry(pkgDir, pkgName, pkg) {
+    if (!pkg) {
+        try {
+            pkg = JSON.parse(readFileSync(path.join(pkgDir, 'package.json'), 'utf-8'));
+        } catch {
+            return null;
+        }
+    }
+    const binField = pkg && pkg.bin;
+    const binRel = typeof binField === 'string'
+        ? binField
+        : (binField && typeof binField === 'object'
+            ? (binField[pkgName] || Object.values(binField)[0])
+            : null);
+    if (typeof binRel !== 'string' || !binRel) return null;
+    const binAbs = path.join(pkgDir, binRel);
+    try {
+        statSync(binAbs);
+        return binAbs;
+    } catch {
+        return null;
+    }
+}
+
+// Returns { cmd, args, source }. cmd is process.execPath (direct node) or 'npx'
+// (fallback). args is the full argv tail to spawn. source is a human-readable
+// provenance string the proxy logs once at startup.
+//
+// Resolution order (SEE-1292 §DECPL-003: this is the SINGLE canonical server
+// locator that the launcher/shim/proxy all reuse):
+//   1. Explicit override — canonical GODOT_MCP_GODOT_MCP_CMD (legacy alias
+//      KOL_GODOT_MCP_CMD, one-round backcompat): 'npx' forces npx; any other
+//      non-empty value is a path to the bin entry spawned as `node <path>`.
+//      (Test seam + operator escape hatch; always honored.)
+//   2. OPT-IN auto-detection (GODOT_MCP_DIRECT_GODOT_MCP=1 / legacy
+//      KOL_DIRECT_GODOT_MCP=1): local node_modules via require.resolve, then
+//      npx cache (~/.npm/_npx/<hash>/..., newest mtime wins). Opt-in so test
+//      harnesses that inject a mock npx onto PATH (and do not set the override)
+//      keep using their mock instead of an unrelated cached package.
+//   3. `npx -y <pkg>` fallback (default, and also when opt-in finds nothing).
+// eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
+export function resolveGodotMcpCommand() {
+    const override = (process.env.GODOT_MCP_GODOT_MCP_CMD || process.env.KOL_GODOT_MCP_CMD || '').trim();
+    if (override) {
+        if (override === 'npx') {
+            return { cmd: 'npx', args: ['-y', GODOT_MCP_PKG], source: 'npx (GODOT_MCP_GODOT_MCP_CMD=npx)' };
+        }
+        return { cmd: process.execPath, args: [override], source: `node ${override} (GODOT_MCP_GODOT_MCP_CMD)` };
+    }
+
+    // OPT-OUT (test seam): GODOT_MCP_DIRECT_GODOT_MCP=0 (or legacy
+    // KOL_DIRECT_GODOT_MCP=0) means the caller explicitly wants the npx/PATH
+    // path — test harnesses that inject a mock npx onto PATH (and never set the
+    // override) rely on the proxy spawning their mock, not the real fork.
+    const direct = process.env.GODOT_MCP_DIRECT_GODOT_MCP ?? process.env.KOL_DIRECT_GODOT_MCP;
+    if (direct !== '0') {
+        const fork = resolveFork();
+        if (fork) return fork;
+    }
+
+    // (2) opt-in auto-detection: cache walk only when explicitly enabled.
+    if (direct === '1') {
+        // (2a) local install up the require chain.
+        try {
+            const require = createRequire(import.meta.url);
+            const pkgJsonPath = require.resolve(`${GODOT_MCP_PKG}/package.json`);
+            const dir = path.dirname(pkgJsonPath);
+            const bin = readBinEntry(dir, GODOT_MCP_PKG);
+            if (bin) return { cmd: process.execPath, args: [bin], source: `node ${bin} (local install)` };
+        } catch {
+            // not locally installed — fall through
+        }
+
+        // (2b) npx cache. Newest mtime wins so a version bump (new hash) is
+        // preferred over a stale entry, matching what `npx -y` would re-fetch.
+        const home = process.env.HOME || process.env.USERPROFILE || '';
+        const npxRoot = path.join(home, '.npm/_npx');
+        let best = null;
+        let bestMtime = 0;
+        try {
+            for (const entry of readdirSync(npxRoot)) {
+                const dir = path.join(npxRoot, entry, 'node_modules', GODOT_MCP_PKG);
+                const pkgJsonPath = path.join(dir, 'package.json');
+                let st;
+                try {
+                    st = statSync(pkgJsonPath);
+                } catch {
+                    continue;
+                }
+                let pkg;
+                try {
+                    pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
+                } catch {
+                    continue;
+                }
+                const bin = readBinEntry(dir, GODOT_MCP_PKG, pkg);
+                if (!bin) continue;
+                const mtime = st.mtimeMs || 0;
+                if (mtime > bestMtime) {
+                    bestMtime = mtime;
+                    best = {
+                        cmd: process.execPath,
+                        args: [bin],
+                        source: `node ${bin} (npx-cache ${pkg.version || '?'})`,
+                    };
+                }
+            }
+        } catch {
+            // no npx cache dir — fall through to npx
+        }
+        if (best) return best;
+        // opt-in cache walk found nothing — fall through to npx anyway.
+    }
+
+    // (3) fallback: spawn via npx (resolves PATH; first run populates the cache).
+    return { cmd: 'npx', args: ['-y', GODOT_MCP_PKG], source: 'npx -y' };
+}

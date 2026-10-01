@@ -1,0 +1,12 @@
+{
+  "_see1240_note": "default_port removed (SEE-1240 WS-1): dead config — the addon hardcodes its own DEFAULT_PORT=6550 and reads nothing from this file. Keeping the field invited new agents to connect to 6550 and hit 4001. The reaper and the 6550 structural guard (test_see1070_proxy_default_port_guard.sh) carry 6550 inline; the proxy still refuses GODOT_PORT=6550 without --allow-default.",
+  "_deprecated_see1148": "DEPRECATED (SEE-1148 P4, migration window): this static table 6551-6556 serves ONLY legacy runs without KOL_RUNTIME_ID. New runs allocate from the dynamic pool 6560-6609 via port-arbiter.lib.sh keyed by runtime_id. Keep machine-readable until P4 cutover; existing debug scripts may still reference 6551-6556 during the compatibility window.",
+  "agents": {
+    "Atlas": 6551,
+    "Archi": 6552,
+    "Bachi": 6553,
+    "Fronti": 6554,
+    "Revy": 6555,
+    "Refacty": 6556
+  }
+}
