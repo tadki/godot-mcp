@@ -83,19 +83,34 @@ python3 "$HERE/see1356_rpc_call.py" "$FIFO" "$SB/rt-$RID.out" \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"see1356-b2qa","version":"0"}}}' 1 30 > /dev/null 2>&1 &
 INIT_PID=$!
 
-# wait WARM
+# wait for the initialize response (id:1), then fire a real tools/call — the
+# proxy lazy-spawns the editor on the first tools/call, NOT on initialize, so
+# an init-only handshake leaves the runtime waiting forever.
 i=0
-while (( i < 900 )); do
-    [[ -f "$SB/.multica/godot-editor/$RID.proxy.log" ]] && grep -q '\[stage=WARM\]' "$SB/.multica/godot-editor/$RID.proxy.log" 2>/dev/null && break
+while (( i < 60 )); do
+    grep -q '"id":1' "$SB/rt.out" 2>/dev/null && break
     sleep 1; i=$((i+1))
 done
-if grep -q '\[stage=WARM\]' "$SB/.multica/godot-editor/$RID.proxy.log" 2>/dev/null; then
+python3 "$HERE/see1356_rpc_call.py" "$FIFO" "$SB/rt.out" \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}' 2 300 0 > /dev/null 2>&1 &
+TRIGGER_PID=$!
+
+# wait WARM (proxy log naming is not SSOT-stable across subsystems — accept
+# either the slot-form or the legacy-form log file)
+i=0
+while (( i < 900 )); do
+    for cand in "$SB/.multica/godot-editor/$RID.proxy.log" "$SB"/.multica/godot-editor/godot-editor-*.proxy.log; do
+        [[ -f "$cand" ]] && grep -q '\[stage=WARM\]' "$cand" 2>/dev/null && break 2
+    done
+    sleep 1; i=$((i+1))
+done
+if grep -q '\[stage=WARM\]' "$SB"/.multica/godot-editor/*.proxy.log 2>/dev/null; then
     echo "WARM reached after ${i}s"
 else
     echo "TIMEOUT waiting for WARM"
-    tail -5 "$SB/.multica/godot-editor/$RID.proxy.log" 2>/dev/null
+    tail -5 "$SB"/.multica/godot-editor/*.proxy.log 2>/dev/null
     tail -3 "$SB/rt.err" 2>/dev/null
     exit 1
 fi
-kill "$INIT_PID" 2>/dev/null
+kill "$INIT_PID" "$TRIGGER_PID" 2>/dev/null
 exit 0
