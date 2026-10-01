@@ -153,6 +153,14 @@ const EditorEditSchema = z
       center_y: z.number().optional().describe('Y coordinate to center the 2D viewport on (omitted = keep current Y)'),
       zoom: z.number().positive().optional().describe('Zoom level, e.g. 1.0 = 100%, 2.0 = 200% (omitted = keep current zoom)'),
     }),
+    z.object({
+      action: z
+        .literal('set_main_screen')
+        .describe(
+          'Switch the editor\'s main screen (2D / 3D / Script / AssetLib) — the same switch as the top-right editor tabs, programmatic and cross-platform. The response echoes the screen the editor reports AFTER the switch, so the effect is self-verifying.'
+        ),
+      screen: z.enum(['2D', '3D', 'Script', 'AssetLib']).describe('Main screen to switch to'),
+    }),
   ])
   // Constraint a discriminated union can't express on its own, so it lives here:
   .refine(
@@ -296,7 +304,7 @@ export const editorEdit = defineTool({
   name: 'godot_editor_edit',
   annotations: { title: 'Editor Control (edit)', readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   description:
-    'Drive the editor: select a node, run or stop the project, restart the editor, and center/zoom the 2D viewport. Use run with frozen=true as the deterministic-playtest entry point (game time holds at frame 0 until godot_game_time steps or thaws it). To test edited gameplay scripts just stop then run — the launched game loads .gd/.tscn fresh from disk; reserve restart for EDITOR-side staleness (edited @tool/addon code, a stale project.godot, or a cached .gdshader). For observation only (state, selection, logs, screenshots) use godot_editor_read instead; restart does not start a cold editor, so one must already be running.',
+    'Drive the editor: select a node, run or stop the project, restart the editor, center/zoom the 2D viewport, or switch the main screen (set_main_screen: 2D/3D/Script/AssetLib — the programmatic cross-platform form of the editor tab switch, self-verifying via the echoed actual screen). Use run with frozen=true as the deterministic-playtest entry point (game time holds at frame 0 until godot_game_time steps or thaws it). To test edited gameplay scripts just stop then run — the launched game loads .gd/.tscn fresh from disk; reserve restart for EDITOR-side staleness (edited @tool/addon code, a stale project.godot, or a cached .gdshader). For observation only (state, selection, logs, screenshots) use godot_editor_read instead; restart does not start a cold editor, so one must already be running.',
   schema: EditorEditSchema,
   // eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
   async execute(args: EditorEditArgs, { godot }) {
@@ -361,6 +369,13 @@ export const editorEdit = defineTool({
           zoom: number;
         }>('set_2d_viewport', params);
         return `2D viewport set to center (${result.center.x.toFixed(1)}, ${result.center.y.toFixed(1)}) at ${result.zoom.toFixed(2)}x zoom`;
+      }
+
+      case 'set_main_screen': {
+        const result = await godot.sendCommand<{ main_screen: string }>('set_main_screen', {
+          screen: args.screen,
+        });
+        return `Main screen switched to: ${result.main_screen}`;
       }
     }
   },

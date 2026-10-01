@@ -297,6 +297,15 @@ describe('editorEdit tool', () => {
       expect(editorEdit.schema.safeParse({ action: 'set_viewport_2d' }).success).toBe(false);
       expect(editorEdit.schema.safeParse({ action: 'set_viewport_2d', zoom: 2.0 }).success).toBe(true);
     });
+
+    it('set_main_screen accepts only the four main-screen enums (方案A)', () => {
+      expect(editorEdit.schema.safeParse({ action: 'set_main_screen' }).success).toBe(false);
+      expect(editorEdit.schema.safeParse({ action: 'set_main_screen', screen: 'Script' }).success).toBe(true);
+      expect(editorEdit.schema.safeParse({ action: 'set_main_screen', screen: '2D' }).success).toBe(true);
+      expect(editorEdit.schema.safeParse({ action: 'set_main_screen', screen: 'AssetLib' }).success).toBe(true);
+      expect(editorEdit.schema.safeParse({ action: 'set_main_screen', screen: 'Game' }).success).toBe(false);
+      expect(editorEdit.schema.safeParse({ action: 'set_main_screen', screen: 'script' }).success).toBe(false);
+    });
   });
 
   describe('select', () => {
@@ -423,6 +432,19 @@ describe('editorEdit tool', () => {
       expect(mock.calls[0].params).toEqual({ zoom: 3 });
       expect('center_x' in mock.calls[0].params).toBe(false);
       expect('center_y' in mock.calls[0].params).toBe(false);
+    });
+  });
+
+  describe('set_main_screen (方案A)', () => {
+    it('forwards the screen enum and echoes the editor-reported actual screen', async () => {
+      mock.mockResponse({ main_screen: 'Script' });
+      const ctx = createToolContext(mock);
+
+      const result = await editorEdit.execute({ action: 'set_main_screen', screen: 'Script' }, ctx);
+
+      expect(mock.calls[0].command).toBe('set_main_screen');
+      expect(mock.calls[0].params).toEqual({ screen: 'Script' });
+      expect(result).toBe('Main screen switched to: Script');
     });
   });
 });
