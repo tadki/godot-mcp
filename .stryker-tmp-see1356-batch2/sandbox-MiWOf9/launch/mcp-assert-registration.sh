@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# SEE-1242 B-2 P3-1: doctor SessionStart 断言。
+#
+# 在每次 Claude Code SessionStart 时被动运行：调用 godot-status.sh doctor
+# （SEE-1240 WS-4 注册层检查）对 /tmp/multica-mcp-*/mcp-config.json 的
+# godot-mcp 条目做注册层对账，结果写入 hook-fire.log。registration FAIL
+# = 2026-08-01 全员中断形态（command 缺失/指向已删路径），即刻可见，
+# 不必等 agent 首次调工具才发现幽灵工具。
+#
+# 设计约束：
+#   - 只读探测，零副作用（不写 /tmp、不动 mcp-config）；
+#   - 任何失败都是软失败（exit 0），绝不阻塞 SessionStart；
+#   - 输出同时带 registration verdict 与 doctor verdict，供 B-0 归因
+#     （「配置完好 + tool list 缺失」= 注册窗口时序竞态，非静默丢弃）。
+#
+# 用法：由 SessionStart hook（repo-checkout.sh 末尾）被动调用，也可手动跑：
+#   bash addons/godot_mcp/launch/mcp-assert-registration.sh [--json]
+# SEE-1316 (hardener): the script now lives INSIDE the vendored addon at
+# addons/godot_mcp/launch/ (the .dev/godot-mcp/ tree is retired — SEE-1273 M3).
+# Location is resolved in order: this script's own dir (in-addon layout),
+# then the legacy .dev/godot-mcp/launch/ for old checkouts.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Layout resolution: when this script sits in addons/godot_mcp/launch, the
+# addon root is one level up and godot-status.sh is a sibling. The legacy
+# .dev/godot-mcp/launch path is kept as a fallback for old checkouts.
+STATUS_SH=""
+if [[ -f "$SCRIPT_DIR/godot-status.sh" ]]; then
+    STATUS_SH="$SCRIPT_DIR/godot-status.sh"
+elif [[ -n "${PROJECT_ROOT:-}" && -f "$PROJECT_ROOT/.dev/godot-mcp/launch/godot-status.sh" ]]; then
+    STATUS_SH="$PROJECT_ROOT/.dev/godot-mcp/launch/godot-status.sh"
+else
+    # Legacy self-location: walk up to a repo root that still has the old tree.
+    _cand="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+    if [[ -f "$_cand/.dev/godot-mcp/launch/godot-status.sh" ]]; then
+        STATUS_SH="$_cand/.dev/godot-mcp/launch/godot-status.sh"
+    fi
+fi
+
+HOOK_FIRE_LOG="${PROJECT_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}/.claude/hook-fire.log"
+[[ -d "$(dirname "$HOOK_FIRE_LOG")" ]] || HOOK_FIRE_LOG="$HOME/.claude/hook-fire.log"
+
+JSON_MODE=0
+[[ "${1:-}" == "--json" ]] && JSON_MODE=1
+
+if [[ -z "$STATUS_SH" ]]; then
+    # Soft failure: godot-status.sh not found (old branch / not checked out) —
+    # record the missing-tool fact and exit clean.
+    printf '[%s] [mcp-assert-registration] SKIP: godot-status.sh not found (searched addon launch dir and legacy .dev/godot-mcp/launch)\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$HOOK_FIRE_LOG" 2>/dev/null || true
+    exit 0
+fi
+
+DOCTOR_JSON="$(bash "$STATUS_SH" doctor --json 2>/dev/null || true)"
+
+if [[ -z "$DOCTOR_JSON" ]]; then
+    printf '[%s] [mcp-assert-registration] WARN: doctor produced no output (godot-status.sh failed)\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$HOOK_FIRE_LOG" 2>/dev/null || true
+    exit 0
+fi
+
+RESULT="$(DOCTOR_JSON="$DOCTOR_JSON" node -e '
+const d = JSON.parse(process.env.DOCTOR_JSON);
+const reg = d.registration_detail || {};
+const cfgs = reg.configs || [];
+let godotEntries = 0, broken = 0, degraded = 0;
+for (const c of cfgs) for (const s of (c.godot_servers || [])) {
+    godotEntries++;
+    // SEE-1356 L6: verdict set from the shared resolve helper — broken is the
+    // provable dangling shape (FAIL); degraded is probe-uncertain (WARN-ish,
+    // never FAIL); stale is retired-path residue (hygiene).
+    if (s.verdict === "broken") broken++;
+    if (s.verdict === "degraded") degraded++;
+}
+let verdict;
+if (godotEntries === 0) verdict = "NO_GODOT_ENTRY";
+else if (broken > 0) verdict = "FAIL";
+else if (degraded > 0) verdict = "DEGRADED";
+else verdict = "PASS";
+process.stdout.write(JSON.stringify({
+    verdict,
+    godot_entries: godotEntries,
+    broken,
+    degraded,
+    doctor_verdict: d.verdict || "?",
+    configs_seen: cfgs.length
+}));
+' 2>/dev/null || echo '{"verdict":"PARSE_FAIL","godot_entries":0,"broken":0,"degraded":0,"doctor_verdict":"?","configs_seen":0}')"
+
+VERDICT="$(RESULT_JSON="$RESULT" node -e 'process.stdout.write(JSON.parse(process.env.RESULT_JSON).verdict)' 2>/dev/null || echo "PARSE_FAIL")"
+
+printf '[%s] [mcp-assert-registration] %s %s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$VERDICT" "$RESULT" >> "$HOOK_FIRE_LOG" 2>/dev/null || true
+
+if (( JSON_MODE )); then
+    printf '%s\n' "$RESULT"
+fi
+
+# 断言语义：FAIL/NO_GODOT_ENTRY 是幽灵工具的注册层根因（agent 侧可见即上报）；
+# PASS 但 tool list 仍缺 → 注册窗口时序竞态（B-1 裁决定性），交 P3-2 被动记录归因。
+# SessionStart hook 永不因此失败（exit 0）。
+exit 0

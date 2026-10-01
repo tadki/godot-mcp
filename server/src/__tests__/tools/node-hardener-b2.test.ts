@@ -53,25 +53,24 @@ describe('nodeEdit L4 write envelopes — hardener survivor kills (batch-2)', ()
     );
   });
 
-  it('per-branch node_path descriptions stay pinned (shelve-round survivor kill)', () => {
-    // SEE-1356 shelve round: removing the connect_signal branch dropped its
-    // killing tests, letting the remaining `node_path` description literals
-    // survive. Pin them so the ratchet floor holds ONLY-UP.
+  it('per-branch node_path descriptions stay pinned (survivor kill, re-enable round wording)', () => {
+    // SEE-1356 re-enable (Owner 2026-10-01): connect_signal rejoined the
+    // union, so the merged node_path description names all four branches.
+    // The wording stays pinned — agent-facing docs are wire contract.
     const props = (toInputSchema(nodeEdit.schema) as Record<string, unknown>).properties as Record<string, unknown>;
     expect((props.node_path as Record<string, unknown>).description).toBe(
-      'Path to the node (required for: update, reparent, attach_script)',
+      'for update: Path to the node; for reparent: Path to the node; for attach_script: Path to the node; for connect_signal: Path to the node that owns the signal (required for: update, reparent, attach_script, connect_signal)',
     );
   });
 
-  it('connect_signal is SHELVED (SEE-1356 终裁): schema rejects the action', () => {
-    // The persistence binary gate was unproven across two live rounds; the
-    // action is removed from the published schema until proven on a stable
-    // session (the addon body is retained for re-enable).
+  it('connect_signal is PUBLISHED again (re-enabled, Owner 2026-10-01 终局指示)', () => {
+    // Re-enable round: the action rejoined the schema; the DIRECT-write
+    // CONNECT_PERSIST form (MCP 写不入 undo 栈) is the published contract.
     const probe = nodeEdit.schema.safeParse({
       action: 'connect_signal', node_path: '/root/Test', signal: 'pressed',
       target_path: '/root/Btn', method: '_on_pressed',
     });
-    expect(probe.success).toBe(false);
+    expect(probe.success).toBe(true);
   });
 
   it('add_node sends name/index keys even when unset (undefined values, keys present)', async () => {

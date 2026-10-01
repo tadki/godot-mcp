@@ -1,0 +1,112 @@
+name: Launch CI (fast tier)
+
+# SEE-1291 AC-CI-001/002 — fast tier for the launch/ control-plane test tree.
+#
+# SEE-1334 Phase 2 (SPEC-020/022): the two jobs now run the SAME fast-tier
+# entries through vitest (launch/vitest.config.ts is the SSOT entry list —
+# the heredoc inventory is gone; new/graduated entries join by editing that
+# list). Case semantics are untouched: each harness runs as its own process,
+# stdin: 'ignore' replaces the old `< /dev/null` defense, exit code decides
+# pass/fail. Job names (`shell-harnesses`, `node-units`) are kept verbatim —
+# they are required status checks (SEE-1334 SPEC-013).
+#
+# Scope: the 66 launch/tests entries verified green in a clean checkout on
+# ubuntu-latest (headless, mock npx/ws-listener on PATH, no real editor, no
+# KOL worktree, no Windows). Long-running / environment-bound / drift-red
+# suites are NOT here — they live in launch-special.yml.
+#
+# Two parallel jobs stay under the 10-minute budget. The launch coverage gate
+# (SPEC-021) moved to launch-special.yml per SEE-1342 §SPEC-110 (Owner
+# 2026-09-24 three-tier duration ruling: >20min tier runs on Wed+Sun cron,
+# not per-PR) — PR time no longer pays its 10-18min window.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  shell-harnesses:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Build server CLI (fork-CLI path used by launch harnesses)
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      # SEE-1292 AC-DECPL-006: cache the UNPACKED binary (single ELF ~130MB),
+      # version inside the key so a Godot bump can never serve a stale cached
+      # binary (design: qa-toolkit docs/godot-binary-cache-design.md §2).
+      - name: Cache Godot binary
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/godot
+          key: godot-${{ runner.os }}-4.6.2-stable
+      - name: Install Godot 4.x (cache miss path)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          GODOT_VERSION=4.6.2
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          sudo mv "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+          godot --version
+      # Fail fast when the restored cache entry is corrupt — a broken ELF must
+      # die here, not at the test layer with a confusing parse error.
+      - name: Verify Godot binary health
+        run: godot --version
+      # Root devDeps provide vitest + the generated wrappers' runtime.
+      - name: Install root dev tooling
+        run: npm ci --no-audit --no-fund
+      # SEE-1334 SPEC-023: the fast tier's speed promise is checked nightly by
+      # launch-special.yml's speed-audit job; PR runs stay plain.
+      - name: Run fast-tier shell harnesses via vitest (69 .sh entries of 90 total; SEE-1344 triage)
+        # Budget note (SEE-1344 ④): job budget unchanged at 10min; local CI-shape
+        # sampling (Revy ③ r1-r3) measured 723-772s on the shared 8-core box —
+        # CI-runner wall evidence is collected via PR #16 runs (Revy ③b).
+        timeout-minutes: 10
+        run: npx vitest run launch/tests/.vitest-gen/fast --testNamePattern "\.sh$"
+        working-directory: launch
+
+  node-units:
+    runs-on: ubuntu-latest
+    # SEE-1342 §SPEC-101: bumped 5→8 — the D1 build gate in
+    # launch/vitest.config.ts builds server/dist before any tier run; the
+    # explicit build step below keeps that one-time cost outside the test
+    # step's own timeout window.
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Build server CLI (D1 gate warm-up; vitest.config.ts would otherwise build it at config load)
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      - name: Install root dev tooling
+        run: npm ci --no-audit --no-fund
+      # NODE_V8_COVERAGE propagates to the harness child processes (vitest's
+      # own coverage provider cannot see subprocesses). Merging happens in
+      # launch-special.yml's coverage-launch job (Wed+Sun cron); here it is
+      # collected so any single job can be re-run with --coverage without a
+      # code change.
+      - name: Run fast-tier node unit tests via vitest (21 .mjs entries of 90 total; SEE-1344 triage)
+        timeout-minutes: 4
+        run: npx vitest run launch/tests/.vitest-gen/fast --testNamePattern "\.mjs$"
+        working-directory: launch

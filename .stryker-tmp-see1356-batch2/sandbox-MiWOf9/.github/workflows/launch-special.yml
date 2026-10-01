@@ -1,0 +1,361 @@
+name: Launch Special (heavy/env tier)
+
+# SEE-1291 AC-CI-002 — specialist tier for the launch/tests entries that do
+# NOT belong in the push/PR fast tier (launch-ci.yml). Three buckets:
+#
+#   long    — suites measured ≥ ~2min (t14 reaper grace guard needs ~90s+ of
+#             real clock; see1240 d1/ws5 minutes-scale). Green, just slow.
+#   env     — entries that need the WSL dev box: Windows Godot via /mnt/d,
+#             the KOL consumer checkout (KOL_ROOT), a live editor, or a real
+#             `npx @satelliteoflove/godot-mcp` against a bound addon. On a
+#             GitHub runner they cannot pass; kept here as documented stubs
+#             (preflight probe proves the requirement, then skips).
+#   drift   — residual entries after the SEE-1344 triage (Atlas final ruling):
+#             drift LIST CLEARED (⑫/⑫+: 6 handled — 2 FAST graduation after
+#             event-driven hardening, e5→long, t1_tree deleted with the 2
+#             frozen). 29 items
+#             graduated into launch/vitest.config.ts FAST lists (21 fixed +
+#             4 green + ⑫ 2 more), 5 into LONG, 13 documented in the env
+#             bucket, 9 retired files deleted (7 triage + 2 frozen, Owner
+#             2026-09-24 23:04); residual RED must stay 0 (§SPEC-114).
+#
+# Manual dispatch runs everything runnable headless and reports per-entry
+# status without failing the workflow (continue-on-error evidence runs) —
+# the point is a periodic, greppable health snapshot, not a gate. The
+# weekly cron does the same so drift does not rot silently.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: 'Which bucket to run (long|env|drift|gherkin|coverage|all)'
+        type: choice
+        default: all
+        options: [all, long, env, drift, gherkin, coverage]
+  schedule:
+    # SEE-1342 §SPEC-110 (Owner 2026-09-24 三档时长裁决)：
+    #   <10min 门禁 / 10-20min 每天 cron / >20min 每周两次（周三+周日）。
+    # Daily 02:23 UTC — 10-20min 档：long-suites + drift-watch（两 job 的 if
+    # 条件按 cron 字符串匹配本条）。
+    - cron: '23 2 * * *'
+    # Sundays 03:07 UTC — off-minute per house convention.
+    - cron: '7 3 * * 0'
+    # Wednesdays 03:13 UTC — 周三与周日两条共享 >20min 档（mutation-evidence、
+    # coverage-launch、speed-audit、env、gherkin）。
+    - cron: '13 3 * * 3'
+
+env:
+  # 仅一个环境变量即切换通道：默认 dry-run（只打 summary 报告不真建 issue），
+  # Owner 确认后放量为 'true'。
+  ENABLE_DRIFT_ISSUE_CHANNEL: 'false'
+
+permissions:
+  contents: read
+
+jobs:
+  long-suites:
+    # SEE-1342 §SPEC-110 目标2：long 桶（10-20min 档）迁每日 cron，按 cron
+    # 字符串精确匹配，避免在周三/日 schedule 上重复跑第二次。
+    if: ${{ (github.event_name == 'schedule' && github.event.schedule == '23 2 * * *') || (github.event_name == 'workflow_dispatch' && (inputs.bucket == 'all' || inputs.bucket == 'long')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Build server CLI
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      - name: Install root dev tooling
+        run: npm ci --no-audit --no-fund
+      - name: Long green suites (slow but stable)
+        # SEE-1334 Phase 2 (SPEC-020): the same 2 entries now run through the
+        # vitest long-tier wrappers (launch/vitest.config.ts is the SSOT list);
+        # bucket structure, timeouts and gate semantics unchanged.
+        run: npx vitest run launch/tests/.vitest-gen/long
+        working-directory: launch
+
+  env-bound:
+    # env 桶为秒级 documented skip，维持周三/周日周检节奏（§SPEC-110：仅 long/drift 迁每日）。
+    if: ${{ (github.event_name == 'schedule' && (github.event.schedule == '7 3 * * 0' || github.event.schedule == '13 3 * * 3')) || (github.event_name == 'workflow_dispatch' && (inputs.bucket == 'all' || inputs.bucket == 'env')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: e2e MCP client deps install (proves the tree is intact)
+        run: npm ci --no-audit --no-fund
+        working-directory: launch/tests/e2e/godot-mcp
+      - name: Environment-bound suites are dev-box only (documented skip)
+        # These require a live Windows Godot editor (WSL2 gateway binding),
+        # KOL_ROOT consumer checkout, or /mnt/d fork paths — unreachable from
+        # a GitHub runner. Recorded as an explicit skip so the tree's
+        # non-CI-executable surface stays visible in the Actions log.
+        run: |
+          echo "[special:env] SKIPPED on runner — require WSL2 dev box:"
+          echo "  launch/tests/e2e/godot-mcp/run_all.mjs        (31 KOL game e2e, live Windows editor)"
+          echo "  launch/tests/e2e/see1240/, see1240_qa/        (real-machine clients, KOL_ROOT)"
+          echo "  launch/tests/e2e/godot-mcp/test_see1070_ws_single_client_4001.mjs (live editor; outside run_all's tests/ scan)"
+          echo "  launch/test_see1273_t2_param.sh               (runs green headless — see long bucket note)"
+          # SEE-1344 归置（Atlas 终裁 env 桶 13 项 documented-skip）：
+          echo "  launch/tests/scripts/test_see1117_live_e2e_editor_port.sh   (live editor)"
+          echo "  launch/tests/scripts/test_see1117_live_sidecar_e2e.sh       (real Godot editor + .godot/mcp-lease.json)"
+          echo "  launch/tests/scripts/test_see1117_suite_f_prime_6agents.sh  (6-agent live sidecar)"
+          echo "  launch/tests/scripts/test_see1117_cold_reuse_cli_gate.sh    (green but live-family semantics)"
+          echo "  launch/tests/scripts/test_see990_live_gate_6port_sweep.sh   (vacuous on runner: SKIP=6 without live editors)"
+          echo "  launch/tests/scripts/test_see1009_multi_port_addon_version.sh (multi-port live editor handshake)"
+          echo "  launch/tests/scripts/test_see1009_mcp_tool_visibility_e2e.sh  (real npx + live display editor)"
+          echo "  launch/tests/scripts/test_see1152_mcp_daily_call_stability.sh (live registry/log oracle, Revy runtime)"
+          echo "  launch/tests/scripts/test_see986_autopilot_descriptions.sh    (Multica API credentials)"
+          echo "  launch/tests/scripts/test_see1170_channel1.sh / _fix_round2.sh   (KOL_ROOT hook)"
+          echo "  launch/tests/scripts/test_see1170_channel2.py / _fix_round.py    (KOL_ROOT hook, python — .py branch fixed in drift loop)"
+
+  drift-watch:
+    # 目标2：drift（10-20min 档）与 long 同迁每日 cron（§SPEC-110）。
+    if: ${{ (github.event_name == 'schedule' && github.event.schedule == '23 2 * * *') || (github.event_name == 'workflow_dispatch' && (inputs.bucket == 'all' || inputs.bucket == 'drift')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Restore previous round's RED set
+        # restore-keys 回退到最近一份 drift-red-* 缓存（= 上一轮集合）；key 精确
+        # 匹配恒 miss 属预期，防止本轮与上轮文件混淆。
+        id: prev-red
+        uses: actions/cache/restore@v4
+        with:
+          path: drift-red-store
+          key: drift-red-${{ github.run_id }}
+          restore-keys: |
+            drift-red-
+      - name: Report RED-set cache restore status
+        # FR3 LOW-2：restore 命中状态显式入日志 + 供下游脚本复述（cache miss 首日
+        # 报告失真须一眼可辨）。matched key 为空 = 本缓存窗口内首跑。
+        run: |
+          echo "prev RED cache matched-key: '${{ steps.prev-red.outputs.cache-matched-key }}'"
+          if [ -z "${{ steps.prev-red.outputs.cache-matched-key }}" ]; then
+            echo "[drift] cache-miss — first run this window, prev set treated as empty"
+          fi
+      - name: Build server CLI
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      - name: Drift-red suites (evidence runs, non-blocking)
+        # SEE-1334 P2 note: this drift inventory stays a raw runner loop on
+        # purpose — drift entries are evidence runs (continue-on-error), not
+        # vitest-managed tests. Graduation into fast = moving the entry into
+        # launch/vitest.config.ts's FAST list.
+        # SEE-1342 §SPEC-110 目标4：逐项结果追加写入 red-<run_id>.txt（RED 项），
+        # 供尾部 summary 步骤做跨轮 RED 集合对比（artifact + cache 承载上轮）。
+        run: |
+          set -uo pipefail
+          RED_LOG="drift-red-${{ github.run_id }}.txt"
+          : > "$RED_LOG"
+          # SEE-1344 ⑫: 冻结 2 件（see1111_gitignore_prepare_worktree /
+          # linked_worktree_fixes）经 Owner 2026-09-24 23:04 指令删除（语义过时），
+          # SKIP lane 一并移除；残留 drift 清单 = 2 件维持绿项。
+          # SEE-1344 ⑫/⑫+（Owner 2026-09-24 23:04/23:28 指令）：drift 桶清空——
+          # 2 件偶发红事件驱动加固后毕业 FAST，e5_concurrent 迁 long（真实时钟
+          # 并发窗），t1_tree_consistency 删除（retired archive 语义）。
+          # 清单保留为空骨架：未来新漂移回归仍走本 job 逐项 evidence run。
+          for t in \
+            # (intentionally empty — SEE-1344 drift cleared) \
+          ; do
+            [ -f "$t" ] || { echo "[special:drift] MISSING $t"; continue; }
+            echo "::group::$t"
+            case "$t" in
+              *.py)  timeout 180 python3 "$t" </dev/null && echo "[special:drift] PASS (drift fixed → graduate)" \
+                     || { echo "::warning::[special:drift] RED $t"; echo "$t" >> "$RED_LOG"; } ;;
+              *.mjs) timeout 180 node "$t" </dev/null && echo "[special:drift] PASS (drift fixed → graduate)" \
+                     || { echo "::warning::[special:drift] RED $t"; echo "$t" >> "$RED_LOG"; } ;;
+              *.sh)  timeout 180 bash "$t" </dev/null && echo "[special:drift] PASS (drift fixed → graduate)" \
+                     || { echo "::warning::[special:drift] RED $t"; echo "$t" >> "$RED_LOG"; } ;;
+            esac
+            echo "::endgroup::"
+          done
+          exit 0
+      - name: Archive RED set (artifact + cache for next round's diff)
+        # artifact 留档可追溯；cache 用 restore-keys 恢复「最近一轮」给下轮对比
+        # （首跑无上轮 → 视为空集，全按新增处理）。
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-red-set-${{ github.run_id }}
+          path: drift-red-${{ github.run_id }}.txt
+          retention-days: 30
+      - name: RED → Multica issue report (auto-create channel, dry-run by default)
+        # §SPEC-110 目标4：对比本轮与上轮 RED 集合，新增/持续 RED 走建单候选
+        # （去重 + 单次 ≤5）；默认 dry-run 只写 step summary，不真建。
+        if: always()
+        env:
+          DRIFT_STORE: drift-red-store
+          PREV_CACHE_KEY: ${{ steps.prev-red.outputs.cache-matched-key }}
+        run: |
+          mkdir -p "$DRIFT_STORE"
+          node .github/scripts/drift-issue-report.mjs \
+            "drift-red-${{ github.run_id }}.txt" "$DRIFT_STORE" "${{ github.run_id }}"
+          cp "drift-red-${{ github.run_id }}.txt" "$DRIFT_STORE/red-${{ github.run_id }}.txt"
+      - name: Save RED set to cross-run cache
+        # actions/cache 在 job 结束的 post 阶段落盘；下轮 restore-keys 'drift-red-'
+        # 命中最近一轮。key 带 run_id 保证永远 miss、走 restore 恢复旧集合。
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: drift-red-store
+          key: drift-red-${{ github.run_id }}
+
+  # SEE-1334 Phase 2 / SPEC-023 — fast-tier speed audit (nightly, non-blocking).
+  # Runs the fast+long vitest suite and flags: any entry >60s (downgrade
+  # review candidate → long tier) or total >8min (80% of the fast job budget).
+  # Findings are advisory; the downgrade DECISION is recorded on the issue.
+  speed-audit:
+    # SEE-1342 §SPEC-110 目标3（Owner 2026-09-24：speed-audit 改每周两次）：
+    # 显式归位周三/周日两条 cron，每日 cron 不跑。
+    if: ${{ (github.event_name == 'schedule' && (github.event.schedule == '7 3 * * 0' || github.event.schedule == '13 3 * * 3')) || (github.event_name == 'workflow_dispatch' && inputs.bucket == 'all') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Build server CLI
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      - name: Cache Godot binary
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/godot
+          key: godot-${{ runner.os }}-4.6.2-stable
+      - name: Install Godot 4.x (cache miss path)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          GODOT_VERSION=4.6.2
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          sudo mv "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+      - name: Install root dev tooling
+        run: npm ci --no-audit --no-fund
+      # The audited suites include fork-CLI-path harnesses → the server CLI
+      # must be built first (first nightly run failed exactly here: rc=1 with
+      # vitest output swallowed — see speed-audit.sh log-tail fix).
+      - name: Build server CLI (fork-CLI path)
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      - name: Fast-tier speed audit (per-entry >60s / job >8min flags)
+        run: bash launch/tests/runner/speed-audit.sh
+
+  # SEE-1334 Phase 3 (SPEC-030/031) — gherkin 任务 spec 可执行条款, nightly
+  # evidence run (plan §7: 任务验收必跑 + nightly 证据；暂不入 PR CI).
+  # Strict cucumber: any failing/pending scenario blocks the job — the
+  # suite is protocol-level mocked and should be seconds-fast and stable.
+  gherkin-evidence:
+    if: ${{ (github.event_name == 'schedule' && (github.event.schedule == '7 3 * * 0' || github.event.schedule == '13 3 * * 3')) || (github.event_name == 'workflow_dispatch' && (inputs.bucket == 'all' || inputs.bucket == 'gherkin')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Complete root devDeps
+        run: npm install --no-audit --no-fund --package-lock-only
+      - run: npm ci --no-audit --no-fund
+        working-directory: server
+      - name: Gherkin task-spec scenarios (strict)
+        run: npx cucumber-js --strict
+        working-directory: server
+
+  # SEE-1334 Phase 4 (SPEC-041) — FULL-REPO mutation evidence run, twice-weekly
+  # (Wed+Sun) NON-BLOCKING (health snapshot: kill rate is reported, never gated;
+  # the strict gate is the whitelist in stryker.config.json). Estimated 2.5-3h
+  # on a 4-core runner (16.7k mutants measured on run 1) — hence 240min
+  # timeout and the cadence shared with speed-audit.
+  mutation-evidence:
+    if: ${{ (github.event_name == 'schedule' && (github.event.schedule == '7 3 * * 0' || github.event.schedule == '13 3 * * 3')) || (github.event_name == 'workflow_dispatch' && inputs.bucket == 'all') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Full-repo mutation evidence (kill-rate report, non-blocking)
+        run: npm run mutation-all
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-nightly-report
+          path: reports/mutation/
+          retention-days: 14
+
+  # SEE-1342 §SPEC-110 目标1 — coverage-launch 从 launch-ci.yml 撤下 PR/push
+  # 触发，并入本文件周三/周日 schedule（>20min 预算档）。job 本体与 c8 阈值
+  # 判定逻辑（wrapper 注入 NODE_V8_COVERAGE → c8 合并 → exit code）逐字平移，
+  # 仅执行时机变化。continue-on-error 与 special 层其余 evidence job 一致。
+  coverage-launch:
+    if: ${{ (github.event_name == 'schedule' && (github.event.schedule == '7 3 * * 0' || github.event.schedule == '13 3 * * 3')) || (github.event_name == 'workflow_dispatch' && (inputs.bucket == 'all' || inputs.bucket == 'coverage')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Build server CLI (harness fork-CLI path)
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: server
+      - name: Cache Godot binary
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/godot
+          key: godot-${{ runner.os }}-4.6.2-stable
+      - name: Install Godot 4.x (cache miss path)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          GODOT_VERSION=4.6.2
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          sudo mv "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+          godot --version
+      - name: Install root dev tooling (vitest + c8)
+        run: npm ci --no-audit --no-fund
+      - name: Run launch coverage gate (wrapper injection → c8 merge → thresholds)
+        timeout-minutes: 18
+        run: npm run coverage:launch

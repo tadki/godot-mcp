@@ -1,0 +1,629 @@
+// @ts-nocheck
+import WebSocket from 'ws';
+import { EventEmitter } from 'events';
+import { ResponseSchema, createRequest, isSuccessResponse, isErrorResponse } from './protocol.js';
+import {
+  GodotConnectionError,
+  GodotConnectionClosedError,
+  GodotCommandError,
+  GodotTimeoutError,
+} from '../utils/errors.js';
+import { getServerVersion } from '../version.js';
+import { logger } from '../utils/logger.js';
+import { getTargetHost, getConnectionStrategy } from '../utils/connection-strategy.js';
+import { QUICK_TIMEOUT_MS } from './timeouts.js';
+
+const DEFAULT_PORT = 6550;
+const DEFAULT_HOST = 'localhost';
+const HANDSHAKE_TIMEOUT_MS = 5000;
+const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000];
+const PING_INTERVAL_MS = 30000;
+const PONG_TIMEOUT_MS = 10000;
+
+const CLOSE_CODE_ALREADY_CONNECTED = 4001;
+const CLOSE_CODE_STALE = 4002;
+const CLOSE_CODE_REPLACED = 4003;
+
+export type DisconnectReason =
+  | 'never_connected'
+  | 'rejected_another_client'
+  | 'replaced_by_new_client'
+  | 'connection_refused'
+  | 'connection_lost'
+  | 'closed_normally'
+  | 'error';
+
+export interface ConnectionDiagnostics {
+  currentState: 'connected' | 'disconnected' | 'connecting' | 'reconnecting';
+  lastDisconnectReason: DisconnectReason;
+  rejectionCount: number;
+  reconnectAttempts: number;
+  lastErrorMessage: string | null;
+  url: string;
+  environment: 'wsl' | 'native';
+}
+
+// Typed codes carried by GodotConnectionClosedError when the bridge closes
+// with commands still in flight (SEE-1326 M5 onclose-reject-all).
+export type ConnectionCloseCode =
+  | 'CLOSED_BY_CLIENT'
+  | 'CONNECTION_LOST'
+  | 'REPLACED_BY_NEW_CLIENT'
+  | 'REJECTED_ANOTHER_CLIENT'
+  | 'STALE_CLOSED_BY_SERVER'
+  | 'CONNECTION_REFUSED'
+  | 'CLOSE_UNKNOWN';
+
+export type HandshakeStatus = 'pending' | 'success' | 'failed' | 'timeout';
+
+export interface HandshakeResult {
+  addonVersion: string;
+  godotVersion: string;
+  projectPath: string;
+  projectName: string;
+  handshakeStatus: HandshakeStatus;
+}
+
+interface PendingRequest {
+  resolve: (result: unknown) => void;
+  reject: (error: Error) => void;
+  timeoutId: NodeJS.Timeout;
+}
+
+export interface GodotConnectionOptions {
+  host?: string;
+  port?: number;
+  autoReconnect?: boolean;
+}
+
+export class GodotConnection extends EventEmitter {
+  private ws: WebSocket | null = null;
+  private pendingRequests: Map<string, PendingRequest> = new Map();
+  private reconnectAttempt = 0;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private pingInterval: NodeJS.Timeout | null = null;
+  private pongTimeout: NodeJS.Timeout | null = null;
+  private isClosing = false;
+  private heartbeatPending = false;
+  private handshakeResult: HandshakeResult | null = null;
+  private pendingCloseCode: ConnectionCloseCode | null = null;
+
+  private lastDisconnectReason: DisconnectReason = 'never_connected';
+  private rejectionCount = 0;
+  private lastErrorMessage: string | null = null;
+  private currentState: 'connected' | 'disconnected' | 'connecting' | 'reconnecting' = 'disconnected';
+
+  private readonly host: string;
+  private readonly _port: number;
+  private readonly autoReconnect: boolean;
+
+  constructor(options: GodotConnectionOptions = {}) {
+    super();
+    this.host = options.host ?? DEFAULT_HOST;
+    this._port = options.port ?? DEFAULT_PORT;
+    this.autoReconnect = options.autoReconnect ?? true;
+  }
+
+  get isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  get url(): string {
+    return `ws://${this.host}:${this._port}`;
+  }
+
+  get port(): number {
+    return this._port;
+  }
+
+  get addonVersion(): string | null {
+    return this.handshakeResult?.addonVersion ?? null;
+  }
+
+  get projectPath(): string | null {
+    return this.handshakeResult?.projectPath ?? null;
+  }
+
+  get projectName(): string | null {
+    return this.handshakeResult?.projectName ?? null;
+  }
+
+  get godotVersion(): string | null {
+    return this.handshakeResult?.godotVersion ?? null;
+  }
+
+  get serverVersion(): string {
+    return getServerVersion();
+  }
+
+  get versionsMatch(): boolean {
+    if (!this.handshakeResult) return false;
+    return this.handshakeResult.addonVersion === this.serverVersion;
+  }
+
+  getDiagnostics(): ConnectionDiagnostics {
+    const strategy = getConnectionStrategy(this._port);
+    return {
+      currentState: this.currentState,
+      lastDisconnectReason: this.lastDisconnectReason,
+      rejectionCount: this.rejectionCount,
+      reconnectAttempts: this.reconnectAttempt,
+      lastErrorMessage: this.lastErrorMessage,
+      url: this.url,
+      environment: strategy.environment,
+    };
+  }
+
+  getDiagnosticMessage(): string {
+    const diag = this.getDiagnostics();
+    const lines: string[] = [];
+
+    switch (diag.lastDisconnectReason) {
+      case 'rejected_another_client':
+        lines.push('Status: Another client is already connected to Godot');
+        if (diag.rejectionCount > 1) {
+          lines.push(`Details: ${diag.rejectionCount} connection attempts rejected`);
+        }
+        lines.push('Suggestion: Only one client can drive the Godot bridge at a time.');
+        lines.push('  This client keeps retrying and will connect once the other disconnects.');
+        lines.push('  If you did not expect another client, check for duplicate godot-mcp processes:');
+        lines.push('    macOS/Linux: ps aux | grep godot-mcp');
+        lines.push('    Windows: Get-Process -Name node | ? CommandLine -Like "*godot-mcp*"');
+        break;
+
+      case 'replaced_by_new_client':
+        lines.push('Status: Another client took over the Godot bridge');
+        lines.push('Suggestion: Reconnecting automatically; this recovers once the other client disconnects.');
+        break;
+
+      case 'connection_refused':
+        lines.push(`Status: Cannot reach Godot at ${diag.url}`);
+        lines.push('Suggestion: Ensure Godot is running with the MCP addon enabled.');
+        if (diag.environment === 'wsl') {
+          lines.push('  Running in WSL: 127.0.0.1 does not cross to the Windows host.');
+          lines.push('  In the Godot MCP panel set Bind mode: WSL (not Localhost), or set GODOT_HOST.');
+        }
+        break;
+
+      case 'connection_lost':
+        lines.push('Status: Connection to Godot was lost');
+        if (diag.reconnectAttempts > 0) {
+          lines.push(`Details: ${diag.reconnectAttempts} reconnection attempts made`);
+        }
+        lines.push('Suggestion: Check if Godot is still running.');
+        break;
+
+      case 'never_connected':
+        lines.push(`Status: Never successfully connected to Godot at ${diag.url}`);
+        lines.push('Suggestion: Ensure Godot is running with the MCP addon enabled.');
+        if (diag.environment === 'wsl') {
+          lines.push('  Running in WSL: 127.0.0.1 does not cross to the Windows host.');
+          lines.push('  In the Godot MCP panel set Bind mode: WSL (not Localhost), or set GODOT_HOST.');
+        }
+        break;
+
+      case 'error':
+        lines.push('Status: Connection error');
+        if (diag.lastErrorMessage) {
+          lines.push(`Details: ${diag.lastErrorMessage}`);
+        }
+        break;
+
+      default:
+        lines.push(`Status: Disconnected (${diag.lastDisconnectReason})`);
+    }
+
+    return lines.join('\n');
+  }
+
+  async connect(): Promise<void> {
+    if (this.isConnected) {
+      return;
+    }
+
+    return new Promise((resolve, reject) => {
+      this.isClosing = false;
+      this.currentState = this.reconnectAttempt > 0 ? 'reconnecting' : 'connecting';
+      this.ws = new WebSocket(this.url);
+
+      this.ws.on('open', async () => {
+        this.reconnectAttempt = 0;
+        this.startPingInterval();
+
+        try {
+          await this.performHandshake();
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.error('Handshake failed (addon may be outdated)', { error: errorMessage });
+          this.emit('handshake_failed', { error: errorMessage });
+        }
+
+        // Connection is valid regardless of handshake outcome - handshake provides
+        // version metadata but isn't required for operation (backwards compatibility)
+        this.currentState = 'connected';
+
+        this.emit('connected');
+        resolve();
+      });
+
+      this.ws.on('message', (data) => {
+        this.handleMessage(data.toString());
+      });
+
+      this.ws.on('pong', () => {
+        this.clearPongTimeout();
+      });
+
+      this.ws.on('close', (code, reason) => {
+        const wasConnected = this.currentState === 'connected';
+        this.currentState = 'disconnected';
+
+        if (code === CLOSE_CODE_ALREADY_CONNECTED) {
+          this.lastDisconnectReason = 'rejected_another_client';
+          this.pendingCloseCode = 'REJECTED_ANOTHER_CLIENT';
+          this.rejectionCount++;
+          // Back off in proportion to how many times we've been rejected so a
+          // lingering second client doesn't busy-loop reconnecting every second
+          // (each brief 'open' resets reconnectAttempt before this close fires).
+          this.reconnectAttempt = Math.min(this.rejectionCount - 1, RECONNECT_DELAYS.length - 1);
+          const reasonStr = reason?.toString() || 'Another client is already connected';
+          logger.warningRateLimited(
+            'rejected-another-client',
+            'Another client holds the Godot bridge; will keep retrying',
+            {
+              reason: reasonStr,
+              rejectionCount: this.rejectionCount,
+            }
+          );
+        } else if (code === CLOSE_CODE_REPLACED) {
+          // A newer client took over the bridge. Don't latch this connection
+          // dead - keep reconnecting so it recovers automatically once the
+          // other client disconnects (or is itself replaced).
+          this.lastDisconnectReason = 'replaced_by_new_client';
+          this.pendingCloseCode = 'REPLACED_BY_NEW_CLIENT';
+          const reasonStr = reason?.toString() || 'Replaced by new client';
+          logger.warningRateLimited(
+            'replaced-by-new-client',
+            'Connection was replaced by another client; will attempt to reconnect',
+            {
+              reason: reasonStr,
+              suggestion: 'This client reconnects when the Godot bridge is free again.',
+            }
+          );
+        } else if (code === CLOSE_CODE_STALE) {
+          this.lastDisconnectReason = 'connection_lost';
+          this.pendingCloseCode = 'STALE_CLOSED_BY_SERVER';
+          const reasonStr = reason?.toString() || 'Connection timed out (no activity)';
+          logger.warning('Godot closed stale connection, will reconnect', {
+            reason: reasonStr,
+          });
+        } else if (wasConnected) {
+          this.lastDisconnectReason = 'connection_lost';
+          this.pendingCloseCode = 'CONNECTION_LOST';
+        } else if (this.lastDisconnectReason === 'never_connected') {
+          this.lastDisconnectReason = 'connection_refused';
+          this.pendingCloseCode = 'CONNECTION_REFUSED';
+        }
+
+        this.cleanup();
+        this.emit('disconnected');
+        if (this.autoReconnect && !this.isClosing) {
+          this.scheduleReconnect();
+        }
+      });
+
+      this.ws.on('error', (error) => {
+        this.lastErrorMessage = error.message;
+        if (error.message.includes('ECONNREFUSED')) {
+          this.lastDisconnectReason = 'connection_refused';
+        } else {
+          this.lastDisconnectReason = 'error';
+        }
+        this.emit('error', error);
+        if (!this.isConnected) {
+          reject(new GodotConnectionError(`Failed to connect: ${error.message}`));
+        }
+      });
+    });
+  }
+
+  disconnect(): void {
+    this.isClosing = true;
+    this.lastDisconnectReason = 'closed_normally';
+    this.pendingCloseCode = 'CLOSED_BY_CLIENT';
+    this.currentState = 'disconnected';
+    this.cleanup();
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
+  // Long-running commands (game_time step, input sequence) pass an explicit
+  // opts.timeoutMs derived from their in-game budget (see timeouts.ts); every
+  // other command falls back to the quick default.
+  async sendCommand<T = unknown>(
+    command: string,
+    params: Record<string, unknown> = {},
+    opts: { timeoutMs?: number } = {}
+  ): Promise<T> {
+    if (!this.isConnected) {
+      const diagnosticMessage = this.getDiagnosticMessage();
+      throw new GodotConnectionError(`Not connected to Godot\n${diagnosticMessage}`);
+    }
+
+    const request = createRequest(command, params);
+    const timeoutMs = opts.timeoutMs ?? QUICK_TIMEOUT_MS;
+
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        this.pendingRequests.delete(request.id);
+        reject(new GodotTimeoutError(command, timeoutMs));
+      }, timeoutMs);
+
+      this.pendingRequests.set(request.id, {
+        resolve: resolve as (result: unknown) => void,
+        reject,
+        timeoutId,
+      });
+
+      this.ws!.send(JSON.stringify(request));
+    });
+  }
+
+  private async performHandshake(): Promise<void> {
+    const request = createRequest('mcp_handshake', {
+      server_version: this.serverVersion,
+    });
+
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        this.pendingRequests.delete(request.id);
+        this.handshakeResult = {
+          addonVersion: 'unknown',
+          godotVersion: 'unknown',
+          projectPath: '',
+          projectName: '',
+          handshakeStatus: 'timeout',
+        };
+        reject(new GodotTimeoutError('mcp_handshake', HANDSHAKE_TIMEOUT_MS));
+      }, HANDSHAKE_TIMEOUT_MS);
+
+      this.pendingRequests.set(request.id, {
+        resolve: (result: unknown) => {
+          const data = result as {
+            addon_version?: string;
+            godot_version?: string;
+            project_path?: string;
+            project_name?: string;
+          };
+
+          this.handshakeResult = {
+            addonVersion: data.addon_version ?? 'unknown',
+            godotVersion: data.godot_version ?? 'unknown',
+            projectPath: data.project_path ?? '',
+            projectName: data.project_name ?? '',
+            handshakeStatus: 'success',
+          };
+
+          if (!this.versionsMatch) {
+            this.emit('version_mismatch', {
+              serverVersion: this.serverVersion,
+              addonVersion: this.handshakeResult.addonVersion,
+              projectPath: this.handshakeResult.projectPath,
+            });
+          }
+
+          resolve();
+        },
+        reject,
+        timeoutId,
+      });
+
+      this.ws!.send(JSON.stringify(request));
+    });
+  }
+
+  private handleMessage(data: string): void {
+    let parsed: unknown;
+    let responseId: string | undefined;
+
+    try {
+      parsed = JSON.parse(data);
+      if (typeof parsed === 'object' && parsed !== null && 'id' in parsed) {
+        responseId = String((parsed as Record<string, unknown>).id);
+      }
+    } catch {
+      this.emit('error', new Error(`Invalid JSON from Godot: ${data}`));
+      return;
+    }
+
+    const validationResult = ResponseSchema.safeParse(parsed);
+    if (!validationResult.success) {
+      const pending = responseId ? this.pendingRequests.get(responseId) : undefined;
+      if (pending) {
+        this.pendingRequests.delete(responseId!);
+        clearTimeout(pending.timeoutId);
+        pending.reject(new GodotConnectionError(`Malformed response: ${validationResult.error.message}`));
+      } else {
+        this.emit('error', new Error(`Invalid response (no matching request): ${data}`));
+      }
+      return;
+    }
+
+    const response = validationResult.data;
+    const pending = this.pendingRequests.get(response.id);
+    if (!pending) {
+      return;
+    }
+
+    this.pendingRequests.delete(response.id);
+    clearTimeout(pending.timeoutId);
+
+    if (isSuccessResponse(response)) {
+      pending.resolve(response.result);
+    } else if (isErrorResponse(response)) {
+      pending.reject(new GodotCommandError(response.error.code, response.error.message, response.error.detail));
+    }
+  }
+
+  private startPingInterval(): void {
+    this.stopPingInterval();
+    this.pingInterval = setInterval(() => {
+      if (this.isConnected) {
+        this.ws!.ping();
+        this.pongTimeout = setTimeout(() => {
+          this.emit('error', new Error('Pong timeout - connection may be dead'));
+          this.ws?.terminate();
+        }, PONG_TIMEOUT_MS);
+
+        // Send application-level heartbeat so Godot can track activity
+        // and detect stale connections from its side too
+        if (!this.heartbeatPending) {
+          this.heartbeatPending = true;
+          this.sendCommand('heartbeat').catch(() => {
+            // Heartbeat failures are expected during disconnect - ignore
+          }).finally(() => {
+            this.heartbeatPending = false;
+          });
+        }
+      }
+    }, PING_INTERVAL_MS);
+  }
+
+  private stopPingInterval(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+    this.clearPongTimeout();
+  }
+
+  private clearPongTimeout(): void {
+    if (this.pongTimeout) {
+      clearTimeout(this.pongTimeout);
+      this.pongTimeout = null;
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimeout) {
+      return;
+    }
+
+    const delay = RECONNECT_DELAYS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS.length - 1)];
+    this.reconnectAttempt++;
+
+    this.emit('reconnecting', { attempt: this.reconnectAttempt, delay });
+
+    this.reconnectTimeout = setTimeout(async () => {
+      this.reconnectTimeout = null;
+      try {
+        await this.connect();
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.warningRateLimited('reconnect-fail', 'Reconnection attempt failed', {
+          attempt: this.reconnectAttempt,
+          error: errorMessage,
+        });
+      }
+    }, delay);
+  }
+
+  private cleanup(): void {
+    this.stopPingInterval();
+    this.handshakeResult = null;
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    // Typed close rejection: callers branch on the code instead of matching
+    // message strings (SEE-1326 M5 onclose-reject-all).
+    const closeCode = this.pendingCloseCode ?? 'CLOSE_UNKNOWN';
+    this.pendingCloseCode = null;
+
+    for (const pending of this.pendingRequests.values()) {
+      clearTimeout(pending.timeoutId);
+      pending.reject(new GodotConnectionClosedError(closeCode, 'Connection closed'));
+    }
+    this.pendingRequests.clear();
+  }
+}
+
+let globalConnection: GodotConnection | null = null;
+
+function parsePortEnv(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const port = parseInt(value, 10);
+  if (Number.isNaN(port) || port < 1 || port > 65535) {
+    logger.warning('Invalid GODOT_PORT, using default', { value, default: DEFAULT_PORT });
+    return undefined;
+  }
+  return port;
+}
+
+export function getGodotConnection(): GodotConnection {
+  if (!globalConnection) {
+    const host = getTargetHost();
+    const port = parsePortEnv(process.env.GODOT_PORT);
+    globalConnection = new GodotConnection({
+      host,
+      port,
+    });
+  }
+  return globalConnection;
+}
+
+export async function initializeConnection(): Promise<void> {
+  const connection = getGodotConnection();
+  const strategy = getConnectionStrategy(connection.port);
+
+  // Log connection strategy at startup
+  logger.info('Godot connection strategy', {
+    environment: strategy.environment,
+    targetHost: strategy.targetHost,
+    wsUrl: strategy.wsUrl,
+  });
+
+  connection.on('connected', () => {
+    logger.info('Connected to Godot');
+  });
+
+  connection.on('disconnected', () => {
+    logger.warning('Disconnected from Godot');
+  });
+
+  connection.on('reconnecting', ({ attempt, delay }) => {
+    logger.warningRateLimited('reconnect', 'Reconnecting to Godot', { attempt, delayMs: delay });
+  });
+
+  connection.on('error', (error) => {
+    logger.error('Connection error', { error: error.message });
+  });
+
+  connection.on('version_mismatch', ({ serverVersion, addonVersion, projectPath }) => {
+    console.error(`[godot-mcp] Version mismatch: server=${serverVersion}, addon=${addonVersion}`);
+    console.error(`[godot-mcp] Update addon with: npx @satelliteoflove/godot-mcp --install-addon "${projectPath}"`);
+    logger.notice('Version mismatch detected', {
+      serverVersion,
+      addonVersion,
+      suggestion: 'Run: npx @satelliteoflove/godot-mcp --install-addon <project-path>',
+    });
+  });
+
+  connection.on('handshake_failed', ({ error }) => {
+    logger.error('Handshake failed', {
+      error,
+      advisory: 'The addon may be outdated or incompatible. Connection will continue but some features may not work.',
+    });
+  });
+
+  try {
+    await connection.connect();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.warning('Initial connection failed, will retry', { error: errorMessage });
+  }
+}

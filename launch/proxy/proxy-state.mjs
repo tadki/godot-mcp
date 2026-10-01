@@ -230,9 +230,14 @@ export function readProxyStateSnapshot(runtimeId = RUNTIME_ID) {
 // get_info echo payload (§SPEC-L2-03): snapshot present → the stored triple;
 // absent → workdir_hash null + hash_source 'snapshot_absent' (null = unknown,
 // never "no hash").
+// LOW1 (Final Review): "present" is the explicit snapshot-schema contract —
+// workdir_hash and worktree are both ALWAYS written by persistProxyState, so
+// both keys being defined is the presence test. A doc missing either key is
+// not a workdir snapshot in any producible form; reading triple fields off it
+// would echo fabricated nulls as if they were snapshot evidence.
 export function workdirEchoForGetInfo(runtimeId = RUNTIME_ID) {
     const snap = readProxyStateSnapshot(runtimeId);
-    if (snap && (snap.workdir_hash !== undefined || snap.worktree)) {
+    if (snap && snap.workdir_hash !== undefined && snap.worktree !== undefined) {
         return {
             runtime_id: snap.runtime_id ?? null,
             worktree: snap.worktree ?? null,

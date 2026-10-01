@@ -23,11 +23,11 @@ describe('discriminated-union tool schemas', () => {
 
   it('keep fields required by every branch as top-level required', () => {
     const schema = schemaOf(nodeEdit);
-    // SEE-1356 L4 (§SPEC-L4-03): add_node / attach_script joined the union
-    // (connect_signal is shelved, SEE-1356 终裁), so no field beyond `action`
-    // is common to every branch anymore — node_path dropped out of the
-    // top-level required set and each write branch's required fields surface
-    // as optionals with scope markers.
+    // SEE-1356 L4 (§SPEC-L4-03): add_node / attach_script / connect_signal
+    // (re-enabled, Owner 2026-10-01 终局指示) all joined the union, so no
+    // field beyond `action` is common to every branch anymore — node_path
+    // dropped out of the top-level required set and each write branch's
+    // required fields surface as optionals with scope markers.
     expect(schema.required).toEqual(['action']);
     const props = schema.properties as JsonSchema;
     expect(props).toHaveProperty('new_parent_path');
@@ -35,8 +35,8 @@ describe('discriminated-union tool schemas', () => {
     expect(props).toHaveProperty('parent_path');
     expect(props).toHaveProperty('node_type');
     expect(props).toHaveProperty('script_path');
-    expect(props).not.toHaveProperty('signal'); // connect_signal shelved
-    expect(props).not.toHaveProperty('method');
+    expect(props).toHaveProperty('signal'); // connect_signal re-enabled
+    expect(props).toHaveProperty('method');
     expect((props.new_parent_path as JsonSchema).description).toContain('(required for: reparent)');
   });
 
