@@ -256,7 +256,18 @@ section('cold flow through shim interception → proactive proxy cache closure')
         || (r.errLines || []).some((l) => l.includes('tools cache refresh'));
     ok('proactive refresh observable in proxy/shim diagnostics', proxyLogTouched || fs.existsSync(cacheFile));
 
-    fs.rmSync(home, { recursive: true, force: true });
+    // SEE-1363 §SPEC-012 (#3): teardown race — SIGKILLed shim/proxy/chain
+    // children can still hold open fds inside `home` when the main flow
+    // returns; an immediate rmSync raced them and crashed (ENOTEMPTY) AFTER
+    // all assertions had passed (R2-run3, pre-existing line). The children
+    // have no exit event left to subscribe to (finish SIGKILLs and forgets
+    // the handles), so poll `home` empty with a BOUNDED budget (正例 #4 —
+    // 资源释放谓词轮询，非同步等待手段；仅清理语义，断言不动)，best-effort
+    // delete whatever remains at the budget edge.
+    for (let waited = 0; waited < 5000; waited += 200) {
+        try { fs.rmSync(home, { recursive: true, force: true }); break; } catch { /* children still draining */ }
+        await new Promise((res) => setTimeout(res, 200)); // bounded poll interval (cleanup-completion budget)
+    }
 }
 
 console.log(`\nSUMMARY: PASS=${PASS} FAIL=${FAIL}`);

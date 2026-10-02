@@ -489,39 +489,40 @@ sect "B: gate success path (TCP reachable)"
 # B1: any TCP listener — gate passes immediately and execs mock npx.
 PORT_B1=$(find_free_port)
 start_mock_server healthy "$PORT_B1"
-# SEE-1363 §SPEC-003 (B1 load tolerance): the old absolute <6s bound went red
-# under fast-par load (11s observed at 4-way — scheduling latency, not gate
-# semantics). The asserted semantic is unchanged: TCP-reachable ⇒ the gate
-# passes WITHOUT waiting out any timeout. The bound is anchored to a
-# same-moment REFERENCE run of the identical flow (doubling as a second
-# functional sample), so machine/parallel load inflates anchor and measured
-# run together. Burst load can still double a single adjacent run, so the
-# timing verdict gets ONE retry: a deterministic wait-out-a-timeout
-# regression (launcher timeout class, all ≥15s — a fixed sleep would also be
-# blocked statically by the bash sleep gate) fails both attempts, only a
-# transient spike is absorbed. Floor stays at the original 6s.
+# SEE-1363 §SPEC-003 (B1 load tolerance) + §SPEC-012 (anchor resample): the
+# old absolute <6s bound went red under fast-par load (11s observed at 4-way —
+# scheduling latency, not gate semantics). The asserted semantic is unchanged:
+# TCP-reachable ⇒ the gate passes WITHOUT waiting out any timeout. The bound is
+# anchored to a REFERENCE run of the identical flow (doubling as a functional
+# sample). R2 residual: a single upfront ref sampled at a fast moment left the
+# budget stale when a burst hit the gate across BOTH attempts (4672ms ref →
+# 9344ms budget; gate 11.4s twice). Fix: ref and gate INTERLEAVE so each gate
+# attempt is judged against its immediately-preceding ref (nearest-neighbor
+# anchor — a burst inflates the adjacent ref together with the gate), and the
+# retry re-samples. A deterministic wait-out-a-timeout regression (launcher
+# timeout class, all ≥15s) still inflates only the measured side and fails
+# both interleaved pairs. Floor stays at the original 6s.
+b1_run() {  # $1 = out file, $2 = err file → echoes "<elapsed_ms> <rc>"
+    local _o="$1" _e="$2" _s _rc
+    _s=$EPOCHREALTIME
+    "${WRAP_ENV[@]}" bash "$STUB_WRAPPER" --port "$PORT_B1" >"$_o" 2>"$_e"
+    _rc=$?
+    python3 -c "print(int(($EPOCHREALTIME - $_s) * 1000))"
+    echo "$_rc"
+}
 ref_out="$TMPDIR/B1_ref_out.$$"
-ref_start=$EPOCHREALTIME
-"${WRAP_ENV[@]}" bash "$STUB_WRAPPER" --port "$PORT_B1" >"$ref_out" 2>/dev/null
-ref_rc=$?
-ref_end=$EPOCHREALTIME
-B1_REF_MS=$(python3 -c "print(int(($ref_end - $ref_start) * 1000))")
 out="$TMPDIR/B1_out.$$"; err="$TMPDIR/B1_err.$$"
+# attempt 1: ref → gate (adjacent pair)
+read -r B1_REF_MS ref_rc <<< "$(b1_run "$ref_out" /dev/null)"
 B1_BUDGET_MS=$(( B1_REF_MS * 2 > 6000 ? B1_REF_MS * 2 : 6000 ))
-start_ts=$EPOCHREALTIME
-"${WRAP_ENV[@]}" bash "$STUB_WRAPPER" --port "$PORT_B1" >"$out" 2>"$err"
-rc=$?
-end_ts=$EPOCHREALTIME
-B1_ELAPSED_MS=$(python3 -c "print(int(($end_ts - $start_ts) * 1000))")
+read -r B1_ELAPSED_MS rc <<< "$(b1_run "$out" "$err")"
+# attempt 2 (only on bust): re-sample ref → gate — the budget tracks the
+# CURRENT load window, not the stale fast-moment sample.
 B1_RETRY_MS=""
 if (( B1_ELAPSED_MS >= B1_BUDGET_MS )); then
-    # one flake-absorbing retry; the retry's output re-takes the functional
-    # sample so the assertions below always judge a single coherent run.
-    start_ts=$EPOCHREALTIME
-    "${WRAP_ENV[@]}" bash "$STUB_WRAPPER" --port "$PORT_B1" >"$out" 2>"$err"
-    rc=$?
-    end_ts=$EPOCHREALTIME
-    B1_RETRY_MS=$(python3 -c "print(int(($end_ts - $start_ts) * 1000))")
+    read -r B1_REF_MS ref_rc <<< "$(b1_run "$ref_out" /dev/null)"
+    B1_BUDGET_MS=$(( B1_REF_MS * 2 > 6000 ? B1_REF_MS * 2 : 6000 ))
+    read -r B1_RETRY_MS rc <<< "$(b1_run "$out" "$err")"
     B1_ELAPSED_MS=$B1_RETRY_MS
 fi
 if [[ $rc -eq 0 && -s "$out" && "$(cat "$out")" == *"MOCK_NPX_GODOT_PORT=${PORT_B1}"* ]]; then
