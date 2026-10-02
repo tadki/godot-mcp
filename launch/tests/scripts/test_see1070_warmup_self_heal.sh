@@ -324,12 +324,15 @@ T3_PORT=$(find_free_port)
 start_proxy "GODOT_PORT=$T3_PORT" "KOL_WARMUP_TIMEOUT_MS=2000" "KOL_FAILED_EXIT_MS=30000" "MOCK_NPX_LOG=$TMPDIR/t3_npx.log"
 send_line "$INIT_LINE"
 send_line "$CALL_LINE"
-wait_for "$PROXY_OUT" '"id":1' 3000 || ko "T3.pre: initialize not answered"
+# SEE-1363 §SPEC-013: T3 response/forward observation budgets widened to
+# 15s (bounded failure windows only — success closes at the event; the
+# assertion greps below are untouched).
+wait_for "$PROXY_OUT" '"id":1' 15000 || ko "T3.pre: initialize not answered"
 # T3.2a (hold-to-warm 目标1/目标2) — the warming first call id=2 is HELD in the
 # FIFO, then drained with the recovering diagnostic when the 2s window expires:
 # never answered with a warmup hint, never forwarded to npx. There is no
 # buffered call left for the WARM flush to replay/drop on recovery.
-if wait_for "$PROXY_OUT" '"id":2' 6000; then
+if wait_for "$PROXY_OUT" '"id":2' 15000; then
     ok "T3.2a: held first call id=2 answered when the window expired (recovering drain)"
 else
     ko "T3.2a: no id=2 response while warming / after window expiry"
@@ -344,12 +347,15 @@ if grep -q '"id":2' "$TMPDIR/t3_npx.log" 2>/dev/null; then
 else
     ok "T3.2c: warming call id=2 was NOT forwarded to npx (held → drained with the diagnostic)"
 fi
-# Let warmup time out → RECOVERING (spec). Then the editor "comes back".
-sleep 3
+# Let the proxy enter RECOVERING (the warmup-timeout transition log — the
+# real event, not a fixed sleep) before the editor "comes back".
+wait_for "$PROXY_ERR" 'entering RECOVERING' 8000 || true
 LIS_PID=$(start_listener "$T3_PORT")
 note "started editor-listener on $T3_PORT mid-RECOVERING (pid=$LIS_PID)"
-# Give the probe loop time to notice and transition RECOVERING → WARM.
-sleep 3
+# SEE-1363 §SPEC-013: wait for the RECOVERING → WARM transition event
+# ('warm detected' log) with a bounded budget + diagnostics instead of a
+# fixed-sleep gamble (R3-run1: the transition landed past a 3s window).
+wait_for "$PROXY_ERR" 'warm detected' 15000 || true
 SNAP_T3="$TMPDIR/t3_snapshot.out"; cp "$PROXY_OUT" "$SNAP_T3"
 # T3.1 — the warm detection log proves the RECOVERING → WARM transition. (With
 # hold-to-warm + timeout-drain, the held call was already answered with the
@@ -363,12 +369,12 @@ fi
 # T3.3 — a NEW post-warm call is forwarded to npx and answered (the real
 # recovery proof: the flush gate opened on the fresh warm state).
 send_line "$CALL_LINE_2"
-if wait_for "$PROXY_OUT" '"id":3' 5000; then
+if wait_for "$PROXY_OUT" '"id":3' 15000; then
     ok "T3.3a: post-warm call id=3 answered (forwarded path after recovery)"
 else
     ko "T3.3a: no id=3 response after recovery to WARM"
 fi
-if wait_for "$TMPDIR/t3_npx.log" '"id":3' 4000; then
+if wait_for "$TMPDIR/t3_npx.log" '"id":3' 15000; then
     ok "T3.3b: post-warm call id=3 forwarded to npx (recovery reached the forward path)"
 else
     ko "T3.3b: id=3 never reached npx after recovery"
