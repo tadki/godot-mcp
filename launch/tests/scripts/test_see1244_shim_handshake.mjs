@@ -3,7 +3,8 @@
 //
 // Covers:
 //   - initialize: echoes the client's protocolVersion; serverInfo version is
-//     the shim marker kol-proxy-shim-1.0; responds <1s (AC-2 unit bound)
+//     the shim marker kol-proxy-shim-1.0; answered on the direct path with a
+//     load-anchored latency bound (AC-2; SEE-1363 §SPEC-010)
 //   - tools/list: cache miss → placeholder (source=placeholder in log);
 //     cache hit → cached tools returned verbatim (source=cache)
 //   - ping → empty result object
@@ -110,14 +111,40 @@ section('initialize echo + latency');
     await waitShimStarted(proc);
     const t0 = Date.now();
     send(proc, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {} } });
-    const line = await waitFor(proc, (l) => l.includes('"id":1') && l.includes('serverInfo'));
+    const line = await waitFor(proc, (l) => l.includes('"id":1') && l.includes('serverInfo'), 30000);
     const resp = JSON.parse(line);
     const elapsed = Date.now() - t0;
     ok('protocolVersion echoes client request', resp.result.protocolVersion === '2025-06-18', resp.result.protocolVersion);
     ok('serverInfo.name is godot-mcp', resp.result.serverInfo.name === 'godot-mcp');
     ok('serverInfo.version carries shim marker', resp.result.serverInfo.version === 'kol-proxy-shim-1.0');
     ok('capabilities.tools.listChanged declared', resp.result.capabilities?.tools?.listChanged === true);
-    ok('initialize answered <1s (AC-2 unit bound)', elapsed < 1000, `${elapsed}ms`);
+    // SEE-1363 §SPEC-010 (AC-2 load tolerance): the absolute <1s wall-clock
+    // bound went red under 4-way fast-par load (3381/2262ms observed —
+    // scheduling/pipe latency, not answer semantics). AC-2's semantics is
+    // "the shim answers initialize DIRECTLY (no chain round-trip)". The
+    // anchor is a ping round-trip on the SAME process (ready_gate B1
+    // reference paradigm): it shares machine/pipe load with the initialize
+    // answer but none of answerInitialize's logic, so a degenerate answer
+    // path (chain-proxied, ≥1.3s chain-spawn class) still inflates ONLY the
+    // measured side. Budget = max(1s floor, 4×ping-ref) with ONE
+    // burst-absorbing retry — a real path regression fails both attempts
+    // deterministically; only a transient spike is absorbed.
+    send(proc, { jsonrpc: '2.0', id: 97, method: 'ping' });
+    const p0 = Date.now();
+    await waitFor(proc, (l) => l.includes('"id":97'), 30000);
+    const pingRefMs = Date.now() - p0;
+    const initBudgetMs = Math.max(1000, 4 * pingRefMs);
+    let initFast = elapsed < initBudgetMs;
+    let retryElapsedMs = null;
+    if (!initFast) {
+        send(proc, { jsonrpc: '2.0', id: 98, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {} } });
+        const r0 = Date.now();
+        await waitFor(proc, (l) => l.includes('"id":98') && l.includes('serverInfo'), 30000);
+        retryElapsedMs = Date.now() - r0;
+        initFast = retryElapsedMs < initBudgetMs;
+    }
+    ok('initialize answered fast (AC-2 unit bound, load-anchored)', initFast,
+        `elapsed=${elapsed}ms budget=${initBudgetMs}ms (max(1s, 4×ping-ref ${pingRefMs}ms))${retryElapsedMs !== null ? ` retry=${retryElapsedMs}ms` : ''}`);
     ok('SHIM_ANSWER_INIT logged with elapsed_ms', !!(await waitForErr(proc, (l) => /SHIM_ANSWER_INIT elapsed_ms=\d+ protocol=2025-06-18/.test(l)).catch(() => null)));
 
     // protocolVersion fallback when client omits it
