@@ -33,6 +33,11 @@ SHIM_SRC="${SHIM_SRC:-$HERE/../../../godot-mcp-shim.mjs}"
 [[ -f "$SHIM_SRC" ]] || { echo "FAIL: fork shim missing at $SHIM_SRC (see1273 harness cannot run)"; exit 1; }
 skip_arm() { echo "  SKIP: $* (archive-only)"; }
 TMP="$(mktemp -d)"
+# SEE-1365: event-driven stdin pacing for the shim handshakes below — fixed
+# 12s/8s pacing windows become bounded waits on the step's response landing in
+# the step's log (budget = original window ×2, diagnosis on timeout). Helpers
+# resolved HERE at top (later cwd shifts into $TMP consumers are safe).
+source "$HERE/../../scripts/_wait_helpers.sh"
 # SEE-1342 §SPEC-106: hermetic HOME for the direct-shim session (KOL signature → bare-HOME is HOME_HEALTH_UNSAFE → shim dies before serving)
 SHIM_HOME="$TMP/shim-home"
 mkdir -p "$SHIM_HOME/.multica"
@@ -52,9 +57,10 @@ else
   T4_SHIM="$HERE/../../..//godot-mcp-shim.mjs"
 fi
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-# 竞态窗口语义（CLAUDE.md 边界）：12s/8s 两段 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
-  sleep 12; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
-  printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
+  wait_for_pattern "$TMP/direct.log" '"serverInfo"' 24000 "T4-shape: initialize serverInfo (chain-up window)" || true
+  printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
+  printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'
+  wait_for_pattern "$TMP/direct.log" '"name":"godot_[a-z_]*"' 16000 "T4-shape: tools/list response" || true ) \
   | env HOME="$SHIM_HOME" GODOT_MCP_HOME="$SHIM_HOME/.multica" timeout 30 node "$T4_SHIM" > "$TMP/direct.log" 2>&1
 grep -q '"serverInfo":{"name":"godot-mcp","version":"kol-proxy-shim-1.0"}' "$TMP/direct.log" \
   && ok "T4-shape handshake via repoint path" || bad "T4-shape handshake failed"
@@ -92,14 +98,16 @@ else
 fi
 grep -q 'intentional_release' "$TMP/chain.log" && ok "T4 chain: intentional_release guard fired" || bad "T4 chain: guard missing"
 if grep -q '/mnt/d' "$TMP/chain.log"; then bad "T4 chain: /mnt/d literal leaked"; else ok "T4 chain: zero /mnt/d literals"; fi
-CHAINOUT="$( ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'; sleep 6 ) | timeout 15 node addons/godot_mcp/launch/godot-mcp-shim.mjs 2>&1 | grep -o 'SHIM_SPAWN_CHAIN cmd="bash [^"]*"' | head -1)"
+CHAINOUT="$( ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
+  wait_for_pattern "$TMP/chain.log" 'LAUNCHER_EXEC' 6000 "chain probe: keep stdin open through the chain-up window" || true ) | timeout 15 node addons/godot_mcp/launch/godot-mcp-shim.mjs 2>&1 | grep -o 'SHIM_SPAWN_CHAIN cmd="bash [^"]*"' | head -1)"
 [[ "$CHAINOUT" == *"addons/godot_mcp/launch/godot-mcp-launcher.sh"* ]] \
   && ok "LAUNCHER_PATH sibling resolution: shim spawns ITS OWN directory launcher (00d9c77 pre-fix)" || bad "LAUNCHER_PATH resolution wrong: $CHAINOUT"
 
 # compat shim fallback under T4 shape (old platform path still serves)
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-# 竞态窗口语义（CLAUDE.md 边界）：12s/8s 两段 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
-  sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
+  wait_for_pattern "$TMP/compat.log" '"serverInfo"' 24000 "compat: initialize serverInfo (chain-up window)" || true
+  printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'
+  wait_for_pattern "$TMP/compat.log" '"name":"godot_[a-z_]*"' 16000 "compat: tools/list response" || true ) \
   | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/compat.log" 2>&1
 grep -q '"serverInfo"' "$TMP/compat.log" && ok "compat shim under T4 shape: handshake OK (forward mode)" || bad "compat shim T4-shape handshake failed"
 [[ "$(grep -c 'DEPRECATED' "$TMP/compat.log")" -eq 0 ]] && ok "compat shim T4 shape: 0 DEPRECATED (forward, not legacy)" || bad "compat shim unexpectedly in legacy mode"
@@ -152,8 +160,9 @@ else
   skip_arm "AC-009 revert drill (T4 pin $T4_COMMIT not reproducible in current KOL history)"
 fi
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-# 竞态窗口语义（CLAUDE.md 边界）：12s/8s 两段 = 链路建立窗 + tools/list 应答留窗，窗长=真实 shim 链建立/应答时长，stdin pacing 场景
-  sleep 12; printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
+  wait_for_pattern "$TMP/rollback.log" '"serverInfo"' 24000 "revert: initialize serverInfo (chain-up window)" || true
+  printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'
+  wait_for_pattern "$TMP/rollback.log" '"name":"godot_[a-z_]*"' 16000 "revert: tools/list response" || true ) \
   | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/rollback.log" 2>&1
 grep -q '"serverInfo"' "$TMP/rollback.log" && ok "revert: rolled-back state functionally serves handshake (legacy chain)" || bad "revert: rolled-back chain broken"
 

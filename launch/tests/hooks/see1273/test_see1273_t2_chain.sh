@@ -4,6 +4,11 @@
 # (set -u sourcing, alias->child export gap), real launcher chain on a temp
 # consumer pinned to fork main, MCP initialize handshake via real shim.
 set -uo pipefail
+# SEE-1365: event-driven wait helpers. Resolve the path NOW, at top-of-file cwd —
+# from line 19 on the harness cwd is $TMP/fork and a relative BASH_SOURCE
+# resolution there would break (the `cd` inside $( ) runs in the stale cwd).
+_WAIT_HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../scripts"
+source "$_WAIT_HELPERS_DIR/_wait_helpers.sh"
 FORK_URL="https://github.com/tadki/godot-mcp.git"
 # Run context (SEE-1287): default pin resolves to the CURRENT fork main tip so
 # the harness stays runnable as main advances; pass EXPECTED_MAIN=<sha> to pin
@@ -92,12 +97,16 @@ else
 fi
 
 # 6) real MCP initialize handshake via shim (stdio JSON-RPC)
+# SEE-1365: the fixed pacing sleeps are replaced by event-driven stdin pacing —
+# each next line is written only after the previous step's response appears in
+# handshake.log (bounded wait, budget = the original fixed window ×2 + slack,
+# diagnosis on timeout). The asserted semantics (chain up, tools/list served)
+# are unchanged.
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-  sleep 12   # 竞态窗口语义（CLAUDE.md 边界）：链路建立窗（同 t3）
+  wait_for_pattern "$TMP/handshake.log" '"serverInfo"' 24000 "handshake: initialize serverInfo (chain-up window)" || true
   printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
   printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'
-# 竞态窗口语义（CLAUDE.md 边界）：8s = tools/list 应答留窗，窗长=真实链路应答时长
-  sleep 8 ) | timeout 30 node addons/godot_mcp/launch/godot-mcp-shim.mjs > "$TMP/handshake.log" 2>&1
+  wait_for_pattern "$TMP/handshake.log" '"name":"godot_[a-z_]*"' 16000 "handshake: tools/list response" || true ) | timeout 30 node addons/godot_mcp/launch/godot-mcp-shim.mjs > "$TMP/handshake.log" 2>&1
 grep -q '"serverInfo":{"name":"godot-mcp","version":"kol-proxy-shim-1.0"}' "$TMP/handshake.log" \
   && ok "handshake: initialize returned serverInfo (registration chain intact)" || bad "handshake: no serverInfo"
 [[ "$(grep -o '"name":"godot_[a-z_]*"' "$TMP/handshake.log" | wc -l)" -gt 10 ]] && ok "handshake: tools/list returned full tool surface" || bad "handshake: tool surface empty"

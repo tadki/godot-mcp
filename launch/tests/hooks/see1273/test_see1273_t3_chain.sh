@@ -47,10 +47,16 @@ trap cleanup EXIT
 # from the retired legacy compat shim) is stale against the fork shim, which by
 # design emits none — the arm is inverted to assert the terminal state (handshake
 # serves, 0 DEPRECATED).
+# SEE-1365: event-driven stdin pacing — the fixed 12s/8s pacing sleeps become
+# bounded waits on the step's response landing in the step's own log (budget =
+# original window ×2, diagnosis on timeout). Asserted semantics unchanged.
+# Helpers resolved at top (line 27's HERE) — later cwd shifts (line 62) are safe.
+source "$HERE/../../scripts/_wait_helpers.sh"
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-  sleep 12; printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'   # 竞态窗口语义（CLAUDE.md 边界）：初始化前留链路建立窗，窗长=真实 shim 链建立时长（≥10s 观测），stdin pacing 场景
-  # 竞态窗口语义（CLAUDE.md 边界）：8s = tools/list 应答留窗，窗长=真实链路应答时长
-  printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
+  wait_for_pattern "$TMP/legacy.log" '"serverInfo"' 24000 "AC-005: initialize serverInfo (chain-up window)" || true
+  printf '{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
+  printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'
+  wait_for_pattern "$TMP/legacy.log" '"name":"godot_[a-z_]*"' 16000 "AC-005: tools/list response" || true ) \
   | env HOME="$SHIM_HOME" GODOT_MCP_HOME="$SHIM_HOME/.multica" timeout 30 node "$SHIM_SRC" > "$TMP/legacy.log" 2>&1
 [[ "$(grep -c 'DEPRECATED' "$TMP/legacy.log")" -eq 0 ]] && ok "AC-005: 0 DEPRECATED (fork shim terminal state)" || bad "AC-005: unexpected DEPRECATED in fork shim"
 grep -q '"serverInfo":{"name":"godot-mcp","version":"kol-proxy-shim-1.0"}' "$TMP/legacy.log" \
@@ -66,8 +72,9 @@ git add -A >/dev/null; git commit -qm consumer >/dev/null
 mkdir -p .dev/godot-mcp/launch
 cp "$SHIM_SRC" .dev/godot-mcp/launch/godot-mcp-shim.mjs
 ( printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"revy-qa","version":"1.0"}}}\n'
-  sleep 12; # 竞态窗口语义（CLAUDE.md 边界）：12s = 链路建立窗，窗长=真实 shim 链建立时长（stdin pacing 场景）
-  printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'; sleep 8 ) \
+  wait_for_pattern "$TMP/fwd.log" '"serverInfo"' 24000 "T4-shape: initialize serverInfo (chain-up window)" || true
+  printf '{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'
+  wait_for_pattern "$TMP/fwd.log" '"name":"godot_[a-z_]*"' 16000 "T4-shape: tools/list response" || true ) \
   | timeout 30 node .dev/godot-mcp/launch/godot-mcp-shim.mjs > "$TMP/fwd.log" 2>&1
 [[ "$(grep -c 'DEPRECATED' "$TMP/fwd.log")" -eq 0 ]] && ok "T4-shape: no DEPRECATED in forward mode" || bad "T4-shape: DEPRECATED emitted in forward mode"
 grep -q '"serverInfo"' "$TMP/fwd.log" && ok "T4-shape: handshake via forwarded submodule shim" || bad "T4-shape: handshake failed"
