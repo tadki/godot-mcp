@@ -39,6 +39,8 @@ note() { echo -e "  ${YELLOW}[note]${NC} $*"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+# SEE-1365: shared event-driven wait primitives (wait_for_pattern/wait_for_stable).
+source "$SCRIPT_DIR/_wait_helpers.sh"
 PROXY="$REPO_ROOT/launch/godot-mcp-proxy.mjs"
 
 [[ -f "$PROXY" ]] || { echo "FATAL: $PROXY not found" >&2; exit 2; }
@@ -198,7 +200,9 @@ E1_LOG="$TMPDIR/e1/does/not/exist.log"   # the LOG file itself never appears
 mkdir -p "$(dirname "$E1_LOG")"
 printf '%s' "$SCRATCH_WT" > "${E1_LOG%.log}.worktree"
 E1_LPID=$(start_listener "$E1_PORT")
-sleep 0.2
+# SEE-1365: bounded predicate poll on the listener's own "listener up" stderr
+# line (event: bind complete) — replaces the blind 0.2s settle.
+wait_for_pattern "$TMPDIR/listener.err" 'listener up' 2000 "E1 listener bind" || true
 
 start_proxy "GODOT_PORT=$E1_PORT" "KOL_WARMUP_TIMEOUT_MS=8000" "KOL_FAILED_EXIT_MS=30000" \
             "GODOT_EDITOR_LOG_FILE=$E1_LOG" "MOCK_NPX_LOG=$TMPDIR/e1_npx.log"
@@ -248,7 +252,9 @@ else
 fi
 stop_proxy
 kill "$E1_LPID" 2>/dev/null || true
-sleep 0.3
+# SEE-1365: bounded predicate poll on process death (kill -0) — replaces the
+# blind 0.3s settle; a dead pid is a real kernel event.
+for _ in $(seq 1 30); do kill -0 "$E1_LPID" 2>/dev/null || break; sleep 0.1; done
 
 # ---------------------------------------------------------------------------
 # E2: burst of consecutive 'exiting editor' lines → fast-fail EXACTLY ONCE.
@@ -264,7 +270,10 @@ start_proxy "GODOT_PORT=$E2_PORT" "KOL_WARMUP_TIMEOUT_MS=30000" "KOL_FAILED_EXIT
 send_line "$INIT_LINE"
 send_line "$CALL_LINE"
 send_line "$CALL_LINE2"
-sleep 0.5   # let both calls buffer
+# SEE-1365: wait on the proxy's own hold event — maybeProgressLog(true) fires
+# per held call, so "2 call(s) queued" on stderr IS the "both calls buffered"
+# signal (replaces the blind 0.5s).
+wait_for_pattern "$PROXY_ERR" '2 call\(s\) queued' 5000 "E2: both calls buffered" || true
 
 # Burst: append 5 identical exiting lines in <100ms.
 for _ in 1 2 3 4 5; do
@@ -301,7 +310,9 @@ else
     ko "E2.4: lease death logged $LEASE_LOG_COUNT times (expected 1)"
 fi
 stop_proxy
-sleep 0.3
+# SEE-1365: bounded poll until the proxy coproc is reaped (kill -0 fails) —
+# replaces the blind 0.3s teardown settle.
+for _ in $(seq 1 30); do proxy_alive || break; sleep 0.1; done
 
 # ---------------------------------------------------------------------------
 # E3: GODOT_EDITOR_LOG_FILE set to EMPTY string → no-op. Proxy must warm
@@ -360,7 +371,9 @@ else
 fi
 stop_proxy
 # (E3 editor lifecycle is owned by the mock start script; nothing extra to kill)
-sleep 0.3
+# SEE-1365: bounded poll until the proxy coproc is reaped — replaces the blind
+# 0.3s teardown settle.
+for _ in $(seq 1 30); do proxy_alive || break; sleep 0.1; done
 
 # ---------------------------------------------------------------------------
 sep "Summary"
