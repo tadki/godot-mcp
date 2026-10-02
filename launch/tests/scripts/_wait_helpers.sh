@@ -27,3 +27,34 @@ wait_for_pattern() {
     fi
     return 1
 }
+
+# wait_for_stable <file> <budget_ms> — SEE-1365 hardener: the mtime-stability
+# settle primitive, mirrored here from _see1085_helpers.sh so every harness
+# sourcing _wait_helpers.sh gets the same semantics (see1240/1077 batch-4
+# conversions call it, but only the _see1085_helpers family had the
+# definition — the calls silently no-op'd as "command not found" until then).
+# Returns 0 once the file's mtime has stayed unchanged for
+# ~KOL_WAIT_STABLE_MS (default 400ms), or when the budget expires (bounded,
+# same deadline behavior as the fixed settle it replaces). Second-resolution
+# mtimes, hence the 400ms stability floor.
+wait_for_stable() {
+    local path="$1" budget="${2:-2000}" waited=0 stable_ms="${KOL_WAIT_STABLE_MS:-400}"
+    local last=0 now
+    last=$(stat -c %Y "$path" 2>/dev/null || echo 0)
+    while (( waited < budget )); do
+        sleep 0.05; waited=$(( waited + 50 ))
+        now=$(stat -c %Y "$path" 2>/dev/null || echo 0)
+        if (( last > 0 && now == last )); then
+            if (( waited >= stable_ms )); then return 0; fi
+        else
+            last="$now"
+        fi
+    done
+    # SEE-1365 hardener: budget expiry = the settle never stabilized (writes
+    # still landing or file vanished). Deadline semantics unchanged (rc=0),
+    # but the expiry must announce itself — a caller that snapshots after an
+    # unstable settle has a flake-shaped failure mode and deserves the marker.
+    # (Mirror definition lives in the other helper file; keep bodies identical.)
+    echo "  [stable-timeout] ${path}: mtime never stable within ${budget}ms (settle expired; snapshot may be mid-write)" >&2
+    return 0
+}
