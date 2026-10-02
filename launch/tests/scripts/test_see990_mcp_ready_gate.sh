@@ -17,6 +17,11 @@ LAUNCH_DIR="$REPO_ROOT/launch"
 WRAPPER="$LAUNCH_DIR/godot-mcp-launcher.sh"
 PROBE="$LAUNCH_DIR/mcp_ready_probe.py"
 
+# SEE-1363 §SPEC-003: fixed sleep windows replaced by event-driven waits
+# (mock slot-release log line, proxy-takeover observation, bounded budgets
+# with diagnostics); the bounded poll inside start_mock_server stays (正例 #4).
+source "$SCRIPT_DIR/_wait_helpers.sh"
+
 PASS=0; FAIL=0; SKIP=0; FAILS=()
 ok() { echo "  [PASS] $*"; PASS=$((PASS+1)); }
 ko() { echo "  [FAIL] $*"; FAIL=$((FAIL+1)); FAILS+=("$*"); }
@@ -329,6 +334,10 @@ def handle(sock):
         if mode == "single_client" and not rejected:
             with active_lock:
                 active["held"] = False
+            # SEE-1363 §SPEC-003: publish the slot release as an observable
+            # event so the harness waits on THIS line instead of a fixed pause.
+            sys.stderr.write("slot released\n")
+            sys.stderr.flush()
         sock.close()
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -408,10 +417,23 @@ mk990scratch() {  # per-case scratch: same-worktree contention is worktree-granu
 SCRATCH_B1="$(mk990scratch b1)"
 WRAP_ENV=(env "GODOT_HOST=127.0.0.1" "PATH=$MOCK_NPX_DIR:$PATH" "KOL_GODOT_MCP_CMD=npx" "KOL_PROJECT_GODOT=$SCRATCH_B1/project.godot" "KOL_WORKTREE=$SCRATCH_B1")
 
+# SEE-1363 §SPEC-003 (A1 load slack): absolute wall-clock bounds go red under
+# fast-par load from spawn/scheduling latency alone (B1 <6s → 11s observed at
+# 4-way), not from gate semantics. A1's bound below scales with a same-moment
+# spawn-chain reference (env+bash+python3 — the dominant loaded cost), floored
+# at the original 20s; a hung proxy still busts it via the timeout ceiling.
+# (B1's bound uses the stronger reference-run anchor — see Block B.)
+ref_start=$EPOCHREALTIME
+env KOL_REF_PROBE=1 bash -c 'python3 -c pass'
+ref_end=$EPOCHREALTIME
+SPAWN_REF_MS=$(python3 -c "print(max(1, int(($ref_end - $ref_start) * 1000)))")
+LOAD_SLOP_MS=$(( 60 * SPAWN_REF_MS > 6000 ? 60 * SPAWN_REF_MS : 6000 ))
+
 # A1: nothing listening on the port — the launcher must STILL exec the proxy
 # (Stage 1b contract). Shorten the handed-off proxy's warmup/exit windows so it
 # resolves and exits promptly; we observe the handoff, not the proxy lifecycle.
-# stdin is held open briefly (sleep) so the proxy runs long enough to log.
+# stdin is held open until the proxy has actually taken over (its stderr
+# prefix observed — the "runs long enough to log" event, not a fixed guess).
 PORT_A=$(find_free_port)
 A1_OUT="$TMPDIR/A1_out.$$"; A1_ERR="$TMPDIR/A1_err.$$"
 SCRATCH_A1="$(mk990scratch a1)"
@@ -419,8 +441,12 @@ A1_ENV=(env "GODOT_HOST=127.0.0.1" "PATH=$MOCK_NPX_DIR:$PATH" \
     "KOL_GODOT_MCP_CMD=npx" \
     "KOL_PROJECT_GODOT=$SCRATCH_A1/project.godot" "KOL_WORKTREE=$SCRATCH_A1" \
     "KOL_WARMUP_TIMEOUT_MS=2000" "KOL_FAILED_EXIT_MS=3000" "KOL_PROBE_INTERVAL_MS=500")
+# Bound = designed proxy lifecycle (~5-7s) + load-scaled pre-exec slack;
+# the timeout ceiling sits just above it so a hung proxy still dies here.
+A1_BOUND_S=$(( (LOAD_SLOP_MS + 14000 + 999) / 1000 ))
+A1_TIMEOUT_S=$(( A1_BOUND_S + 10 ))
 start_ts=$(date +%s)
-( sleep 7 ) | timeout 20s "${A1_ENV[@]}" bash "$STUB_WRAPPER" --port "$PORT_A" >"$A1_OUT" 2>"$A1_ERR"
+( wait_for_pattern "$A1_ERR" '\[godot-mcp-proxy\]' 30000 "A1 proxy takeover (stdin hold)" || true ) | timeout "${A1_TIMEOUT_S}s" "${A1_ENV[@]}" bash "$STUB_WRAPPER" --port "$PORT_A" >"$A1_OUT" 2>"$A1_ERR"
 A1_RC=$?
 end_ts=$(date +%s)
 A1_ELAPSED=$((end_ts - start_ts))
@@ -447,10 +473,10 @@ fi
 # NOTE: the proxy's warmup/FAILED_EXIT outcome, stdout content, and overall rc
 # are intentionally NOT asserted here — that state machine is owned by
 # test_see1070_warmup_self_heal (T2/T3/T4). The launcher contract ends at exec.
-if (( A1_ELAPSED <= 20 )); then
-    ok "A1: resolved within bound (${A1_ELAPSED}s)"
+if (( A1_ELAPSED <= A1_BOUND_S )); then
+    ok "A1: resolved within bound (${A1_ELAPSED}s <= ${A1_BOUND_S}s)"
 else
-    ko "A1: ran past the 20s bound (${A1_ELAPSED}s) — proxy may not be exiting"
+    ko "A1: ran past the ${A1_BOUND_S}s bound (${A1_ELAPSED}s) — proxy may not be exiting"
 fi
 
 # ---------------------------------------------------------------------------
@@ -463,22 +489,54 @@ sect "B: gate success path (TCP reachable)"
 # B1: any TCP listener — gate passes immediately and execs mock npx.
 PORT_B1=$(find_free_port)
 start_mock_server healthy "$PORT_B1"
+# SEE-1363 §SPEC-003 (B1 load tolerance): the old absolute <6s bound went red
+# under fast-par load (11s observed at 4-way — scheduling latency, not gate
+# semantics). The asserted semantic is unchanged: TCP-reachable ⇒ the gate
+# passes WITHOUT waiting out any timeout. The bound is anchored to a
+# same-moment REFERENCE run of the identical flow (doubling as a second
+# functional sample), so machine/parallel load inflates anchor and measured
+# run together. Burst load can still double a single adjacent run, so the
+# timing verdict gets ONE retry: a deterministic wait-out-a-timeout
+# regression (launcher timeout class, all ≥15s — a fixed sleep would also be
+# blocked statically by the bash sleep gate) fails both attempts, only a
+# transient spike is absorbed. Floor stays at the original 6s.
+ref_out="$TMPDIR/B1_ref_out.$$"
+ref_start=$EPOCHREALTIME
+"${WRAP_ENV[@]}" bash "$STUB_WRAPPER" --port "$PORT_B1" >"$ref_out" 2>/dev/null
+ref_rc=$?
+ref_end=$EPOCHREALTIME
+B1_REF_MS=$(python3 -c "print(int(($ref_end - $ref_start) * 1000))")
 out="$TMPDIR/B1_out.$$"; err="$TMPDIR/B1_err.$$"
-start_ts=$(date +%s)
+B1_BUDGET_MS=$(( B1_REF_MS * 2 > 6000 ? B1_REF_MS * 2 : 6000 ))
+start_ts=$EPOCHREALTIME
 "${WRAP_ENV[@]}" bash "$STUB_WRAPPER" --port "$PORT_B1" >"$out" 2>"$err"
 rc=$?
-end_ts=$(date +%s)
+end_ts=$EPOCHREALTIME
+B1_ELAPSED_MS=$(python3 -c "print(int(($end_ts - $start_ts) * 1000))")
+B1_RETRY_MS=""
+if (( B1_ELAPSED_MS >= B1_BUDGET_MS )); then
+    # one flake-absorbing retry; the retry's output re-takes the functional
+    # sample so the assertions below always judge a single coherent run.
+    start_ts=$EPOCHREALTIME
+    "${WRAP_ENV[@]}" bash "$STUB_WRAPPER" --port "$PORT_B1" >"$out" 2>"$err"
+    rc=$?
+    end_ts=$EPOCHREALTIME
+    B1_RETRY_MS=$(python3 -c "print(int(($end_ts - $start_ts) * 1000))")
+    B1_ELAPSED_MS=$B1_RETRY_MS
+fi
 if [[ $rc -eq 0 && -s "$out" && "$(cat "$out")" == *"MOCK_NPX_GODOT_PORT=${PORT_B1}"* ]]; then
     ok "B1: TCP gate passes and execs mock npx with GODOT_PORT=${PORT_B1}"
 else
     ko "B1: expected success + mock npx output, rc=$rc stdout=$(head -c 200 "$out")"
 fi
-if (( end_ts - start_ts < 6 )); then
-    ok "B1: gate path fast ($((end_ts - start_ts))s)"
+if [[ $ref_rc -ne 0 ]] || ! grep -q "MOCK_NPX_GODOT_PORT=${PORT_B1}" "$ref_out"; then
+    ko "B1: reference run failed functionally (rc=$ref_rc) — timing anchor invalid"
+elif (( B1_ELAPSED_MS < B1_BUDGET_MS )); then
+    ok "B1: gate path fast (${B1_ELAPSED_MS}ms < budget ${B1_BUDGET_MS}ms = max(6s, 2×ref ${B1_REF_MS}ms)${B1_RETRY_MS:+, after 1 retry})"
 else
-    ko "B1: gate path took $((end_ts - start_ts))s, TCP gate should be fast when reachable"
+    ko "B1: gate path took ${B1_ELAPSED_MS}ms twice over budget ${B1_BUDGET_MS}ms = max(6s, 2×ref ${B1_REF_MS}ms) — TCP gate must not wait out a timeout when reachable"
 fi
-rm -f "$out" "$err"
+rm -f "$out" "$err" "$ref_out"
 stop_mock_server
 
 # ---------------------------------------------------------------------------
@@ -526,8 +584,9 @@ if (( D1_RC == 0 )) && grep -q "editor ready" "$D1_LOG"; then
 else
     ko "D1: probe failed against single-client server (rc=$D1_RC): $(head -c 200 "$D1_LOG")"
 fi
-# Brief pause so the mock releases the held slot before D2.
-sleep 0.3
+# Wait for the mock to actually release the held slot (its release log line —
+# the real event) before D2 probes the rejection path.
+wait_for_pattern "$TMPDIR/m_${PORT_D}.log" "slot released" 5000 "D1 single-client slot release" || true
 
 # D2: negative control — a probe that deliberately opens a SECOND connection
 # while the first is still held must observe the 4001 rejection. Proves the mock

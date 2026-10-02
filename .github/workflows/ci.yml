@@ -35,6 +35,10 @@ jobs:
   # SEE-1344 ⑬: the baseline includes 8 legacy fixed-sleep sites flagged by
   # the no-restricted-syntax setTimeout warning (warning tier, not a ban —
   # legitimate timeout paths keep an inline disable with a WHY).
+  # SEE-1363 §SPEC-005: `npm run lint` also runs lint:bash — the bash-domain
+  # fixed-sleep grep-gate (launch/*.sh + launch/tests/**/*.sh; bounded-poll
+  # loops and inline-annotated under-test sleeps exempt) with an only-down
+  # ratchet baseline in launch/tests/lint/bash-sleep-baseline.txt.
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -87,44 +87,104 @@ function runColdFlow(home, label) {
             },
         });
         const outLines = [], errLines = [];
-        createInterface({ input: proc.stdout, terminal: false, crlfDelay: Infinity }).on('line', (l) => outLines.push(l));
-        createInterface({ input: proc.stderr, terminal: false, crlfDelay: Infinity }).on('line', (l) => errLines.push(l));
+        // SEE-1363 §SPEC-004: every send below is gated on the previous
+        // response (or a real chain signal) instead of a fixed millisecond
+        // guess. waitFor resolves on the line EVENT; its budget only bounds
+        // failure and dumps diagnostics on expiry. The only surviving
+        // setTimeout literals are ceilings (whole-flow / per-wait budgets).
+        const waiters = [];
+        const notify = () => { for (const w of [...waiters]) w.check(); };
+        const waitFor = (lines, pred, budgetMs, desc) => new Promise((resolveWait) => {
+            const hit = lines.find(pred);
+            if (hit) return resolveWait(hit);
+            const w = {
+                t: null,
+                check: () => {
+                    const h = lines.find(pred);
+                    if (h) { clearTimeout(w.t); waiters.splice(waiters.indexOf(w), 1); resolveWait(h); }
+                },
+            };
+            waiters.push(w);
+            w.t = setTimeout(() => { // ceiling: per-wait budget, not a sync sleep
+                const i = waiters.indexOf(w);
+                if (i >= 0) waiters.splice(i, 1);
+                const tail = lines.slice(-6).join('\n');
+                process.stderr.write(`[waitFor-timeout] ${desc}: no event within ${budgetMs}ms; stream tail:\n${tail}\n`);
+                resolveWait(null);
+            }, budgetMs);
+        });
+        const hasId = (l, id) => { try { return JSON.parse(l).id === id; } catch { return false; } };
+        const isTransient = (l) => { try { return JSON.parse(l).error?.data?.retryable === true; } catch { return false; } };
+        createInterface({ input: proc.stdout, terminal: false, crlfDelay: Infinity }).on('line', (l) => { outLines.push(l); notify(); });
+        createInterface({ input: proc.stderr, terminal: false, crlfDelay: Infinity }).on('line', (l) => { errLines.push(l); notify(); });
         proc.outLines = outLines; proc.errLines = errLines;
-        const finish = (v) => { try { proc.kill('SIGKILL'); } catch { /* gone */ } resolve(v); };
+        const finish = (v) => {
+            // Drop still-pending wait budgets so they neither print late
+            // diagnostics nor hold the event loop after the flow has closed.
+            for (const w of waiters.splice(0)) clearTimeout(w.t);
+            try { proc.kill('SIGKILL'); } catch { /* gone */ }
+            resolve(v);
+        };
         // Generous: cold editor warmup path (mock npx answers immediately, so
         // the proxy warms fast); 30s ceiling well above observed ~3-6s.
-        const timer = setTimeout(() => finish({ timeout: true }), 30000);
+        const timer = setTimeout(() => finish({ timeout: true }), 30000); // ceiling: whole-flow backstop
         proc.on('exit', (code) => { clearTimeout(timer); resolve({ exited: true, code }); });
 
         // --- the REAL registration flow (no re-pull after handoff) ---
+        // stdin is a pipe: the shim reads when ready, so initialize goes out
+        // immediately; each subsequent send waits for the prior response.
         const send = (o) => proc.stdin.write(`${JSON.stringify(o)}\n`);
-        setTimeout(() => send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05' } }), 200);
-        setTimeout(() => send({ jsonrpc: '2.0', method: 'notifications/initialized' }), 300);
-        setTimeout(() => send({ jsonrpc: '2.0', id: 2, method: 'tools/list' }), 400);
-        setTimeout(() => send({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'godot_project', arguments: { action: 'get_info' } } }), 700);
-        // SEE-1244 修补 v2: the t=700ms call lands BEFORE the launcher proves
-        // proxy exec (LAUNCHER_EXEC ~1.3-1.5s in) — the shim correctly answers
-        // it with a retryable transient instead of flushing it into the
-        // launcher's pre-exec /dev/null stdin. The prescribed agent behavior
-        // for retry_after_s is a retry; add one at t=3s (post-exec) so the
-        // call reaches the chain WITHOUT any second tools/list (the claude
-        // no-re-pull premise of this test is preserved — the retry is of the
-        // CALL, not of the list pull).
-        setTimeout(() => send({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'godot_project', arguments: { action: 'get_info' } } }), 3000);
-        // NOTE: deliberately NO second tools/list — claude does not re-pull.
+        const flow = (async () => {
+            send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05' } });
+            await waitFor(outLines, (l) => hasId(l, 1), 15000, 'initialize response (id:1)');
+            send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+            send({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
+            await waitFor(outLines, (l) => hasId(l, 2), 15000, 'tools/list response (id:2)');
+            send({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'godot_project', arguments: { action: 'get_info' } } });
+            // SEE-1244 修补 v2: the first call can land BEFORE the launcher
+            // proves proxy exec — the shim correctly answers it with a
+            // retryable transient instead of flushing it into the launcher's
+            // pre-exec /dev/null stdin. The prescribed agent behavior is a
+            // retry of the CALL (never a second tools/list — the claude
+            // no-re-pull premise of this test is preserved).
+            let resp = await waitFor(outLines, (l) => hasId(l, 3), 20000, 'first tools/call response (id:3)');
+            if (resp && isTransient(resp)) {
+                // Retry point (was a fixed t=3000ms send): gated on REAL
+                // signals only — the transient response above, then the chain
+                // exec line relayed onto the shim stderr ([chain] prefix).
+                await waitFor(errLines, (l) => /LAUNCHER_EXEC|exec .*godot-mcp-proxy\.mjs/.test(l), 20000, 'chain exec signal on stderr');
+                // Each retry is response-gated; transient answers keep coming
+                // while the proxy warms, so retry until the chain answers for
+                // real (bounded attempts, each with its own response budget).
+                let id = 4;
+                while (resp && isTransient(resp) && id < 12) {
+                    send({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'godot_project', arguments: { action: 'get_info' } } });
+                    resp = await waitFor(outLines, (l) => hasId(l, id), 20000, `tools/call retry response (id:${id})`);
+                    id += 1;
+                }
+            }
+            // NOTE: deliberately NO second tools/list — claude does not re-pull.
+        })();
+        flow.catch((e) => process.stderr.write(`[flow-error] ${e?.stack || e}\n`));
         // Poll for cache closure; on the 20s boundary, dump the chain stderr
         // tail so a stall is attributable (which warm gate never opened).
         const cacheFile = path.join(home, '.multica', `godot-mcp-tools-cache-${label.toLowerCase()}.json`);
+        // Write-completion proof instead of a post-exists fixed grace: the
+        // cache lands via tmp-write → rename, and a fully parsed body is the
+        // event that the write has completed.
+        const cacheWritten = () => {
+            try { JSON.parse(fs.readFileSync(cacheFile, 'utf8')); return true; } catch { return false; }
+        };
         let diagnosed = false;
         const poll = setInterval(() => {
-            if (fs.existsSync(cacheFile)) { clearInterval(poll); clearTimeout(timer); setTimeout(() => finish({ cacheReady: true }), 400); }
+            if (cacheWritten()) { clearInterval(poll); clearTimeout(timer); finish({ cacheReady: true }); }
             if (!diagnosed && Date.now() - tStart > 20000) {
                 diagnosed = true;
                 const tail = proc.errLines.filter((l) => l.includes('[chain]')).slice(-12);
                 process.stderr.write(`[closure-diagnose] cache not ready at 20s; chain tail:\n${tail.join('\n')}\n`);
             }
         }, 250);
-        setTimeout(() => { clearInterval(poll); }, 25500);
+        setTimeout(() => { clearInterval(poll); }, 25500); // ceiling: poll-window backstop
     });
 }
 
@@ -150,20 +210,31 @@ section('cold flow through shim interception → proactive proxy cache closure')
             env: { ...process.env, HOME: home, GODOT_MCP_HOME: path.join(home, '.multica') },
         });
         const err2 = [];
-        createInterface({ input: proc2.stderr, terminal: false, crlfDelay: Infinity }).on('line', (l) => err2.push(l));
-        let buf2 = '';
         const secondHit = await new Promise((resolve) => {
-            const t2 = setTimeout(() => { proc2.kill(); resolve(false); }, 8000);
+            let id9Line = null;
+            let done = false;
+            const finish2 = (v) => { if (!done) { done = true; clearTimeout(t2); clearTimeout(grace); proc2.kill(); resolve(v); } };
+            const tryResolve = () => {
+                if (!id9Line) return;
+                // SEE-1363 §SPEC-004: resolve on the source=cache evidence line
+                // itself (event), not a fixed 150ms flush guess; a short
+                // ceiling still bounds a missing-log regression into a FAIL.
+                if (err2.some((l) => /SHIM_ANSWER_TOOLS source=cache/.test(l))) {
+                    finish2({ hit: true, tools: JSON.parse(id9Line).result.tools, logged: true });
+                }
+            };
+            const t2 = setTimeout(() => finish2(false), 8000); // ceiling: session-2 backstop
+            const grace = setTimeout(() => { // ceiling: bounds a missing source=cache line into logged:false
+                if (id9Line) finish2({ hit: true, tools: JSON.parse(id9Line).result.tools, logged: false });
+            }, 3000);
+            createInterface({ input: proc2.stderr, terminal: false, crlfDelay: Infinity }).on('line', (l) => { err2.push(l); tryResolve(); });
+            let buf2 = '';
             proc2.stdout.on('data', (d) => {
                 buf2 += d.toString();
                 for (const line of buf2.split('\n')) {
-                    if (line.includes('"id":9') && line.includes('"tools"')) {
-                        clearTimeout(t2); proc2.kill();
-                        setTimeout(() => resolve({
-                            hit: true,
-                            tools: JSON.parse(line).result.tools,
-                            logged: err2.some((l) => /SHIM_ANSWER_TOOLS source=cache/.test(l)),
-                        }), 150);
+                    if (!id9Line && line.includes('"id":9') && line.includes('"tools"')) {
+                        id9Line = line;
+                        tryResolve();
                         return;
                     }
                 }

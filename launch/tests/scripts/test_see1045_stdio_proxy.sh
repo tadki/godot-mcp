@@ -21,6 +21,11 @@ WRAPPER="$LAUNCH_DIR/godot-mcp-launcher.sh"
 PROXY="$LAUNCH_DIR/godot-mcp-proxy.mjs"
 RESOLVE="$LAUNCH_DIR/godot-mcp-resolve.mjs"
 
+# SEE-1363 §SPEC-002: observation windows are event-driven (id:1 response on
+# stdout closes the wait, bounded budget + diagnostics). The mock listener's
+# injected 1.5s delay below is the semantics under test and stays (annotated).
+source "$SCRIPT_DIR/_wait_helpers.sh"
+
 PASS=0; FAIL=0; FAILS=()
 ok() { echo "  [PASS] $*"; PASS=$((PASS+1)); }
 ko() { echo "  [FAIL] $*"; FAIL=$((FAIL+1)); FAILS+=("$*"); }
@@ -82,7 +87,7 @@ make_slow_wrapper() {
         /^SCRIPT_DIR=".*"$/ { print "SCRIPT_DIR=\"" dir "\""; next }
         /^# --- Parse CLI ---/ && !ins {
             print "port_in_use() { return 0; }"
-            print "listener_is_healthy() { sleep 1.5; return 0; }"
+            print "listener_is_healthy() { sleep 1.5; return 0; }"  # 竞态窗口语义（CLAUDE.md 边界）：注入的慢 orphan-gate 延迟=被测场景本身（slow orphan gate 下探后 initialize 仍须到达 proxy），非同步等待手段
             ins = 1
         }
         { print }
@@ -134,17 +139,17 @@ chmod +x "$MOCK_NPX_DIR/npx"
 
 run_case() {
     local name="$1" wrapper_dir="$2" delay="${3:-0}"
-    local port out err pid wait_after
+    local port out err pid budget_ms
     port=$(find_free_port)
     out="$TMPDIR/${name}.out"
     err="$TMPDIR/${name}.err"
-    # Give slow orphan-gate / setup cases enough time to exec proxy and respond.
-    wait_after=$(( delay + 3 ))
-    # SEE-1344: the stub launcher's spawn chain gained a prepare-worktree step
-    # (SEE-1342 sync) — under fast-par 4-way load its in-flight wait window
-    # can push exec past delay+3s; the asserted chain (launcher→proxy→npx
-    # stdio) is unchanged, only the observation window widens.
-    wait_after=$(( delay + 6 ))
+    # SEE-1363 §SPEC-002: the fixed delay+N observation window is replaced by
+    # an event-driven wait — the id:1 initialize response landing on stdout
+    # closes the wait immediately on success. The budget only bounds failure;
+    # it keeps generous headroom over pre-exec launcher work + the slow
+    # orphan-gate delay under parallel load (the asserted chain
+    # launcher→proxy→npx stdio is unchanged).
+    budget_ms=$(( (delay + 60) * 1000 ))
 
     # SEE-1344: the launcher now waits up to KOL_WORKTREE_WAIT_S=120s for a
     # private worktree to resolve; this chain test only needs the stdio path,
@@ -155,7 +160,7 @@ run_case() {
     printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$scratch/project.godot"
     (
         printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}'
-        sleep 5
+        wait_for_pattern "$out" '"id":1' "$budget_ms" "$name initialize response (feeder stdin hold)" || true
     ) | env \
         "KOL_AGENT_NAME=Revy" \
         "GODOT_HOST=127.0.0.1" \
@@ -167,7 +172,7 @@ run_case() {
         >"$out" 2>"$err" &
     pid=$!
 
-    sleep "$wait_after"
+    wait_for_pattern "$out" '"id":1' "$budget_ms" "$name initialize response" || true
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
 

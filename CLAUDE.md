@@ -24,3 +24,5 @@
 - 无上限的 `while ! cond; sleep 1; done`——必须配 `timeout` 预算与失败诊断。
 
 **边界**：测试中"等一个必然发生的固定延迟"本身是被测语义时（如竞态窗口复现、超时路径的触发），固定 sleep 允许保留，但须注释标明其语义角色，并使总预算受该 harness 的 timeout 约束。
+
+**机器门禁**：bash 域（`launch/*.sh` + `launch/tests/**/*.sh`）由 `npm run lint:bash`（`launch/tests/lint/check_bash_sleep.mjs`）执行上述规则——字面 `sleep N` 计数只降不升（ratchet 基线 `launch/tests/lint/bash-sleep-baseline.txt`），带上限 predicate 轮询（循环体内短 sleep）自动豁免，被测语义保留项须行内标注 `# 竞态窗口语义（CLAUDE.md 边界）：<理由>`（或 ASCII 别名 `# sleep-ok: <理由>`）；JS/TS 域由 ESLint `no-restricted-syntax`（`setTimeout(fn, N)` 字面量，warning + `--max-warnings` ratchet）同构覆盖。

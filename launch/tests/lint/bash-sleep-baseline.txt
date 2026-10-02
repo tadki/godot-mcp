@@ -1,0 +1,5 @@
+# bash 域固定 sleep ratchet 基线（SEE-1363 §SPEC-005）
+# launch/*.sh + launch/tests/**/*.sh 内、经 check_bash_sleep.mjs 判定（predicate
+# 轮询与行内 escape-hatch 标注豁免后）的字面固定 sleep 存量。只降不升：
+# 存量收敛时把数字调小；新增违例使计数超过此值即 lint 红。
+41

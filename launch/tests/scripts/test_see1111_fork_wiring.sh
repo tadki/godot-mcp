@@ -42,6 +42,11 @@ LAUNCH_DIR="$REPO_ROOT/launch"
 WRAPPER="$LAUNCH_DIR/godot-mcp-launcher.sh"
 PROXY="$LAUNCH_DIR/godot-mcp-proxy.mjs"
 
+# SEE-1363 §SPEC-001: all fixed sleeps replaced by event-driven waits
+# (response-gated send pacing, marker/log-line observation, bounded budgets
+# with timeout diagnostics). W1-W5 assertion semantics unchanged.
+source "$SCRIPT_DIR/_wait_helpers.sh"
+
 PASS=0; FAIL=0; FAILS=()
 ok() { echo "  [PASS] $*"; PASS=$((PASS+1)); }
 ko() { echo "  [FAIL] $*"; FAIL=$((FAIL+1)); FAILS+=("$*"); }
@@ -127,13 +132,15 @@ SCRATCH_A="$TMPDIR/caseA-scratch"; mkdir -p "$SCRATCH_A"
 printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$SCRATCH_A/project.godot"
 : > "$TMPDIR/fork.marker"
 # The proxy spawns the godot-mcp child lazily on the first tools/call; run the
-# stubbed launcher through a full initialize + trigger + retry so the child is
-# actually spawned and we can read its env/argv.
+# stubbed launcher through a full initialize + trigger so the child is
+# actually spawned and we can read its env/argv. Send pacing is response-gated
+# (initialize answer observed on stdout before tools/call is sent) and stdin
+# is held until the child has recorded its env — no fixed-sleep guesses.
 (
     printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"fork-test"}}}'
-    sleep 0.5
+    wait_for_pattern "$TMPDIR/caseA.out" '"id":1' 30000 "caseA initialize response" || true
     printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_project_info","arguments":{}}}'
-    sleep 4
+    wait_for_pattern "$TMPDIR/fork.marker" 'QUICK=' 60000 "caseA fork marker env record" || true
 ) | env \
     "KOL_AGENT_NAME=Bachi" \
     "GODOT_HOST=127.0.0.1" \
@@ -145,7 +152,12 @@ printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_ove
     bash "$STUB_DIR/godot-mcp-launcher.sh" --port "$PORT_A" \
     >"$TMPDIR/caseA.out" 2>"$TMPDIR/caseA.err" &
 pid=$!
-sleep 5
+# Observe the events the assertions judge (child env recorded, proxy logged
+# the override provenance) before reaping; on timeout the wait helper has
+# already dumped diagnostics and the assertions below fail with their own
+# messages, exactly as they would have after the old fixed window.
+wait_for_pattern "$TMPDIR/fork.marker" 'QUICK=' 60000 "caseA fork marker" || true
+wait_for_pattern "$TMPDIR/caseA.err" "launching godot-mcp via node $MOCK_BIN" 60000 "caseA proxy override provenance" || true
 kill "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
 
@@ -180,7 +192,7 @@ printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_ove
 if [[ -x "$FORK_CLI" ]]; then
     (
         printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"fork-test"}}}'
-        sleep 3
+        wait_for_pattern "$TMPDIR/caseB.err" 'stage=FORK_WIRED' 30000 "caseB FORK_WIRED stage" || true
     ) | env \
         "KOL_AGENT_NAME=Bachi" \
         "GODOT_HOST=127.0.0.1" \
@@ -191,7 +203,7 @@ if [[ -x "$FORK_CLI" ]]; then
         bash "$STUB_DIR_B/godot-mcp-launcher.sh" --port "$PORT_B" \
         >"$TMPDIR/caseB.out" 2>"$TMPDIR/caseB.err" &
     pid=$!
-    sleep 4
+    wait_for_pattern "$TMPDIR/caseB.err" 'stage=FORK_WIRED' 30000 "caseB FORK_WIRED stage" || true
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
 
@@ -209,7 +221,7 @@ else
     # Fork not present: launcher must log the fallback warning (W4).
     (
         printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"fork-test"}}}'
-        sleep 3
+        wait_for_pattern "$TMPDIR/caseB.err" 'fork CLI not found' 30000 "caseB missing-fork warning" || true
     ) | env \
         "KOL_AGENT_NAME=Bachi" \
         "GODOT_HOST=127.0.0.1" \
@@ -220,7 +232,7 @@ else
         bash "$STUB_DIR_B/godot-mcp-launcher.sh" --port "$PORT_B" \
         >"$TMPDIR/caseB.out" 2>"$TMPDIR/caseB.err" &
     pid=$!
-    sleep 4
+    wait_for_pattern "$TMPDIR/caseB.err" 'fork CLI not found' 30000 "caseB missing-fork warning" || true
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
 
