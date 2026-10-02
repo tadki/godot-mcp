@@ -115,7 +115,7 @@ AFTER_TS="$(lease_field "$WT1" configured_at)"
 [[ "$(lease_field "$WT1" port)" == "$PORT1" ]] && ok "lease port = target port" || bad "lease port=$(lease_field "$WT1" port) want $PORT1"
 
 echo "== R2: clean active lease → fast path is a no-op (no rewrite churn) =="
-sleep 1.1   # ensure a rewrite WOULD move configured_at measurably
+sleep 1.1   # 竞态窗口语义（CLAUDE.md 边界）：configured_at 时间戳可测位移窗=被测 dt 语义（秒级精度 RFC3339，需 >1s 保证 rewrite 可判定）
 CFG_LOG2="$TMP/cfg-r2.log"
 KOL_RUNTIME_ID=Bachi-see1292fix KOL_AGENT_NAME=Bachi GODOT_MCP_HOME="$TMP/home" \
     bash "$LAUNCH_DIR/configure-mcp-port.sh" Bachi --port "$PORT1" --project-godot "$WT1/project.godot" \

@@ -57,7 +57,12 @@ kill_editor() {
     local pid="$1"
     [ -n "$pid" ] || return 0
     "$POWERSHELL" -Command "Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue" >/dev/null 2>&1 || true
-    sleep 2
+    # SEE-1365: bounded predicate poll on process death — Stop-Process is
+    # async, the death event is pollable via editor_pid going empty.
+    for _ in $(seq 1 40); do
+        [ -z "$(editor_pid)" ] && break
+        sleep 0.1
+    done
 }
 
 # === pre-check: no stale editor ==============================================
