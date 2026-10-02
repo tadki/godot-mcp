@@ -58,8 +58,26 @@ const violations = [];
 for (const file of files) {
     const lines = readFileSync(file, 'utf8').split('\n');
     let depth = 0;
+    let heredocTag = null;
     lines.forEach((text, i) => {
-        const opensLoop = LOOP_OPEN_RE.test(text);
+        // SEE-1363 §SPEC-016: heredoc bodies and comment lines are not shell
+        // control flow — their loop keywords must not move the depth counter
+        // (a python heredoc's `for` line used to pin depth>0 forever, hiding
+        // every later sleep in the file — Final Review LOW #2,实证于 see1070).
+        if (heredocTag !== null) {
+            if (new RegExp(`^\\t*${heredocTag}\\s*$`).test(text)) { heredocTag = null; return; }
+            // heredoc body: not shell control flow — no loop-depth tracking.
+            // Sleep matching still applies (embedded sleeps are real;
+            // cf. the SPEC-002 awk-string precedent) but can never claim the
+            // in-loop exemption (no loop tracking here by design).
+            if (!COMMENT_RE.test(text) && SLEEP_RE.test(text) && !HATCH_RE.test(text)) {
+                violations.push(`${path.relative(REPO, file)}:${i + 1}: ${text.trim()}`);
+            }
+            return;
+        }
+        const hd = text.match(/<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/);
+        if (hd) heredocTag = hd[1];
+        const opensLoop = !COMMENT_RE.test(text) && LOOP_OPEN_RE.test(text);
         if (!COMMENT_RE.test(text) && SLEEP_RE.test(text)) {
             if (HATCH_RE.test(text)) {
                 // escape hatch: annotated under-test semantics
@@ -71,7 +89,7 @@ for (const file of files) {
             }
         }
         if (opensLoop) depth += 1;
-        if (LOOP_CLOSE_RE.test(text)) depth = Math.max(0, depth - 1);
+        if (!COMMENT_RE.test(text) && LOOP_CLOSE_RE.test(text)) depth = Math.max(0, depth - 1);
     });
 }
 
