@@ -74,7 +74,7 @@ wait_for "$PROXY_OUT" '"id":2' 10000 || ko "pre: id=2 not answered"
 EXPECT_UNKNOWN="$TEST_HOME/.multica/godot-editor/unknown.stderr.log"
 EXPECT_SHARED_LEGACY="$TEST_HOME/.multica/godot-editor/.stderr.log"
 
-for _ in 1 2 3 4 5 6 7 8 9 10; do [[ -f "$EXPECT_UNKNOWN" ]] && break; sleep 0.2; done
+for _ in $(seq 1 10); do [[ -f "$EXPECT_UNKNOWN" ]] && break; sleep 0.2; done
 
 # R2a: file landed at unknown.stderr.log
 if [[ -f "$EXPECT_UNKNOWN" ]]; then

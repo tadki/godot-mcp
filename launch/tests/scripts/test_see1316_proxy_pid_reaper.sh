@@ -56,6 +56,7 @@ NODE_PROXY_PID=$!
 # SEE-1365: bounded predicate poll on the sandbox process being alive (the
 # reaper's own liveness oracle) — replaces the blind 0.3s settle.
 for _ in $(seq 1 30); do kill -0 "$NODE_PROXY_PID" 2>/dev/null && break; sleep 0.1; done
+if ! kill -0 "$NODE_PROXY_PID" 2>/dev/null; then echo "  [wait-timeout] sandbox proxy liveness not observed within 3000ms (pid=$NODE_PROXY_PID)" >&2; fi
 SANDBOX_NODE_PID="$NODE_PROXY_PID"
 trap 'kill "$SANDBOX_NODE_PID" 2>/dev/null; rm -rf "$SBOX"' EXIT
 
@@ -86,7 +87,7 @@ make_lease "$WT2" "{
 # A live "editor": the reaper reads the editor PID from the runtime pidfile
 # (kol_lifecycle_path .pid <label> <runtime_id>) — sandbox sleep stands in.
 EDITOR_SANDBOX_PID=""
-sleep 300 >/dev/null 2>&1 &
+sleep 300 >/dev/null 2>&1 &   # fixture：模拟存活 editor 的 keep-alive，非同步等待手段
 EDITOR_SANDBOX_PID=$!
 mkdir -p "${GODOT_MCP_HOME:-$HOME/.config/godot-mcp}/godot-editor"
 printf '%s\n' "$EDITOR_SANDBOX_PID" > "${GODOT_MCP_HOME:-$HOME/.config/godot-mcp}/godot-editor/Bachi-1316aabb.pid"

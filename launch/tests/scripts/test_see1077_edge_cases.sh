@@ -255,6 +255,7 @@ kill "$E1_LPID" 2>/dev/null || true
 # SEE-1365: bounded predicate poll on process death (kill -0) — replaces the
 # blind 0.3s settle; a dead pid is a real kernel event.
 for _ in $(seq 1 30); do kill -0 "$E1_LPID" 2>/dev/null || break; sleep 0.1; done
+if kill -0 "$E1_LPID" 2>/dev/null; then echo "  [wait-timeout] E1 listener death not observed within 3000ms (pid=$E1_LPID)" >&2; fi
 
 # ---------------------------------------------------------------------------
 # E2: burst of consecutive 'exiting editor' lines → fast-fail EXACTLY ONCE.
@@ -313,6 +314,7 @@ stop_proxy
 # SEE-1365: bounded poll until the proxy coproc is reaped (kill -0 fails) —
 # replaces the blind 0.3s teardown settle.
 for _ in $(seq 1 30); do proxy_alive || break; sleep 0.1; done
+if proxy_alive; then echo "  [wait-timeout] proxy coproc death not observed within 3000ms (teardown settle expired)" >&2; fi
 
 # ---------------------------------------------------------------------------
 # E3: GODOT_EDITOR_LOG_FILE set to EMPTY string → no-op. Proxy must warm
@@ -374,6 +376,7 @@ stop_proxy
 # SEE-1365: bounded poll until the proxy coproc is reaped — replaces the blind
 # 0.3s teardown settle.
 for _ in $(seq 1 30); do proxy_alive || break; sleep 0.1; done
+if proxy_alive; then echo "  [wait-timeout] proxy coproc death not observed within 3000ms (teardown settle expired)" >&2; fi
 
 # ---------------------------------------------------------------------------
 sep "Summary"
