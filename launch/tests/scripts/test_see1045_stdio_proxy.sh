@@ -67,7 +67,7 @@ exit 0
 EOF
     chmod +x "$dir"/*.sh
     cp "$PROXY" "$dir/godot-mcp-proxy.mjs"
-        # SEE-1344: the proxy was decomposed (SEE-1334 Phase 0a) into launch/proxy/
+    # SEE-1344: the proxy was decomposed (SEE-1334 Phase 0a) into launch/proxy/
     # modules plus top-level predicate modules — per-file copies go stale
     # silently. Vendor the full launch tree (top-level files + proxy/) so the
     # stub dir always carries the current module surface.
@@ -160,7 +160,7 @@ run_case() {
     printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$scratch/project.godot"
     (
         printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test"}}}'
-        wait_for_pattern "$out" '"id":1' "$budget_ms" "$name initialize response (feeder stdin hold)" || true
+        wait_for_pattern "$out" '"id":1' "$budget_ms" "$name initialize response (stdin hold)" || true
     ) | env \
         "KOL_AGENT_NAME=Revy" \
         "GODOT_HOST=127.0.0.1" \

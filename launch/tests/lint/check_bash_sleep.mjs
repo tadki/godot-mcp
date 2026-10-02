@@ -8,9 +8,9 @@
 // violation; the count is pinned by bash-sleep-baseline.txt and may ONLY
 // ratchet down (new unannotated sites turn the gate red).
 //
-// Domain: launch/*.sh + launch/tests/**\/*.sh
+// Domain: launch/*.sh + launch/tests/**/*.sh
 //
-// Violation: a line matching a literal numeric sleep — /(^|[\s;&|]|\()sleep\s+[0-9]/ —
+// Violation: a line matching a literal numeric sleep — /(^|[\s;&|(])sleep\s+[0-9]/ —
 // minus two exempt classes (repo CLAUDE.md 「同步等待」正例/边界):
 //   1. Bounded predicate polling (正例 #4): the sleep sits inside a
 //      while/until/for loop body (loop-depth tracked over `done`).
