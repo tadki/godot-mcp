@@ -23,6 +23,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# SEE-1365: shared event-driven wait primitives (wait_for_pattern/wait_for_stable).
+source "$SCRIPT_DIR/_wait_helpers.sh"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 PROXY="$REPO_ROOT/launch/godot-mcp-proxy.mjs"
 
@@ -261,7 +263,9 @@ send_line '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"godot
 if wait_for "$PROXY_OUT" '"id":3' 4000; then
     R=$(check_id 3 mcp_error 'error_names=OS.execute' error_has_digest)
     [[ "$R" == PASS ]] && ok "T2.1: id=3 rejected in-band naming OS.execute + help pointer" || ko "T2.1: $R"
-    sleep 0.3
+    # SEE-1365: the negative assertion ("never reached npx") needs a bounded
+    # settle window — a short poll-until-quiet budget, not a blind 0.3s.
+    wait_for_stable "$MOCK_NPX_LOG" 2000
     if grep -q "godot_exec:run" "$MOCK_NPX_LOG"; then
         ko "T2.2: violating call LEAKED to npx (must be intercepted)"
     else
@@ -277,7 +281,8 @@ send_line '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"godot
 if wait_for "$PROXY_OUT" '"id":4' 4000; then
     R=$(check_id 4 is_result envelope_completed_true)
     [[ "$R" == PASS ]] && ok "T3.1: id=4 comment-hidden source forwarded, envelope intact" || ko "T3.1: $R"
-    sleep 0.3
+    # SEE-1365: positive assertion — wait on the log entry itself.
+    wait_for_pattern "$MOCK_NPX_LOG" 'godot_exec:run' 3000 "T3.2: forwarded call in npx log" || true
     grep -q "godot_exec:run" "$MOCK_NPX_LOG" && ok "T3.2: clean-ish call reached npx" || ko "T3.2: call did not reach npx"
 else
     ko "T3.1: no id=4 response on stdout"
@@ -289,7 +294,8 @@ send_line '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"godot
 if wait_for "$PROXY_OUT" '"id":5' 4000; then
     R=$(check_id 5 is_result digest_surfaced)
     [[ "$R" == PASS ]] && ok "T4.1: id=5 help digest answered in-band" || ko "T4.1: $R"
-    sleep 0.3
+    # SEE-1365: negative assertion — bounded settle window, not a blind 0.3s.
+    wait_for_stable "$MOCK_NPX_LOG" 2000
     if grep -q "godot_exec:help" "$MOCK_NPX_LOG"; then
         ko "T4.2: help call LEAKED to npx (would hit fork schema rejection)"
     else

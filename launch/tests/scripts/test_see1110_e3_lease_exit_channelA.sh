@@ -88,10 +88,10 @@ wait_for "$PROXY_OUT" '"id":1' 3000 || ko "E3.pre: initialize not answered"
 # rejectQueue answers the held call with the failed_exit diagnostic before
 # process.exit(1). So id=2 must carry that diagnostic — never a friendly
 # warmup hint, never a silent drop.
-# (The id=2 response arrives only after LEASE_EXITING is appended, so we wait
-# for it after the fast-fail check below.)
-
-sleep 0.5
+# SEE-1365: the pre-append settle is a negative observation window — the test
+# asserts id=2 was NOT answered during the hold; the fixed window IS the
+# under-test race-window semantics (CLAUDE.md 边界).
+sleep 0.5   # 竞态窗口语义（CLAUDE.md 边界）：cold-hold 负向观察窗=被测语义
 T_SEND=$(date +%s%3N)
 echo "$LEASE_EXITING" >> "$E3_LOG"
 if wait_for_death 5000; then
@@ -157,13 +157,15 @@ wait_for "$PROXY_OUT" '"id":1' 3000 || ko "A4.pre: initialize not answered"
 # (offset), stays alive, and the held id=2 is NOT answered with a failed_exit
 # error. Under hold-to-warm id=2 stays HELD in the FIFO while the proxy waits
 # for WARM — the invariant to assert is "no error envelope for id=2".
-sleep 1
+# SEE-1365: both settles below are negative observation windows (no false
+# reject / no false fast-fail) — fixed windows ARE the under-test semantics.
+sleep 1    # 竞态窗口语义（CLAUDE.md 边界）：stale-line 误拒负向观察窗=被测语义
 if grep -q '"id":2.*"error"' "$PROXY_OUT" 2>/dev/null; then
     ko "A4.2b: id=2 rejected with an error on a stale line (false positive rejection)"
 else
     ok "A4.2b: id=2 NOT rejected on a stale lease line (no false-positive rejection)"
 fi
-sleep 3
+sleep 3    # 竞态窗口语义（CLAUDE.md 边界）：stale fast-fail 误触发负向观察窗=被测语义
 if proxy_alive; then
     ok "A4.1: proxy alive despite pre-seeded LEASE_EXITING (offset skips stale bytes)"
 else

@@ -64,7 +64,7 @@ START_SH="$TMPDIR/slow-start.sh"
 cat > "$START_SH" <<EOF
 #!/usr/bin/env bash
 echo x >> "\${KOL_START_COUNTER:-$START_COUNTER}"
-sleep 2.5
+sleep 2.5   # 竞态窗口语义（CLAUDE.md 边界）：slow-start fixture 的延迟窗=被测 hold 可观测性前提（stdin pacing 无法事件化，延迟本身即场景）
 nohup env "LISTEN_PORT=\${GODOT_PORT}" node "$LISTENER_SCRIPT" </dev/null >/dev/null 2>"$TMPDIR/listener-start.err" &
 disown || true
 exit 0

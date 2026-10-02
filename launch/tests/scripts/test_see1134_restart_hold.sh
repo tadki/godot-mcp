@@ -249,7 +249,9 @@ send_line "$(call_line 2)"
 # (matches test_see1111_ws_handshake_gate.sh: gateOpen requires
 # stageTimestamps.SERVER_LISTENING and .WS_HANDSHAKE to be non-null when
 # logTailAvailable=true).
-sleep 0.1
+# SEE-1365: dropped the pre-append settle — the appends are synchronous file
+# writes and F1's wait_for('id":2') is the actual ordering gate; the 0.1s sleep
+# guarded nothing the 5s bounded wait doesn't already cover.
 echo "[godot-mcp] Server listening on 127.0.0.1:$PORT [test]" >> "$EDITOR_LOG"
 echo "[godot-mcp] WebSocket handshake complete [test]" >> "$EDITOR_LOG"
 if wait_for "$PROXY_OUT" '"id":2' 5000; then
@@ -265,7 +267,9 @@ send_line "$RESTART_LINE"
 # Held: the proxy must NOT answer id=10 immediately. Give the mock 200ms grace
 # to dispatch the restart to npx and ack; the proxy intercepts the INBOUND
 # call shape, forwards to npx (mock answers), then drives driveRestartRespawn.
-sleep 0.4
+# SEE-1365: the grace window is the asserted negative (no early answer) — fixed
+# window IS the under-test race-window semantics.
+sleep 0.4   # 竞态窗口语义（CLAUDE.md 边界）：restart hold 负向观察窗=被测语义
 
 # F2.a — held: id=10 not answered yet (proxy is in restart window)
 if grep -q '"id":10' "$PROXY_OUT"; then
@@ -277,7 +281,8 @@ fi
 # F2.b — held: a SECOND tools/call (id=11) arriving during the window is HELD
 # in pendingCalls, NOT forwarded to npx. We send it now.
 send_line "$(call_line 11)"
-sleep 0.3
+# SEE-1365: hold observation window = asserted negative semantics.
+sleep 0.3   # 竞态窗口语义（CLAUDE.md 边界）：restart hold 负向观察窗=被测语义
 # id=11 must not appear in proxy stdout yet (still held).
 if grep -q '"id":11' "$PROXY_OUT"; then
     ko "F2.b: held id=11 answered too early — proxy must hold all tools/call during restart window"
@@ -321,12 +326,16 @@ fi
 # {restarted:false, reason:'timeout'} after the deadline (4s) and reject
 # any held calls with a retryable diagnostic.
 touch "$NEVER_FLAG"
-sleep 0.2
+# SEE-1365: NEVER flag pickup is inotify-less mock watching — the 0.2s grace
+# before the restart call IS the fixture's flag-propagation window (under-test
+# scenario setup, not a sync wait); keep with hatch annotation.
+sleep 0.2   # 竞态窗口语义（CLAUDE.md 边界）：NEVER flag 传播窗=被测场景构造
 TIMEOUT_LINE='{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"godot_editor_edit","arguments":{"action":"restart"},"_meta":{"progressToken":"pk-20"}}}'
 send_line "$TIMEOUT_LINE"
 # Send a held call (id=21) during the never-reconnect window.
 send_line "$(call_line 21)"
-sleep 0.3
+# SEE-1365: hold observation window = asserted negative semantics.
+sleep 0.3   # 竞态窗口语义（CLAUDE.md 边界）：never-reconnect hold 负向观察窗=被测语义
 
 # F3.a — id=20 must NOT be answered yet (proxy is in the never-reconnects window)
 if grep -q '"id":20' "$PROXY_OUT"; then

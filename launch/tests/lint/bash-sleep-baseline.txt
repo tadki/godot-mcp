@@ -9,4 +9,8 @@
 #   ×3 / 双调用缓冲窗）改事件等待与有界谓词轮询，46→41。
 # 2026-10-03 SEE-1365 批次3：see1085 T10/T11 snapshot 前 settle 改
 #   wait_for_stable（mtime 稳定原语），41→39。
-39
+# 2026-10-03 SEE-1365 批次4：竞态窗口负向观察窗补齐同线 hatch 标注
+#   （1110e1/e3、1111、1117cold、1292flush、1134）+ 1292flush G1.4 改 wait_for_pattern
+#   + 1134 F1 前置 settle 删除 + 1240 exec/int 共 7 处改事件等待与 wait_for_stable，
+#   39→19。
+19
