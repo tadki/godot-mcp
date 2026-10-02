@@ -27,6 +27,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# SEE-1365: shared event-driven wait primitives.
+source "$SCRIPT_DIR/_wait_helpers.sh"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 PROXY="$REPO_ROOT/launch/godot-mcp-proxy.mjs"
 
@@ -357,7 +359,8 @@ if wait_for "$PROXY_OUT" '"id":3' 4000; then
 else
     ko "T2.1: no response"
 fi
-sleep 0.2
+# SEE-1365: wait on the CALL_LOG entry itself (the asserted content).
+wait_for_pattern "$CALL_LOG" 'godot_input' 3000 "T2.2: godot_input recorded" || true
 R=$(python3 - "$CALL_LOG" <<'PY'
 import json, sys
 lines = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
@@ -404,7 +407,8 @@ PY
 else
     ko "T3.1: no response for malformed drag"
 fi
-sleep 0.2
+# SEE-1365: negative assertion — bounded settle window, not a blind 0.2s.
+wait_for_stable "$CALL_LOG" 2000
 AFTER=$(wc -l < "$CALL_LOG")
 [[ "$AFTER" -eq "$BEFORE" ]] && ok "T3.2: malformed call never reached npx" || ko "T3.2: call leaked to npx ($BEFORE → $AFTER)"
 
@@ -443,7 +447,8 @@ PY
 else
     ko "T4.2: no response for missing node"
 fi
-sleep 0.2
+# SEE-1365: negative assertion — bounded settle window, not a blind 0.2s.
+wait_for_stable "$CALL_LOG" 2000
 if grep -q 'FORBIDDEN_UI_INSPECT_REACHED_NPX' "$CALL_LOG"; then
     ko "T4.3: ui_inspect LEAKED to npx (must be proxy-answered)"
 else
@@ -543,7 +548,8 @@ PY
 else
     ko "T6.1: no response"
 fi
-sleep 0.2
+# SEE-1365: wait on the CALL_LOG entry itself (the asserted content).
+wait_for_pattern "$CALL_LOG" 'game_time' 3000 "T6.2: game_time step recorded" || true
 R=$(python3 - "$CALL_LOG" <<'PY'
 import json, sys
 lines = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]

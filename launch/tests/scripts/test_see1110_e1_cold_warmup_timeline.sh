@@ -88,8 +88,10 @@ else
     ko "E1.2: proxy never ran configure+start after tools/call"
 fi
 # While the editor is cold the call is held — it must NOT be answered early and
-# must NOT be forwarded. Sleep briefly to give a buggy hint-path time to fire.
-sleep 1.5
+# must NOT be forwarded. SEE-1365: the observation window itself is the asserted
+# negative (no premature answer/hint); a fixed settle window IS the under-test
+# race-window semantics (CLAUDE.md 边界) — annotate, don't event-drive.
+sleep 1.5   # 竞态窗口语义（CLAUDE.md 边界）：冷窗负向断言观察窗=被测语义（1.5s > spawn+hold 竞态窗）
 if grep -q '"id":2' "$PROXY_OUT"; then
     ko "E1.4a: id=2 answered BEFORE warm (premature — must be held until WARM)"
 else

@@ -153,7 +153,9 @@ send_line "$(call_line 2)"
 # inbox. Wait past the point where the pre-fix bug would have flushed (the
 # warm transition happens quickly on a pre-bound WS listener), then check the
 # inbox is still empty at ~1.5s (< CLI_CONNECT_DELAY_MS).
-sleep 1.5
+# SEE-1365: the wait-past-the-bug window is the asserted negative observation
+# window — fixed window IS the under-test race-window semantics.
+sleep 1.5   # 竞态窗口语义（CLAUDE.md 边界）：提前 flush 负向观察窗=被测语义（1.5s < CLI_CONNECT_DELAY_MS）
 if [[ -s "$MOCK_CLI_INBOX" ]] && grep -q '"id":2' "$MOCK_CLI_INBOX"; then
     ko "R.1: id=2 reached the CLI BEFORE 'Connected to Godot' (the if(warm) lastSpawnReused leak)"
 else

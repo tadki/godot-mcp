@@ -39,6 +39,8 @@ trap '' PIPE
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=_see1085_helpers.sh
 source "$SCRIPT_DIR/_see1085_helpers.sh"
+# SEE-1365: shared event-driven wait primitives.
+source "$SCRIPT_DIR/_wait_helpers.sh"
 lib_init
 
 PORT=$(find_free_port)
@@ -145,7 +147,9 @@ if wait_for "$PROXY_ERR" 'editor spawn launched' 3000; then
 else
     ko "G1.1a: editor spawn never launched"
 fi
-sleep 1.5
+# SEE-1365: the hold observation window is the asserted negative (no premature
+# answer) — fixed window IS the under-test race-window semantics.
+sleep 1.5   # 竞态窗口语义（CLAUDE.md 边界）：cold-hold 负向观察窗=被测语义
 if grep -q '"id":2' "$PROXY_OUT"; then
     ko "G1.1b: id=2 answered BEFORE warm (premature — must be held until the gate opens)"
 else
@@ -203,7 +207,9 @@ else
 fi
 
 # G1.4 — the answer carries the one-shot warmup timeline echo.
-sleep 0.3
+# SEE-1365: wait on the timeline bracket itself (the asserted content) instead
+# of a blind 0.3s flush settle.
+wait_for_pattern "$PROXY_OUT" '\[godot-mcp warmup ' 4000 "G1.4: warmup timeline echo" || true
 TL=$(grep -o '\[godot-mcp warmup [^]]*\]' "$PROXY_OUT" | tail -1)
 if [[ -n "$TL" ]]; then
     note "timeline: $TL"
