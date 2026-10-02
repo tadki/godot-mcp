@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Repo-root dev tooling only (lint). Not published; runtime code in server/ and launch/ stays zero-dependency.",
   "scripts": {
-    "lint": "eslint . --max-warnings 67",
+    "lint": "eslint . --max-warnings 67 && npm run lint:bash",
+    "lint:bash": "node launch/tests/lint/check_bash_sleep.mjs",
     "mutation": "stryker run",
     "mutation-all": "stryker run stryker.nightly.json",
     "coverage:launch": "node launch/tests/runner/coverage-gate.mjs",

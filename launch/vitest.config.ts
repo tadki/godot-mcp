@@ -115,6 +115,8 @@ try {
 //   test_see1045_stdio_proxy.sh — stub launcher 全链 stdio 观测窗按
 //   delay+6s 校准（launcher 侧 WORKTREE_WAIT/prepare 链路延迟窗）；4-way
 //   下 exec 落点越过观测窗（r3 实测红，standalone 稳定绿）→ 留串行桶。
+//   【SEE-1363 毕业】观测窗已改事件驱动（id:1 响应落盘即收口，预算仅兜
+//   失败），迁 FAST_PARALLEL_SHELL。
 //
 //   test_see1077_edge_cases.sh — E2 burst 断言依赖「5 条 exiting 行 <100ms
 //   写入后 5s 内 fast-fail 恰一次」的亚秒窗 + E1/E3 的 warm 观测预算；
@@ -124,10 +126,15 @@ try {
 //   test_see990_mcp_ready_gate.sh — B1 断言 gate 路径 <6s（TCP 快路径
 //   wall 上限语义）+ A1 exec 观测窗；r9 实测 B1 11s（预算超限非语义红）
 //   → 留串行桶。
+//   【SEE-1363 毕业】B1 wall 上限已负载容忍化（同窗 reference run 锚定，
+//   保留「TCP 可达即快速通过」语义）、A1 预算随 spawn-ref 缩放、stdin
+//   保持窗与 slot 释放等待改事件驱动，迁 FAST_PARALLEL_SHELL。
 //
 //   test_see1111_fork_wiring.sh — Case A/B 依赖 stub launcher 在固定 sleep
 //   观测窗内完成 fork 解析 + 子进程 spawn（marker 文件落盘窗）；r8 实测
 //   marker 空组红，standalone 5/5 稳定绿 → 留串行桶。
+//   【SEE-1363 毕业】全部 7 处固定 sleep 改事件驱动（initialize 响应门控
+//   发送、marker/stage 行观察、带上限诊断），迁 FAST_PARALLEL_SHELL。
 //
 //   test_see1111_warmup_hint.sh — W9 断言 3s warmup 窗内 held 不应答、
 //   窗口耗尽后以 recovering 诊断应答（hold-to-timeout 语义即被测对象）；
@@ -141,6 +148,9 @@ try {
 //   test_see1244_cache_closure.mjs — PROACTIVE refresh 闭环断言挂 30s
 //   closure timer（负载校准预算，r2 恰以 30.5s 撞线红，r1/r3 绿）；
 //   cache 写入时机依赖 warm+CLI 连接的亚秒窗 → 留串行桶。
+//   【SEE-1363 毕业】JSON-RPC 编排改响应驱动（initialize/tools-list 响应
+//   门控、id:4 重试等 transient 响应 + 链路 exec 真信号；30s/8s/25.5s
+//   ceiling 保留），迁 FAST_NODE。
 //
 //   test_see1244_proxy_tools_cache.mjs — 同族：tools cache 写入点 =
 //   NPX_CLI_CONNECTED 亚秒窗后的同步 rename（r8 实测 write 点被调度延迟
@@ -154,13 +164,9 @@ launch/tests/scripts/test_see1244_v2_gate.mjs
 launch/tests/scripts/test_see1111_defect6_wsprobe_first_call.sh
 launch/tests/scripts/test_see1111_defect7_respawn.sh
 launch/tests/scripts/test_see1244_rechain.mjs
-launch/tests/scripts/test_see1045_stdio_proxy.sh
 launch/tests/scripts/test_see1077_edge_cases.sh
-launch/tests/scripts/test_see990_mcp_ready_gate.sh
-launch/tests/scripts/test_see1111_fork_wiring.sh
 launch/tests/scripts/test_see1111_warmup_hint.sh
 launch/tests/scripts/test_see1148_p3_reclaim.sh
-launch/tests/scripts/test_see1244_cache_closure.mjs
 launch/tests/scripts/test_see1244_proxy_tools_cache.mjs
 launch/tests/scripts/test_see1244_runtime_held_wait.sh
 launch/tests/scripts/test_see1244_shim_handoff.mjs
@@ -209,8 +215,15 @@ launch/tests/scripts/test_see1244_shim_handoff.mjs
 //     process.env.GODOT_MCP_HOME=mkdtemp 重定向或 mkdtemp 沙箱内 spawn
 //     proxy/shim（see1240 三件为纯契约断言 + execFile 短窗超时）。
 //   - ac_m3reorg 两件: 纯逻辑/env-shape 断言，无共享状态。
+//   - SEE-1363 毕业 3 件（1045/990/fork_wiring）：原「负载时序 flake」分箱
+//     理由已根治（事件驱动等待 + B1 负载容忍化，见上方各项毕业注记），
+//     沙箱模式与上述家族一致（mktemp TMPDIR + find_free_port + mock npx/
+//     mock WS server on PATH），无共享机器状态。
 const FAST_PARALLEL_SHELL = `
 launch/tests/scripts/test_ac_m3reorg_013_shell_guard_empty.sh
+launch/tests/scripts/test_see1045_stdio_proxy.sh
+launch/tests/scripts/test_see990_mcp_ready_gate.sh
+launch/tests/scripts/test_see1111_fork_wiring.sh
 launch/tests/scripts/test_see1077_lease_fast_fail.sh
 launch/tests/scripts/test_see1085_t1_cold_spawn.sh
 launch/tests/scripts/test_see1085_t2_hot_reuse.sh
@@ -274,7 +287,10 @@ launch/tests/scripts/test_see1356_d1_warm_gate.sh
 
 // FAST_NODE — same binning evidence as the shell bucket above (mkdtemp
 // GODOT_MCP_HOME redirects or pure-logic assertions; see the family notes).
+// SEE-1363 毕业 1 件（cache_closure）：响应驱动编排（见上方毕业注记）；
+// hermetic 模式不变（mkdtemp HOME、随机端口、mock npx + fake editor WS）。
 const FAST_NODE = `
+launch/tests/scripts/test_see1244_cache_closure.mjs
 launch/tests/scripts/test_see1348_m6_coldstart.mjs
 launch/tests/scripts/test_see1348_m4_editor_pid_state.mjs
 launch/tests/scripts/test_see1348_qa_relay_wiring.mjs
@@ -319,8 +335,8 @@ const serialEntries = parse(FAST_SERIAL);
 const fastEntries = [...parse(FAST_PARALLEL_SHELL), ...parse(FAST_NODE)];
 const longEntries = parse(LONG);
 
-if (serialEntries.length !== 18) {
-  throw new Error(`fast serial bucket expects 16 entries (8 + SEE-1344's 8 load-fragile graduates: tight internal timing windows proven to flake under 4-way load in r7-r9 sweeps), resolved ${serialEntries.length} — update the bucket in sync with the SEE-1291 graduation flow`);
+if (serialEntries.length !== 14) {
+  throw new Error(`fast serial bucket expects 14 entries (18 − SEE-1363's 4 event-driven graduates: 1045/990/fork_wiring → FAST_PARALLEL_SHELL, cache_closure → FAST_NODE), resolved ${serialEntries.length} — update the bucket in sync with the SEE-1291 graduation flow`);
 }
 if (serialEntries.length + fastEntries.length !== 98) {
   throw new Error(`fast tier expects 98 entries (serial + parallel; SEE-1344 ⑫ graduates + SEE-1348 WP4 m4_gate_matrix/m4_editor_pid_state + WP7 m6_coldstart + F-QA-1 qa_relay_wiring + SEE-1356 l7_seed_layout/status_segments/proxy_units + D1 warm_gate fix pin), resolved ${serialEntries.length + fastEntries.length} — an entry was renamed/retired; update the list in sync with the SEE-1291 graduation flow`);
