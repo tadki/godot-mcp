@@ -143,8 +143,10 @@ else
     ko "T10.1: no success for id=2 within 3s (takeover failed to win)"
 fi
 
-# Snapshot once for all later assertions.
-sleep 0.2 # let any trailing busy-withholding settle
+# Snapshot once for all later assertions. SEE-1365: wait_for_stable (helpers'
+# mtime-stability primitive) replaces the blind 0.2s settle — the snapshot is
+# taken once the proxy's trailing writes have landed or the budget expires.
+wait_for_stable "$PROXY_OUT" 2000
 SNAP="$TMPDIR/t10_snap.out"; cp "$PROXY_OUT" "$SNAP"
 
 # T10.2: forwarded result carries the mock success payload.

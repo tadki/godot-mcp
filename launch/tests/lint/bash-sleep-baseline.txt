@@ -7,4 +7,6 @@
 #   （wait_for_pattern 步进响应），54→46。
 # 2026-10-03 SEE-1365 批次2：see1077 edge_cases 5 处（listener bind / pid death
 #   ×3 / 双调用缓冲窗）改事件等待与有界谓词轮询，46→41。
-41
+# 2026-10-03 SEE-1365 批次3：see1085 T10/T11 snapshot 前 settle 改
+#   wait_for_stable（mtime 稳定原语），41→39。
+39
