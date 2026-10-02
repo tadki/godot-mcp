@@ -53,7 +53,9 @@ OLD_ISO="$(date -u -d '2 hours ago' +%Y-%m-%dT%H:%M:%SZ)"
 # alive via /proc/<pid>/exe. Started once; killed at trap.
 node -e 'setInterval(()=>{}, 1000)' >/dev/null 2>&1 &
 NODE_PROXY_PID=$!
-sleep 0.3
+# SEE-1365: bounded predicate poll on the sandbox process being alive (the
+# reaper's own liveness oracle) — replaces the blind 0.3s settle.
+for _ in $(seq 1 30); do kill -0 "$NODE_PROXY_PID" 2>/dev/null && break; sleep 0.1; done
 SANDBOX_NODE_PID="$NODE_PROXY_PID"
 trap 'kill "$SANDBOX_NODE_PID" 2>/dev/null; rm -rf "$SBOX"' EXIT
 

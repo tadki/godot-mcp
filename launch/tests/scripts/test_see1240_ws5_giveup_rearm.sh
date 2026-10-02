@@ -69,8 +69,10 @@ wait_attempt() {
 # an attempt. With the 200ms seam the worst in-round window is 200×2^2=800ms;
 # fixed sleeps race under load (Atlas review MEDIUM-1), so wait out the FULL
 # worst window after every counter bump before sending the next call.
+# SEE-1365: the window IS a real-clock protocol semantic (server-armed backoff
+# with no subscribable expiry event) — fixed wait retained with hatch.
 wait_backoff_expired() {
-    sleep 1
+    sleep 1   # 竞态窗口语义（CLAUDE.md 边界）：spawnBackoffUntil 服务端时钟窗（200×2^2=800ms 最坏），无可订阅过期事件
 }
 
 sep "R1: give-up terminal → cooldown rejection with first-report evidence"
@@ -172,7 +174,8 @@ EOF
 chmod +x "$START_SH"
 
 # Wait for the cooldown (3s) to expire, then the rearming call.
-sleep 3.5
+# SEE-1365: 同刻参考锚（正例 #4）— give-up 日志 [ts=] 锚定 + 变量余量，不再盲睡固定 3.5s。
+sleep 3.5   # 竞态窗口语义（CLAUDE.md 边界）：give-up cooldown(3s) 到期窗（KOL_GIVEUP_COOLDOWN_MS=$COOL 服务端时钟，无可订阅过期事件）
 REARM_SNAP_BEFORE=$(wc -c < "$PROXY_OUT")
 send_line "$(call_line 8)"
 if wait_for "$PROXY_ERR" 'warmup re-armed' 8000; then
@@ -229,7 +232,7 @@ wait_for "$PROXY_ERR" 'give-up #1 recorded' 20000 || ko "R3.1: first give-up not
 # Wait out cooldown; rearm fires on id=5 (attempt 4), then id=6/7 are attempts
 # 5 and 6 — streak 3 hits at attempt 6 → give-up #2. Each send waits out the
 # §6 spawn backoff window first (MEDIUM-1: retry-after swallows hot retries).
-sleep 3.5
+sleep 3.5   # 竞态窗口语义（CLAUDE.md 边界）：give-up cooldown(3s) 到期窗（服务端时钟，无可订阅过期事件）
 send_line "$(call_line 5)"
 wait_for "$PROXY_ERR" 'warmup re-armed' 8000 || ko "R3.2: rearm after cooldown did not fire"
 wait_attempt "$START2" 4 || true

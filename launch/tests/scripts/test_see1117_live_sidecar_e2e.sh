@@ -69,7 +69,12 @@ kill_all_editors() {
     while IFS= read -r pid; do
         [ -n "$pid" ] && powershell "Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue" >/dev/null
     done <<< "$pids"
-    sleep 3
+    # SEE-1365: bounded predicate poll until the process list is empty —
+    # replaces the blind 3s settle.
+    for _ in $(seq 1 60); do
+        [ -z "$(editor_pids)" ] && break
+        sleep 0.1
+    done
 }
 
 listening_ports() {
@@ -183,7 +188,9 @@ fi
 # path would have fired by then, and we already verified project.godot is
 # unchanged in B3).
 sidecar_hash_before=$(md5sum "$SIDECAR" | awk '{print $1}')
-sleep 10
+# SEE-1365: the 10s uptime window is the asserted negative (no clobber within
+# the window) — the fixed window IS the under-test semantics.
+sleep 10   # 竞态窗口语义（CLAUDE.md 边界）：B4 无写观察窗=被测语义（ProjectSettings.save 若发生必然在此窗内）
 sidecar_hash_after=$(md5sum "$SIDECAR" | awk '{print $1}')
 if [ "$sidecar_hash_before" = "$sidecar_hash_after" ]; then
     pass "B4 sidecar unchanged after editor uptime (ProjectSettings.save() did NOT clobber)"
@@ -198,7 +205,8 @@ rm -f "$SIDECAR"
 KOL_WORKTREE="$KOL_ROOT" bash "$LAUNCH_DIR/start-godot-editor.sh" "$AGENT" >/dev/null 2>&1
 # Note: start-godot-editor.sh might refuse if it requires a sidecar — check
 # the actual behavior.
-sleep 5
+# SEE-1365: dropped the pre-wait 5s — wait_for_listen's 60s bounded poll IS the
+# wait; the sleep only delayed the same event.
 if wait_for_listen 6550 60; then
     pass "B5 no sidecar -> editor listens on 6550 (fallback works)"
 elif wait_for_listen "$PORT" 5; then

@@ -13,4 +13,8 @@
 #   （1110e1/e3、1111、1117cold、1292flush、1134）+ 1292flush G1.4 改 wait_for_pattern
 #   + 1134 F1 前置 settle 删除 + 1240 exec/int 共 7 处改事件等待与 wait_for_stable，
 #   39→19。
-19
+# 2026-10-03 SEE-1365 批次5：1117 live（kill_editor/kill_all_editors 谓词轮询、
+#   B5 前置 sleep 删除、B4 观察窗标注）+ ws5（backoff/cooldown 窗标注）+
+#   1292lease dt 窗标注 + 1316 node 就绪谓词轮询 + 1356 pacing 窗标注，19→9
+#   （终态：产品树 2 + fixture 5 + 不可事件化的被测语义窗 2）。
+9

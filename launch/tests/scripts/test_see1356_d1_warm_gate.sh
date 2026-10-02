@@ -60,7 +60,10 @@ section "D1: fork lane + no log tail → gate must NOT open on zero evidence"
     # load (spawn chain latency delays the window start), then EOF shuts it
     # down (pipe EOF = the shutdown event, no fixed sleep kill).
     ( printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"d1-pin"}}}'
-      sleep 1
+      # SEE-1365: the cold-window pacing wait has no in-pipe event to subscribe
+      # (initialize is answered by the proxy before any spawn log exists) — the
+      # fixed window IS the under-test scenario construction (stdin pacing).
+      sleep 1   # 竞态窗口语义（CLAUDE.md 边界）：stdin pacing 窗=被测场景构造
       printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}'
       sleep 9 ) | env HOME="$HOME" GODOT_MCP_HOME="$GODOT_MCP_HOME" TMPDIR="$SB" \
         "GODOT_MCP_RUNTIME_ID=$RID" \
