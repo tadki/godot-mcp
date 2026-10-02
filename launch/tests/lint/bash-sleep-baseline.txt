@@ -1,5 +1,6 @@
-# bash 域固定 sleep ratchet 基线（SEE-1363 §SPEC-005）
-# launch/*.sh + launch/tests/**/*.sh 内、经 check_bash_sleep.mjs 判定（predicate
-# 轮询与行内 escape-hatch 标注豁免后）的字面固定 sleep 存量。只降不升：
-# 存量收敛时把数字调小；新增违例使计数超过此值即 lint 红。
-41
+# bash 域固定 sleep ratchet 基线（SEE-1363 §SPEC-005；§SPEC-016 硬化重算）
+# 数字 = check_bash_sleep.mjs 在 launch/*.sh + launch/tests/**/*.sh 域计出的违例数
+# 规则：只降不升——违例收敛后把数字往下调；新增违例会把 gate 打红
+# 2026-10-02 §SPEC-016：loop-depth 启发式硬化（heredoc/注释行内 loop 关键字不计数）
+#   后真实可见存量重算——硬化修正计量（41→60 全可见），① see1070 六处收敛后落 54。
+54

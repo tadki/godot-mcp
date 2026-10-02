@@ -122,7 +122,7 @@ EOF
 # exists. Used for anchor #4 (induce npx death on demand).
 cat > "$TMPDIR/mock-npx-die.mjs" <<'EOF'
 import * as readline from 'node:readline';
-import { appendFileSync, existsSync } from 'node:fs';
+import { appendFileSync, existsSync, unlinkSync } from 'node:fs';
 const LOG = process.env.MOCK_NPX_LOG || '';
 const DIE = process.env.MOCK_NPX_DIE_FILE || '';
 const rl = readline.createInterface({ input: process.stdin, terminal: false, crlfDelay: Infinity });
@@ -139,7 +139,10 @@ rl.on('line', (line) => {
         }
     } catch (e) {}
 });
-setInterval(() => { if (DIE && existsSync(DIE)) process.exit(7); }, 150);
+// SEE-1363 §SPEC-015: the die signal is ONE-SHOT — consume (unlink) it before
+// exiting, so the harness needs no fixed retraction window and the respawned
+// instance never sees a stale signal.
+setInterval(() => { if (DIE && existsSync(DIE)) { try { unlinkSync(DIE); } catch (e) {} process.exit(7); } }, 150);
 EOF
 
 MOCK_NPX_DIR="$TMPDIR/mock_npx_bin"
@@ -300,8 +303,9 @@ if grep -q '"id":2' "$TMPDIR/t2_npx.log" 2>/dev/null; then
 else
     ok "T2.2d: id=2 was NOT forwarded to npx (held → drained with the diagnostic)"
 fi
-# Wait past the 2s warmup timeout into the RECOVERING window (but before T4's 30s FAILED_EXIT).
-sleep 3
+# Wait past the 2s warmup timeout into the RECOVERING window (but before T4's
+# 30s FAILED_EXIT) — wait for the transition event, not a fixed sleep.
+wait_for "$PROXY_ERR" 'entering RECOVERING' 8000 || true
 SNAP_T2="$TMPDIR/t2_snapshot.out"; cp "$PROXY_OUT" "$SNAP_T2"
 if proxy_alive; then
     ok "T2.1: proxy still alive 1s after warmup timeout (did not exit)"
@@ -466,17 +470,21 @@ else
     ko "#4.pre: no id=2 response while warming"
 fi
 # Kill npx once during cold warmup → coldNpxRestarts=1 ("cold attempt 1").
-touch "$N4_DIE"; sleep 0.6; rm -f "$N4_DIE"
-if wait_for "$PROXY_ERR" 'cold attempt 1' 3000; then
+# One-shot signal: the die-mock consumes (unlinks) N4_DIE before exiting, so
+# the respawned instance never sees it — no fixed retraction window.
+touch "$N4_DIE"
+if wait_for "$PROXY_ERR" 'cold attempt 1' 8000; then
     ok "#4.pre2: npx death during cold warmup respawned (cold attempt 1 logged)"
 else
     ko "#4.pre2: npx death did not trigger cold-respawn during cold warmup"
 fi
-# Now warmup times out → RECOVERING (spec). Kill npx AGAIN in RECOVERING.
-sleep 2   # reach/just past the 2s warmup timeout (RECOVERING window; FAILED_EXIT is 30s away)
-touch "$N4_DIE"; sleep 0.6; rm -f "$N4_DIE"
-# Spec: RECOVERING-state npx death still cold-respawns and continues the counter → "cold attempt 2".
-sleep 2
+# Wait for the warmup-timeout → RECOVERING transition event (bounded), then
+# kill npx AGAIN in RECOVERING.
+wait_for "$PROXY_ERR" 'entering RECOVERING' 8000 || true
+touch "$N4_DIE"
+# Spec: RECOVERING-state npx death still cold-respawns and continues the
+# counter → wait for the 'cold attempt 2' event (bounded) instead of a sleep.
+wait_for "$PROXY_ERR" 'cold attempt 2' 8000 || true
 SNAP_N4_ERR="$TMPDIR/n4_snapshot.err"; cp "$PROXY_ERR" "$SNAP_N4_ERR"
 if proxy_alive; then
     ok "#4.1: proxy survived an npx death during RECOVERING (did not exit)"
@@ -509,8 +517,9 @@ if wait_for "$PROXY_OUT" '"id":2' 6000; then
 else
     ko "#5.pre: no id=2 response while warming"
 fi
-# Enter RECOVERING (past 2s timeout), then send a NEW tools/call (id=3).
-sleep 3
+# Enter RECOVERING (past 2s timeout — wait for the transition event, not a
+# fixed sleep), then send a NEW tools/call (id=3).
+wait_for "$PROXY_ERR" 'entering RECOVERING' 8000 || true
 T_SEND=$(date +%s%3N)
 send_line "$CALL_LINE_2"
 # Spec: immediate (well under the probe interval) diagnostic error.
