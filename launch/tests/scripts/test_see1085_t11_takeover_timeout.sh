@@ -130,7 +130,9 @@ fi
 END_MS=$(($(date +%s%N) / 1000000))
 ELAPSED=$((END_MS - START_MS))
 
-sleep 0.1 # let the diagnostic body flush
+# SEE-1365: wait_for_stable replaces the blind 0.1s flush settle — snapshot
+# after the diagnostic body's trailing writes land or the budget expires.
+wait_for_stable "$PROXY_OUT" 2000
 SNAP="$TMPDIR/t11_snap.out"; cp "$PROXY_OUT" "$SNAP"
 
 # T11.2: hint contains "waiting for takeover".
