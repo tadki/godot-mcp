@@ -47,6 +47,9 @@ PROXY="$LAUNCH_DIR/godot-mcp-proxy.mjs"
 # with timeout diagnostics). W1-W5 assertion semantics unchanged.
 source "$SCRIPT_DIR/_wait_helpers.sh"
 
+# Canonical initialize request, byte-identical across all feeder subshells.
+INIT_REQUEST='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"fork-test"}}}'
+
 PASS=0; FAIL=0; FAILS=()
 ok() { echo "  [PASS] $*"; PASS=$((PASS+1)); }
 ko() { echo "  [FAIL] $*"; FAIL=$((FAIL+1)); FAILS+=("$*"); }
@@ -137,10 +140,10 @@ printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_ove
 # (initialize answer observed on stdout before tools/call is sent) and stdin
 # is held until the child has recorded its env — no fixed-sleep guesses.
 (
-    printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"fork-test"}}}'
-    wait_for_pattern "$TMPDIR/caseA.out" '"id":1' 30000 "caseA initialize response" || true
+    printf '%s\n' "$INIT_REQUEST"
+    wait_for_pattern "$TMPDIR/caseA.out" '"id":1' 30000 "caseA initialize response (stdin hold)" || true
     printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_project_info","arguments":{}}}'
-    wait_for_pattern "$TMPDIR/fork.marker" 'QUICK=' 60000 "caseA fork marker env record" || true
+    wait_for_pattern "$TMPDIR/fork.marker" 'QUICK=' 60000 "caseA fork marker env record (stdin hold)" || true
 ) | env \
     "KOL_AGENT_NAME=Bachi" \
     "GODOT_HOST=127.0.0.1" \
@@ -191,8 +194,8 @@ SCRATCH_B="$TMPDIR/caseB-scratch"; mkdir -p "$SCRATCH_B"
 printf 'config_version=5\n\n[godot_mcp]\n\nport_override_enabled=false\nport_override=6550\n' > "$SCRATCH_B/project.godot"
 if [[ -x "$FORK_CLI" ]]; then
     (
-        printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"fork-test"}}}'
-        wait_for_pattern "$TMPDIR/caseB.err" 'stage=FORK_WIRED' 30000 "caseB FORK_WIRED stage" || true
+        printf '%s\n' "$INIT_REQUEST"
+        wait_for_pattern "$TMPDIR/caseB.err" 'stage=FORK_WIRED' 30000 "caseB FORK_WIRED stage (stdin hold)" || true
     ) | env \
         "KOL_AGENT_NAME=Bachi" \
         "GODOT_HOST=127.0.0.1" \
@@ -220,8 +223,8 @@ if [[ -x "$FORK_CLI" ]]; then
 else
     # Fork not present: launcher must log the fallback warning (W4).
     (
-        printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"fork-test"}}}'
-        wait_for_pattern "$TMPDIR/caseB.err" 'fork CLI not found' 30000 "caseB missing-fork warning" || true
+        printf '%s\n' "$INIT_REQUEST"
+        wait_for_pattern "$TMPDIR/caseB.err" 'fork CLI not found' 30000 "caseB missing-fork warning (stdin hold)" || true
     ) | env \
         "KOL_AGENT_NAME=Bachi" \
         "GODOT_HOST=127.0.0.1" \
