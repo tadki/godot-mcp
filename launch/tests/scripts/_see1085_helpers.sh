@@ -293,6 +293,12 @@ wait_for_stable() {
             last="$now"
         fi
     done
+    # SEE-1365 hardener: budget expiry = the settle never stabilized (writes
+    # still landing or file vanished). Deadline semantics unchanged (rc=0),
+    # but the expiry must announce itself — a caller that snapshots after an
+    # unstable settle has a flake-shaped failure mode and deserves the marker.
+    # (Mirror definition lives in the other helper file; keep bodies identical.)
+    echo "  [stable-timeout] ${path}: mtime never stable within ${budget}ms (settle expired; snapshot may be mid-write)" >&2
     return 0
 }
 
