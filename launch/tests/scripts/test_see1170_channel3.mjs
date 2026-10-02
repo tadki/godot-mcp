@@ -186,9 +186,26 @@ function makeBareWithStale() {
     };
     const sb = buildSandbox({ spawn, stat: async () => {} });
     const t0 = Date.now();
+    // SEE-1363 §SPEC-011 (load tolerance): the absolute <6000 upper bound went
+    // red under 4-way load (elapsed=7678ms — event-loop timer delay, not
+    // watchdog semantics). The ref timer below is a same-moment 5s setTimeout
+    // racing the production watchdog through the SAME event loop, so load
+    // inflates both together; its delivery time is stamped INSIDE the ref
+    // callback (measuring after the sequential await would clamp ref to
+    // elapsed and mask a wrongly-sized watchdog — the negative probe
+    // catches this). The asserted semantics is unchanged: (1) the watchdog
+    // does NOT short-circuit (lower bound 4900 — timers never fire early,
+    // load-tolerant by nature); (2) it is ~5s-class, not 8s/30s — measured as
+    // elapsed < ref + resolution margin (a wrongly-sized watchdog overshoots
+    // by seconds regardless of load; a never-firing one still hangs into the
+    // wrapper timeout → red). The ref value MUST track the watchdog constant
+    // in proxy/worktree.mjs (currently 5000).
+    let refElapsed = 0;
+    const refP = new Promise((r) => setTimeout(() => { refElapsed = Date.now() - t0; r(); }, 5000));
     await sb.tryPruneBareRepo('/any');
     const elapsed = Date.now() - t0;
-    assertTrue(`S17b timeout fires around 5s (elapsed=${elapsed}ms)`, elapsed >= 4900 && elapsed < 6000);
+    await refP;
+    assertTrue(`S17b timeout fires ~5s (elapsed=${elapsed}ms ref=${refElapsed}ms)`, elapsed >= 4900 && elapsed < refElapsed + 1500);
     assertEq('S17b outcome=timeout', sb.getDiag().outcome, 'timeout');
   }
 
