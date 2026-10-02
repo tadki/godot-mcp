@@ -70,7 +70,7 @@ REG="$SBOX/registry.json"      # sandbox registry (kept absent — not under tes
 mkdir -p "$PORT_HELD"
 
 # A live NON-node process for the PID-reuse case.
-sleep 120 &
+sleep 120 &   # fixture：模拟存活孤儿进程的 keep-alive，非同步等待手段
 SLEEP_PID=$!
 
 # run_reaper <dry_run:0|1> — real reaper, sandboxed port-held + registry,

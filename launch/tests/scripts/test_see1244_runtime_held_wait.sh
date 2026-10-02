@@ -110,7 +110,7 @@ section "C3: stale holder (dead pid) → immediate recovery, zero waiting"
 section "C4: live-but-non-node pid (PID reused) → treated dead, recovered"
 {
     R="$TMP/c4"; mkheld "$R" ""; OUTFILE="$TMP/c4.out"
-    sleep 30 & H_PID=$!
+    sleep 30 & H_PID=$!   # fixture：模拟存活非 node 进程的 keep-alive，非同步等待手段
     printf '%s' "$H_PID" > "$R/held/Revy-solo/pid"
     run_held_block "$R" "" "$OUTFILE"; RC=$?
     kill $H_PID 2>/dev/null; wait $H_PID 2>/dev/null || true

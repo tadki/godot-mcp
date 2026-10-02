@@ -65,6 +65,7 @@ section "D1: fork lane + no log tail → gate must NOT open on zero evidence"
       # fixed window IS the under-test scenario construction (stdin pacing).
       sleep 1   # 竞态窗口语义（CLAUDE.md 边界）：stdin pacing 窗=被测场景构造
       printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}'
+      # 竞态窗口语义（CLAUDE.md 边界）：cold-window stdin pacing 负向观察窗，即被测场景构造（同线标注不可行：行尾为管道续行）
       sleep 9 ) | env HOME="$HOME" GODOT_MCP_HOME="$GODOT_MCP_HOME" TMPDIR="$SB" \
         "GODOT_MCP_RUNTIME_ID=$RID" \
         KOL_AGENT_NAME=Bachi GODOT_HOST=127.0.0.1 "GODOT_PORT=$PORT" \

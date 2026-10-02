@@ -97,7 +97,7 @@ if wait_for "$PROXY_ERR" 'persisted helper stderr' 5000 || [[ -f "$EXPECT_LOG" ]
     :
 fi
 # give the async appendFile a beat
-for _ in 1 2 3 4 5 6 7 8 9 10; do [[ -f "$EXPECT_LOG" ]] && break; sleep 0.2; done
+for _ in $(seq 1 10); do [[ -f "$EXPECT_LOG" ]] && break; sleep 0.2; done
 if [[ -f "$EXPECT_LOG" ]]; then
     ok "A1: stderr.log exists at $EXPECT_LOG"
 else

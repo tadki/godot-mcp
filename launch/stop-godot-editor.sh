@@ -184,7 +184,7 @@ if [[ -n "${PORT:-}" ]]; then
     if command -v ss >/dev/null 2>&1; then
         if ss -tln 2>/dev/null | awk '$4 ~ ":'"$PORT"'$" {found=1} END{exit !found}'; then
             # Still listening — give Stop-Process a brief moment, then recheck once.
-            sleep 1
+            sleep 1   # 产品语义：端口释放余量（单次复检，非同步等待手段）
             if ss -tln 2>/dev/null | awk '$4 ~ ":'"$PORT"'$" {found=1} END{exit !found}'; then
                 HOLDER="$(ss -tlnp 2>/dev/null | awk -v p=":$PORT" '$4 ~ p {print $0}' | head -n1)"
                 echo "[stop-godot-editor] WARNING: port ${PORT} still listening after cleanup: $HOLDER"

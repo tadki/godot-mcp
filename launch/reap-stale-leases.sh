@@ -172,7 +172,7 @@ if (( DRY_RUN == 0 )); then
     # Archi 加固版: trap INT/TERM so a signal DURING the sleep aborts
     # immediately (exit 130) instead of running the live reap anyway.
     trap 'echo "[reap-stale-leases] INTERRUPTED — aborting before any side effect." >&2; exit 130' INT TERM
-    sleep 3
+    sleep 3   # 产品语义：dry-run 闸口 Ctrl-C 宽限窗（非同步等待手段）
     trap - INT TERM
     fi
 fi
