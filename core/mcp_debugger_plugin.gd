@@ -56,15 +56,18 @@ func _capture(message: String, data: Array, session_id: int) -> bool:
 # Bridge messages that carry ONLY the data payload — their route lambdas are
 # uniform (data only). bridge_ready is the lone session-id consumer and gets
 # its own arm in _bridge_handler.
+# SEE-1367 D1: method names must match the actual `_handle_*` handlers — the
+# table was written with the underscore dropped, so every route lambda's
+# `call(method, data)` died with "Nonexistent function (via call)".
 const DATA_ONLY_ROUTES := {
-	"godot_mcp:screenshot_result": "handle_screenshot_result",
-	"godot_mcp:performance_metrics_result": "handle_performance_metrics_result",
-	"godot_mcp:find_nodes_result": "handle_find_nodes_result",
-	"godot_mcp:input_map_result": "handle_input_map_result",
-	"godot_mcp:input_sequence_result": "handle_input_sequence_result",
-	"godot_mcp:sequence_capture": "handle_sequence_capture",
-	"godot_mcp:type_text_result": "handle_type_text_result",
-	"godot_mcp:game_response": "handle_game_response",
+	"godot_mcp:screenshot_result": "_handle_screenshot_result",
+	"godot_mcp:performance_metrics_result": "_handle_performance_metrics_result",
+	"godot_mcp:find_nodes_result": "_handle_find_nodes_result",
+	"godot_mcp:input_map_result": "_handle_input_map_result",
+	"godot_mcp:input_sequence_result": "_handle_input_sequence_result",
+	"godot_mcp:sequence_capture": "_handle_sequence_capture",
+	"godot_mcp:type_text_result": "_handle_type_text_result",
+	"godot_mcp:game_response": "_handle_game_response",
 }
 
 
