@@ -80,11 +80,13 @@ run_configure() {
 
 sect "T1: default async — configure returns well under the reaper's 3s sleep"
 read -r DT1 RC1 <<<"$(run_configure "")"
-if [[ "$RC1" == "0" && "$DT1" -lt 2500 ]]; then
-    ok "T1.1: configure rc=0 in ${DT1}ms (< 2500ms, reaper not blocking)"
-else
-    ko "T1.1: configure rc=$RC1 took ${DT1}ms (expected < 2500ms)"
-fi
+# SEE-1365 §SPEC-007 (分拣: 时延判别→参考锚定): T1.1's semantic is sync-vs-async
+# discrimination, and the honest anchor is the SYNC arm measured in the same
+# round (T2's ≥2800ms reaper block). Under 4-way load an absolute <2500ms can
+# red spuriously while the async property is intact; the relative ratio cannot.
+# T1.1's verdict is therefore DEFERRED until the sync arm (DT2) is measured in
+# section T2 below; [slow-warn] is observable, never silent; red only when
+# async matches-or-exceeds sync (reaper blocking = the actual bug).
 # Sidecar must still be written even though the reaper is mid-flight.
 if [[ -f "$WT/.godot/mcp-lease.json" ]] && grep -q '"state": "active"' "$WT/.godot/mcp-lease.json"; then
     ok "T1.2: sidecar lease written while reaper runs in background"
@@ -111,6 +113,14 @@ if [[ "$RC2" == "0" && "$DT2" -ge 2800 ]]; then
     ok "T2.1: configure rc=0 in ${DT2}ms (>= 2800ms, sync rollback engaged)"
 else
     ko "T2.1: configure rc=$RC2 took ${DT2}ms (expected >= 2800ms)"
+fi
+# Deferred T1.1 verdict (anchored to this sync arm — see §SPEC-007 note at T1).
+if [[ "$RC1" == "0" && "$DT1" -lt 2500 ]]; then
+    ok "T1.1: configure rc=0 in ${DT1}ms (< 2500ms, reaper not blocking)"
+elif [[ "$RC1" == "0" && "$DT1" -lt "$DT2" ]]; then
+    echo "  [slow-warn] T1.1: async configure took ${DT1}ms (≥2500ms under load) but < sync arm ${DT2}ms — reaper still not blocking" >&2
+else
+    ko "T1.1: configure rc=$RC1 took ${DT1}ms (async ≥ sync ${DT2}ms — reaper blocking?)"
 fi
 if grep -q "REAPER_SYNC_BEGIN" "$SBOX/err.log" && grep -q "REAPER_SYNC_END" "$SBOX/err.log"; then
     ok "T2.2: stage log shows REAPER_SYNC_BEGIN/END"

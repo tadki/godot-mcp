@@ -132,6 +132,21 @@ r="$(bash -c ". '$TMP/env-sim.env'; . '$TMP/consumer/addons/godot_mcp/launch/env
 cd "$TMP/fork" 2>/dev/null || { git clone -q --no-checkout "$FORK_URL" "$TMP/fork"; cd "$TMP/fork"; }
 git fetch -q origin main && git checkout -q origin/main
 [[ "$(git rev-parse HEAD)" == "$EXPECTED_FORK" ]] && ok "fork main = $EXPECTED_FORK" || bad "fork main != expected"
+# SEE-1365 §SPEC-009 (D2 同款根治): tier1_wait's T4/T5 arms exec the REAL
+# launcher against THIS fresh clone; with server/dist absent (gitignored) the
+# launcher's SEE-1288 seam runs a one-time npm ci+build (~34s observed) INSIDE
+# the arms' own `timeout 40/30` windows → cold-cache runners red spuriously.
+# Warm the clone ONCE here, outside every timed window (the auto-build seam
+# itself is form-A-covered in t2; this arm asserts tier1 wait semantics, not
+# the build). Log-line-bounded with diagnosis; failure is non-fatal (the arms
+# fall back to the seam's own behavior and the arm verdicts carry it).
+if [[ ! -x server/dist/cli.js && -f server/package.json ]]; then
+  if ( cd server && npm ci --no-audit --no-fund >"$TMP/fork-prebuild.log" 2>&1 && npm run build >>"$TMP/fork-prebuild.log" 2>&1 ); then
+    ok "fork clone pre-built for tier1_wait (cold-cache immunity)"
+  else
+    echo "  [wait-timeout] fork prebuild failed — tier1_wait arms will exercise the launcher's own build seam (see $TMP/fork-prebuild.log)" >&2
+  fi
+fi
 bash launch/tests/scripts/test_see1244_tier1_wait.sh >/dev/null 2>&1 && ok "tier1_wait 11/11" || bad "tier1_wait regression"
 bash launch/tests/scripts/test_see1148_t15_reaper_port_sweep.sh >/dev/null 2>&1 && ok "T15 14/14" || bad "T15 regression"
 bash launch/tests/scripts/test_see1148_t16_runtime_identity.sh >/dev/null 2>&1 && ok "T16 15/15" || bad "T16 regression"

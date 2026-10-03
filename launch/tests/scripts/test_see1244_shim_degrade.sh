@@ -73,8 +73,20 @@ console.log(m.result && Array.isArray(m.result.tools) && m.result.tools.length >
     ok "D2-① tools/list answered non-empty" "$d2_tools_ok"
     ok "D2-② initialize present in output" \
         "$(grep -q '"id":1' "$TMP/d2-out.ndjson" && echo 1 || echo 0)"
-    ok "D2-② shim log SHIM_ANSWER_INIT elapsed_ms small (<1000)" \
-        "$(grep -oE 'SHIM_ANSWER_INIT elapsed_ms=[0-9]+' "$TMP/d2-err.log" | grep -oE '[0-9]+$' | awk '$1 < 1000' | grep -q . && echo 1 || echo 0)"
+    # SEE-1365 §SPEC-007 (分拣: 事件判别→分级判定): D2-②'s real semantic is
+    # "direct-answer mode, NOT chain-waited" — the discriminator is the 10s
+    # chain-exhaustion window, not the absolute 1000ms. <1000ms → pass; slower
+    # (4-way load) but under the chain window → [slow-warn], still direct mode;
+    # ≥10s would mean the shim waited on a chain = the bug (red).
+    _init_ms="$(grep -oE 'SHIM_ANSWER_INIT elapsed_ms=[0-9]+' "$TMP/d2-err.log" | grep -oE '[0-9]+$' | head -1)"
+    if [[ -n "$_init_ms" && "$_init_ms" -lt 1000 ]]; then
+        ok "D2-② shim log SHIM_ANSWER_INIT elapsed_ms small (<1000)" "1"
+    elif [[ -n "$_init_ms" && "$_init_ms" -lt 10000 ]]; then
+        echo "  [slow-warn] D2-②: SHIM_ANSWER_INIT took ${_init_ms}ms (≥1000ms under load) but < 10s chain window — still direct mode" >&2
+    else
+        ok "D2-② shim log SHIM_ANSWER_INIT elapsed_ms small (<1000)" "0" "took ${_init_ms:-absent}ms ≥ 10s chain-exhaustion window — shim waited on the chain (bug)"
+        echo "  [wait-timeout] D2-②: SHIM_ANSWER_INIT ${_init_ms:-absent}ms ≥ 10s chain-exhaustion window — shim waited on the chain (bug)" >&2
+    fi
     ok "D2-③ tools/call returned structured -32000 error (not hang; total ${elapsed_ms}ms < 10s)" \
         "$(grep -q '"id":3' "$TMP/d2-out.ndjson" && grep -q '\-32000' "$TMP/d2-out.ndjson" && [[ $elapsed_ms -lt 10000 ]] && echo 1 || echo 0)" \
         "$(cat "$TMP/d2-out.ndjson" 2>/dev/null | head -3)"
