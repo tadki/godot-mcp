@@ -47,6 +47,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_see1085_helpers.sh"
 lib_init
 
+# SEE-1365 §SPEC-007 (D3, Owner 裁示「慢了 warning、事件完全未发生才红」): the
+# asserted fact is the EVENT's existence, not its latency. Each budget-bounded
+# wait gets a tiered verdict — arrived within budget → pass as before; arrived
+# late (4-way load) → WARNING (not red); never arrived in the extended window
+# (budget ×4) → FAIL. 被测语义零改动：事件仍必须发生。
+wait_for_tiered() {
+    local file="$1" pat="$2" budget="$3" name="${4:-}"
+    # expand the default AFTER `local` — one-line `local a=$x b=${c:-$a}` would
+    # evaluate $a before the local builtin assigns it (set -u: unbound).
+    name="${name:-$file ~ $pat}"
+    if wait_for "$file" "$pat" "$budget"; then return 0; fi
+    note "$name: not within ${budget}ms under load — extending window (×4)"
+    if wait_for "$file" "$pat" $(( budget * 4 )); then
+        note "$name: arrived late — tolerated (slow, not red)"
+        return 0
+    fi
+    echo "  [wait-timeout] $name: event never occurred within $(( budget * 4 ))ms" >&2
+    return 1
+}
+
 PORT=$(find_free_port)
 EDITOR_LOG="$TMPDIR/editor.log"
 # Empty at proxy start: the lease monitor binds and seeds its offset to size 0,
@@ -90,7 +110,7 @@ start_proxy \
     "MOCK_NPX_LOG=$TMPDIR/npx.log"
 
 send_line "$INIT_LINE"
-wait_for "$PROXY_OUT" '"id":1' 1500 || ko "B.pre: initialize not answered"
+wait_for_tiered "$PROXY_OUT" '"id":1' 1500 || ko "B.pre: initialize not answered"
 
 # The editor log now receives the full warmup milestone sequence — as if a
 # previous editor session left it behind. The lease monitor (polled from proxy
@@ -116,7 +136,7 @@ send_line "$(call_line 2)"
 # async spawn failure lands, handleSpawnFailure's rejectQueue drains it with the
 # REAL spawn_failed diagnostic (目标3: 真实错误非预热提示) — never a "warming"
 # hint, never a silent hang, never a premature error before the failure exists.
-if wait_for "$PROXY_OUT" '"id":2' 4000; then
+if wait_for_tiered "$PROXY_OUT" '"id":2' 4000; then
     ok "B.1a: first call id=2 answered (held call drained by the spawn failure)"
 else
     ko "B.1a: no id=2 response (out: $(tail -3 "$PROXY_OUT" | tr '\n' ' '))"
@@ -131,7 +151,7 @@ if grep -q 'editor 正在预热中（冷启动约需 60s）' "$PROXY_OUT"; then
 else
     ok "B.1h: no warmup-hint text (real spawn_failed diagnostic, not a hint)"
 fi
-if wait_for "$PROXY_ERR" 'editor spawn failed' 6000; then
+if wait_for_tiered "$PROXY_ERR" 'editor spawn failed' 6000; then
     ok "B.1c: spawn failure latched (editor spawn failed logged)"
 else
     ko "B.1c: spawn failure never logged (configure rc=1 not surfaced)"
@@ -149,7 +169,7 @@ send_line "$(call_line 3)"
 # id=3 (a NEW call) must ALSO be answered with the spawn_failed diagnostic
 # (the one-shot latch re-arms on the failed attempt). Round 1 already emitted a
 # spawn_failed for id=2, so the id=3 response is the per-call delivery proof.
-if wait_for "$PROXY_OUT" '"id":3' 4000; then
+if wait_for_tiered "$PROXY_OUT" '"id":3' 4000; then
     ok "B.2a: id=3 answered (one-shot spawn_failed on the retry)"
 else
     ko "B.2a: no id=3 response (out: $(tail -3 "$PROXY_OUT" | tr '\n' ' '))"
@@ -171,18 +191,18 @@ send_line "$(call_line 4)"
 # renderStable needs ~4s (2 × RENDER_SAMPLE_MS) to flip; id=4 is HELD until
 # WARM, then flushed and answered. Wait for the WARM transition, then send a
 # follow-up call to observe the forwarded path + timeline echo.
-if wait_for "$PROXY_ERR" 'warm detected' 15000; then
+if wait_for_tiered "$PROXY_ERR" 'warm detected' 15000; then
     ok "B.3a: proxy reached WARM (retried spawn succeeded)"
 else
     ko "B.3a: proxy never reached WARM"
 fi
 send_line "$(call_line 5)"
-if wait_for "$PROXY_OUT" '"id":5' 6000; then
+if wait_for_tiered "$PROXY_OUT" '"id":5' 6000; then
     ok "B.3b: post-warm call id=5 answered (forwarded path, not a hint)"
 else
     ko "B.3b: no id=5 response after warm"
 fi
-if wait_for "$TMPDIR/npx.log" '"id":5' 4000; then
+if wait_for_tiered "$TMPDIR/npx.log" '"id":5' 4000; then
     ok "B.3c: id=5 forwarded to npx (real call after warm)"
 else
     ko "B.3c: id=5 never reached npx"
@@ -195,7 +215,7 @@ else
     ko "B.3d: configure count after round 3 = $CFG3_COUNT (expected ≥ 2)"
 fi
 # The post-warm success response carries the §7 one-line warmup timeline echo.
-if wait_for "$PROXY_OUT" 'godot-mcp warmup' 3000; then
+if wait_for_tiered "$PROXY_OUT" 'godot-mcp warmup' 3000; then
     ok "B.3e: post-warm success response carries the warmup timeline echo"
 else
     ko "B.3e: no warmup timeline echo in the success response"

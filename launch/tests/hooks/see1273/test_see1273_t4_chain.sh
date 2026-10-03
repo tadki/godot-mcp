@@ -86,8 +86,15 @@ cp "$SHIM_SRC" .dev/godot-mcp/launch/godot-mcp-shim.mjs
 printf 'config_version=5\n\n[application]\nconfig/name="T4QAConsumer"\nconfig/features=PackedStringArray("4.5")\n' > project.godot
 export KOL_PROJECT_GODOT="$TMP/consumer/project.godot"
 unset GODOT_MCP_FORK_CLI GODOT_MCP_SHARED_MASTER KOL_SHARED_MASTER
-timeout 45 bash addons/godot_mcp/launch/godot-mcp-launcher.sh --port 6582 > "$TMP/chain.log" 2>&1 &
-LPID=$!; sleep 25; kill $LPID 2>/dev/null; wait $LPID 2>/dev/null   # 竞态窗口语义（CLAUDE.md 边界）：pipe 会话时长窗=被测场景
+# Session window: two log-line bounded waits (see t2 form A rationale) — the
+# chain self-terminates via its own graceful shutdown on this runner; `timeout`
+# 150 covers the one-time auto-build; the kill is the TTY-runner backstop.
+timeout 150 bash addons/godot_mcp/launch/godot-mcp-launcher.sh --port 6582 > "$TMP/chain.log" 2>&1 &
+LPID=$!
+wait_for_pattern "$TMP/chain.log" 'launching godot-mcp via node|WARNING: fork CLI not found' 120000 "T4 chain: CLI spawn evidence" \
+  || bad "T4 chain: no CLI spawn evidence within 120s budget (auto-build stalled?)"
+wait_for_pattern "$TMP/chain.log" 'intentional_release' 30000 "T4 chain: release guard on shutdown" || true
+kill $LPID 2>/dev/null; wait $LPID 2>/dev/null
 grep -q 'stage=LAUNCHER_EXEC' "$TMP/chain.log" && ok "T4 chain: submodule launcher executed (LAUNCHER_EXEC)" || bad "T4 chain: launcher did not start"
 if grep -q 'launching godot-mcp via node' "$TMP/chain.log"; then
   ok "T4 chain: proxy spawned CLI"
