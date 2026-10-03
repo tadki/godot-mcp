@@ -17,4 +17,8 @@
 #   B5 前置 sleep 删除、B4 观察窗标注）+ ws5（backoff/cooldown 窗标注）+
 #   1292lease dt 窗标注 + 1316 node 就绪谓词轮询 + 1356 pacing 窗标注，19→9
 #   （终态：产品树 2 + fixture 5 + 不可事件化的被测语义窗 2）。
-9
+# 2026-10-03 SEE-1365 批次6（修复循环 §SPEC-006）：t2 form A/B + t4 共 3 处
+#   sleep 25 会话窗改日志行收口（FORK_WIRED/WARNING/LAUNCHER_EXEC + release
+#   guard，QA D2）；1356 pipe 会话窗改 T2 snapshot 谓询（baseline 9→8，终态 =
+#   产品树 2 + fixture 5 + 1244 shim_degrade stdin pacing 1）。
+8

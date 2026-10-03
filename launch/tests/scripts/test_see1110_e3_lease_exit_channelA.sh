@@ -88,10 +88,11 @@ wait_for "$PROXY_OUT" '"id":1' 3000 || ko "E3.pre: initialize not answered"
 # rejectQueue answers the held call with the failed_exit diagnostic before
 # process.exit(1). So id=2 must carry that diagnostic — never a friendly
 # warmup hint, never a silent drop.
-# SEE-1365: the pre-append settle is a negative observation window — the test
-# asserts id=2 was NOT answered during the hold; the fixed window IS the
-# under-test race-window semantics (CLAUDE.md 边界).
-sleep 0.5   # 竞态窗口语义（CLAUDE.md 边界）：cold-hold 负向观察窗=被测语义
+# SEE-1365 §SPEC-006: the settle's real purpose is ordering — the LEASE_EXITING
+# line must land only AFTER id=2 is registered in the hold FIFO. That state has
+# a subscribable event (the proxy's forced progress log on hold), so the blind
+# 0.5s window becomes an event wait.
+wait_for_pattern "$PROXY_ERR" '1 call\(s\) queued' 5000 "E3: id=2 registered in the hold FIFO" || true
 T_SEND=$(date +%s%3N)
 echo "$LEASE_EXITING" >> "$E3_LOG"
 if wait_for_death 5000; then

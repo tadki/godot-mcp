@@ -49,6 +49,10 @@ PREP_SH="$TMPDIR/prepare-stub.sh"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$PREP_SH"
 chmod +x "$PREP_SH"
 
+# SEE-1365 §SPEC-006: give-up status file (WS-4 surface) — defined early because
+# the R2/R3 cooldown waits predicate-poll its `cooldown_until` field.
+GU_FILE="$TMPDIR/home/.multica/godot-editor/godot-editor-bachiws5.giveup.json"
+
 # wait_attempt <counter> <n> — wait until the start-mock counter reaches n lines.
 # Deterministic pacing: a call arriving while an attempt is in flight gets HELD
 # and drained by rejectQueue (never triggering its own attempt), so serial sends
@@ -174,8 +178,21 @@ EOF
 chmod +x "$START_SH"
 
 # Wait for the cooldown (3s) to expire, then the rearming call.
-# SEE-1365: 同刻参考锚（正例 #4）— give-up 日志 [ts=] 锚定 + 变量余量，不再盲睡固定 3.5s。
-sleep 3.5   # 竞态窗口语义（CLAUDE.md 边界）：give-up cooldown(3s) 到期窗（KOL_GIVEUP_COOLDOWN_MS=$COOL 服务端时钟，无可订阅过期事件）
+# SEE-1365 §SPEC-006: cooldown expiry IS subscribable — the give-up status
+# file carries `cooldown_until` (ISO). Bounded predicate poll on that field
+# replaces the blind 3.5s (budget 8s = 2× window + slack, diagnostic on miss).
+# ms-precision compare + 250ms margin: second-truncated expiry reads "expired"
+# up to 999ms early, and a cooldown-era call is swallowed as FAILED_CLEAN
+# (rearm never fires) — the exact defect this poll must not reintroduce.
+for _ in $(seq 1 80); do
+    _cu="$(jq -r '.cooldown_until // empty' "$GU_FILE" 2>/dev/null || true)"
+    if [[ -n "$_cu" ]]; then
+        _cu_ms="$(date -u -d "$_cu" +%s%3N 2>/dev/null || echo 0)"
+        (( $(date -u +%s%3N) >= _cu_ms + 250 )) && break
+    fi
+    sleep 0.1
+done
+[[ -n "$_cu" ]] || echo "  [wait-timeout] R2: cooldown_until never appeared in $GU_FILE within 8s" >&2
 REARM_SNAP_BEFORE=$(wc -c < "$PROXY_OUT")
 send_line "$(call_line 8)"
 if wait_for "$PROXY_ERR" 'warmup re-armed' 8000; then
@@ -232,7 +249,17 @@ wait_for "$PROXY_ERR" 'give-up #1 recorded' 20000 || ko "R3.1: first give-up not
 # Wait out cooldown; rearm fires on id=5 (attempt 4), then id=6/7 are attempts
 # 5 and 6 — streak 3 hits at attempt 6 → give-up #2. Each send waits out the
 # §6 spawn backoff window first (MEDIUM-1: retry-after swallows hot retries).
-sleep 3.5   # 竞态窗口语义（CLAUDE.md 边界）：give-up cooldown(3s) 到期窗（服务端时钟，无可订阅过期事件）
+# SEE-1365 §SPEC-006: same cooldown_until predicate poll as R2.
+# SEE-1365 §SPEC-006: same cooldown_until predicate poll as R2 (ms precision).
+for _ in $(seq 1 80); do
+    _cu="$(jq -r '.cooldown_until // empty' "$GU_FILE" 2>/dev/null || true)"
+    if [[ -n "$_cu" ]]; then
+        _cu_ms="$(date -u -d "$_cu" +%s%3N 2>/dev/null || echo 0)"
+        (( $(date -u +%s%3N) >= _cu_ms + 250 )) && break
+    fi
+    sleep 0.1
+done
+[[ -n "$_cu" ]] || echo "  [wait-timeout] R3: cooldown_until never appeared in $GU_FILE within 8s" >&2
 send_line "$(call_line 5)"
 wait_for "$PROXY_ERR" 'warmup re-armed' 8000 || ko "R3.2: rearm after cooldown did not fire"
 wait_attempt "$START2" 4 || true
@@ -254,7 +281,6 @@ fi
 # The giveup status file is where WS-4's foundation reads the counters. In this
 # sandbox HOME is the real one — read whatever the proxy wrote (best-effort
 # assertion on the FILE SHAPE, not the path).
-GU_FILE="$TMPDIR/home/.multica/godot-editor/godot-editor-bachiws5.giveup.json"
 echo "  [note] GU_FILE content: $(cat "$GU_FILE" 2>/dev/null | tr '\n' ' ' | head -c 400)"
 if [[ -n "$GU_FILE" ]] && jq -e '.giveup_count >= 2 and .backoff_ms > 0 and .cooldown_until != null' "$GU_FILE" >/dev/null 2>&1; then
     ok "R3.5: giveup status file carries count>=2/backoff/cooldown_until (WS-4 对接面)"

@@ -23,6 +23,9 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
 PROXY="$REPO/launch/godot-mcp-proxy.mjs"
+# SEE-1365 §SPEC-006: shared event-driven wait primitives (used inside the
+# stdin pipe subshell below; resolved at top before any cwd shift).
+source "$HERE/_wait_helpers.sh"
 
 command -v node >/dev/null 2>&1 || { echo "node required"; exit 1; }
 [[ -x "$PROXY" ]] || { echo "FAIL: proxy missing: $PROXY"; exit 1; }
@@ -56,17 +59,20 @@ PORT=6677
 section "D1: fork lane + no log tail → gate must NOT open on zero evidence"
 {
     # warmup window 2.5s; the held tools/call rides the cold window. stdin
-    # stays open ~10s so the proxy is alive past T2 even under 4-way parallel
-    # load (spawn chain latency delays the window start), then EOF shuts it
-    # down (pipe EOF = the shutdown event, no fixed sleep kill).
+    # stays open until the T2 boundary is OBSERVED (snapshot state=recovering),
+    # then EOF shuts it down (pipe EOF = the shutdown event, no fixed sleep
+    # kill). SEE-1365 §SPEC-006: both pacing sleeps were subscribable — the
+    # initialize response lands on proxy.out (paces when id=2 is sent), and the
+    # T2 boundary persists to the proxy-state snapshot (paces the EOF).
     ( printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"d1-pin"}}}'
-      # SEE-1365: the cold-window pacing wait has no in-pipe event to subscribe
-      # (initialize is answered by the proxy before any spawn log exists) — the
-      # fixed window IS the under-test scenario construction (stdin pacing).
-      sleep 1   # 竞态窗口语义（CLAUDE.md 边界）：stdin pacing 窗=被测场景构造
+      wait_for_pattern "$SB/proxy.out" '"id":1' 4000 "D1: initialize answered (id=2 rides the cold window)" || true
       printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"godot_project","arguments":{"action":"get_info"}}}'
-      # 竞态窗口语义（CLAUDE.md 边界）：cold-window stdin pacing 负向观察窗，即被测场景构造（同线标注不可行：行尾为管道续行）
-      sleep 9 ) | env HOME="$HOME" GODOT_MCP_HOME="$GODOT_MCP_HOME" TMPDIR="$SB" \
+      # Hold stdin open until the T2 boundary is on disk (budget 6s = warmup
+      # window ×2 + spawn-chain slack); EOF then shuts the proxy down.
+      for _ in $(seq 1 60); do
+          grep -q '"state": *"recovering"' "$GODOT_MCP_HOME/godot-editor/$RID.proxy-state.json" 2>/dev/null && break
+          sleep 0.1
+      done ) | env HOME="$HOME" GODOT_MCP_HOME="$GODOT_MCP_HOME" TMPDIR="$SB" \
         "GODOT_MCP_RUNTIME_ID=$RID" \
         KOL_AGENT_NAME=Bachi GODOT_HOST=127.0.0.1 "GODOT_PORT=$PORT" \
         GODOT_MCP_WARMUP_TIMEOUT_MS=2500 GODOT_MCP_FAILED_EXIT_MS=120000 \

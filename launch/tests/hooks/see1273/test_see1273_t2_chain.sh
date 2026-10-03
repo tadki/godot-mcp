@@ -53,8 +53,17 @@ git add -A && git commit -qm consumer >/dev/null
 
 export KOL_PROJECT_GODOT="$TMP/consumer/project.godot"
 unset GODOT_MCP_FORK_CLI GODOT_MCP_SHARED_MASTER KOL_SHARED_MASTER
-timeout 40 bash addons/godot_mcp/launch/godot-mcp-launcher.sh --port 6571 > "$TMP/chainA.log" 2>&1 &
-LPID=$!; sleep 25; kill $LPID 2>/dev/null; wait $LPID 2>/dev/null   # 竞态窗口语义（CLAUDE.md 边界）：pipe 会话时长窗=被测场景（shim 全链路生命周期），stdin 流 pacing 无法事件化
+# Session window: the chain boots and — with this runner's stdin already at
+# EOF — self-terminates through its OWN graceful shutdown path, which writes
+# the release-guard evidence deterministically. Both bounds are log-line waits
+# with budgets (evidence covers the one-time auto-build ~34s, QA D2); the kill
+# below is only the TTY-runner backstop (TERM → same graceful path).
+timeout 150 bash addons/godot_mcp/launch/godot-mcp-launcher.sh --port 6571 > "$TMP/chainA.log" 2>&1 &
+LPID=$!
+wait_for_pattern "$TMP/chainA.log" 'launching godot-mcp via node|WARNING: fork CLI not found' 120000 "form A: CLI spawn evidence (build+serve)" \
+  || bad "form A: no CLI spawn evidence within 120s budget (auto-build stalled?)"
+wait_for_pattern "$TMP/chainA.log" 'intentional_release' 30000 "form A: release guard on shutdown" || true
+kill $LPID 2>/dev/null; wait $LPID 2>/dev/null
 # SEE-1287 run-context: current fork main auto-builds server/dist/cli.js when
 # missing (one-time, gitignored) — so the archived-T2 form A expectation
 # (WARNING: fork CLI not found + upstream npx fallback) only holds on builds
@@ -84,8 +93,13 @@ if [[ -n "$FORKCLI" ]]; then
   # runtime slot is still within its warm window (SEE-1129 K1 guard).
   git clone -q "$TMP/consumer" "$TMP/consumerB"
   export KOL_PROJECT_GODOT="$TMP/consumerB/project.godot"
-  timeout 40 bash addons/godot_mcp/launch/godot-mcp-launcher.sh --port 6574 > "$TMP/chainB.log" 2>&1 &
-  LPID=$!; sleep 25; kill $LPID 2>/dev/null; wait $LPID 2>/dev/null   # 竞态窗口语义（CLAUDE.md 边界）：同上：25s pipe 会话时长窗=被测场景
+  # SEE-1365 §SPEC-006 (D2 fix): same log-line-bounded session window as form A.
+  timeout 150 bash addons/godot_mcp/launch/godot-mcp-launcher.sh --port 6574 > "$TMP/chainB.log" 2>&1 &
+  LPID=$!
+  wait_for_pattern "$TMP/chainB.log" 'launching godot-mcp via node|WARNING: fork CLI not found' 120000 "form B: CLI spawn evidence" \
+    || bad "form B: no CLI spawn evidence within 120s budget"
+  wait_for_pattern "$TMP/chainB.log" 'intentional_release' 30000 "form B: release guard on shutdown" || true
+  kill $LPID 2>/dev/null; wait $LPID 2>/dev/null
   grep -q "stage=FORK_WIRED msg=\"godot-mcp served from owner fork\" cli=$FORKCLI" "$TMP/chainB.log" \
     && ok "form B: GODOT_MCP_FORK_CLI seam wired (FORK_WIRED with env value)" || bad "form B: seam not honored"
   # The resolver logs the CANONICAL env name (GODOT_MCP_GODOT_MCP_CMD) even
