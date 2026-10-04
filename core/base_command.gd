@@ -25,7 +25,10 @@ func _get_node(path: String) -> Node:
 	return MCPUtils.get_node_from_path(path)
 
 
-func _serialize_value(value: Variant) -> Variant:
+# SEE-1367 D4: static — pure delegation with no instance state, so the static
+# helpers in animation_commands.gd (:230/:233/:640) resolve it from static
+# contexts; instance callers are unaffected.
+static func _serialize_value(value: Variant) -> Variant:
 	return MCPUtils.serialize_value(value)
 
 
