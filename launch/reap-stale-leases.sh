@@ -909,29 +909,68 @@ else
     REGISTRY_SKIPPED=1
 fi
 
-# SEE-1152 (Owner directive, Atlas 综合补丁 目标1): dead held-lock dir sweep.
-# Two held-dir families can outlive their owner (SIGKILL before the trap /
-# release path ran):
+# SEE-1152 (Owner directive, Atlas 综合补丁 目标1) + SEE-1370 #7: dead held-lock
+# dir sweep. Three held-dir families can outlive their owner (SIGKILL before the
+# trap / release path ran):
 #   1. per-runtime launcher lock  ${SCRIPT_DIR}/held/<runtime_id>/   (pid file)
 #   2. per-port arbiter grant     $(port_arbiter_held_dir)/<port>/   (pid file)
+#   3. per-runtime logical lock   $(state-dir)/held-runtime/<rid>/   (owner file)
 # Judged by the SAME arbiter liveness standard as the registry sweep
 # (port_arbiter_pid_alive) — a PID recycled by a non-node process counts as
 # DEAD and its dir is removed. A live dir is NEVER removed. dry-run reports
 # only. The launcher's own stale-recovery (godot-mcp-launcher.sh:638-642) is
 # the primary path and stays untouched; this sweep is the cross-runtime
 # backstop. Default ON; disable with KOL_REAP_HELD=0.
+#
+# SEE-1370 #7 家族差异 (plan-debate 裁决改进点 2/3): the families do NOT share
+# one owner-file name — launcher/arbiter write `pid`, the held-runtime logical
+# lock writes `owner` (+ `since`), state-file.mjs:110-111. A family-blind sweep
+# reading only `pid` would see an empty owner for held-runtime dirs, judge them
+# DEAD and rm -rf LIVE proxies' locks (the second proxy then acquires →
+# double-management, the exact thing the lock exists to prevent). And an
+# owner-less held-runtime dir must NOT be reaped on sight: resolveLockContention
+# (state-file.mjs:95-97) never steals it, so an immediate reap races the
+# mkdir→owner-write window (phantom grant) while never reaping it bricks a
+# crash-after-mkdir runtime in permanent contention. Staleness on `since`/mtime
+# (60s ≫ the ms-scale window) is the only safe discriminator.
+HELD_RUNTIME_ORPHAN_GRACE_S=60
 HELD_REAPED=0
 HELD_KEPT=0
 HELD_SKIPPED=0
+# _held_dir_age_s <dir>: age in seconds — the `since` epoch-ms file first (the
+# held-runtime lock writes it), else the dir mtime. Probe failure → 0 (fresh),
+# so an unreadable dir is KEPT rather than reaped (conservative default).
+_held_dir_age_s() {
+    local dir="$1" since
+    since="$(tr -d '[:space:]' < "${dir}since" 2>/dev/null || echo "")"
+    if [[ "$since" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' $(( ($(date +%s%3N) - since) / 1000 ))
+    else
+        printf '%s\n' $(( $(date +%s) - $(stat -c %Y "$dir" 2>/dev/null || date +%s) ))
+    fi
+}
 if [[ "${KOL_REAP_HELD:-1}" == "1" ]]; then
-    for _held_root in "${SCRIPT_DIR}/held" "$(port_arbiter_held_dir)"; do
+    # root→owner-file pairs (index-aligned): families 1/2 use `pid`, family 3 `owner`.
+    _held_roots=("${SCRIPT_DIR}/held" "$(port_arbiter_held_dir)" "${MULTICA_DIR}/held-runtime")
+    _held_owners=("pid" "pid" "owner")
+    for _hi in "${!_held_roots[@]}"; do
+        _held_root="${_held_roots[$_hi]}"
+        _owner_file="${_held_owners[$_hi]}"
         [[ -d "$_held_root" ]] || continue
         for _hdir in "$_held_root"/*/; do
             [[ -d "$_hdir" ]] || continue
-            _hname="$(basename "$_hdir")"
             _hpid=""
-            [[ -f "${_hdir}pid" ]] && _hpid="$(tr -d '[:space:]' < "${_hdir}pid" 2>/dev/null || echo "")"
+            if [[ -f "${_hdir}${_owner_file}" ]]; then
+                _hpid="$(tr -d '[:space:]' < "${_hdir}${_owner_file}" 2>/dev/null || echo "")"
+            fi
             if [[ -n "$_hpid" ]] && port_arbiter_pid_alive "$_hpid"; then
+                HELD_KEPT=$((HELD_KEPT+1))
+                continue
+            fi
+            # Owner-less held-runtime dir: wait out the mkdir→owner-write grace;
+            # a stale one (crash after mkdir) IS reaped to unblock contention.
+            if [[ "$_owner_file" == "owner" && -z "$_hpid" ]] \
+               && (( $(_held_dir_age_s "$_hdir") < HELD_RUNTIME_ORPHAN_GRACE_S )); then
                 HELD_KEPT=$((HELD_KEPT+1))
                 continue
             fi
