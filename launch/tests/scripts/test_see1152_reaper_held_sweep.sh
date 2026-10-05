@@ -67,7 +67,9 @@ trap cleanup EXIT
 mkdir -p "$SBOX/ws"            # empty workspace root — no lease sidecars
 PORT_HELD="$SBOX/port-held"    # sandbox for ~/.multica/godot-mcp-held
 REG="$SBOX/registry.json"      # sandbox registry (kept absent — not under test)
-mkdir -p "$PORT_HELD"
+# SEE-1370 #7: sandbox GODOT_MCP_HOME so the sweep's held-runtime family root
+# ($GODOT_MCP_HOME/held-runtime) never points at the real home tree.
+mkdir -p "$PORT_HELD" "$SBOX/multica"
 
 # A live NON-node process for the PID-reuse case.
 sleep 120 &   # fixture：模拟存活孤儿进程的 keep-alive，非同步等待手段
@@ -82,6 +84,7 @@ run_reaper() {
     (( dry == 1 )) && args+=(--dry-run)
     KOL_PORT_ARBITER_TEST_PID_NODE="$$" \
     KOL_PORT_HELD_DIR="$PORT_HELD" \
+    GODOT_MCP_HOME="$SBOX/multica" \
     KOL_PORT_REGISTRY_PATH_OVERRIDE="$REG" \
     KOL_REAP_DISABLE_PWSH=1 \
     KOL_REAP_RESIDENT=1 \
