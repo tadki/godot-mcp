@@ -191,6 +191,25 @@ async function refreshRegistryHeartbeat() {
     }
 }
 
+// SEE-1370 #4: refresh the WARM record's .state heartbeat_at on the steady-state
+// tick — the same cadence family as the registry heartbeat (§SPEC-006 同源).
+// The gate reads the DISK record, never in-memory stage (落盘状态唯一真源): only
+// a record that itself claims WARM gets its heartbeat extended — WARM is the
+// state whose freshness decides handoff (decideHandoffAction's `fresh`
+// predicate), and an idle WARM proxy used to let heartbeat_at rot past the
+// 10min freshness window until a successor misjudged the record stale. The 30s
+// throttle (≪ 10min freshness threshold) bounds fsync churn.
+const STATE_HEARTBEAT_THROTTLE_MS = 30_000;
+function refreshStateHeartbeat() {
+    if (!RUNTIME_ID || S.shutdownRequested) return;
+    const now = Date.now();
+    if (S.lastStateHeartbeatMs && (now - S.lastStateHeartbeatMs) < STATE_HEARTBEAT_THROTTLE_MS) return;
+    const disk = readRuntimeState(RUNTIME_ID);
+    if (!disk.ok || disk.state.state !== 'WARM') return;
+    S.lastStateHeartbeatMs = now;
+    writeRuntimeState(RUNTIME_ID, { heartbeat_at: new Date(now).toISOString() });
+}
+
 function startHeartbeat() {
     // Heartbeat here means logging that the proxy is still alive and waiting.
     // We do NOT perform a WebSocket handshake to avoid stealing the addon's
@@ -203,6 +222,8 @@ function startHeartbeat() {
         backfillEditorPid().catch(() => {});
         // SEE-1356 L5: 30s-throttled proxy-state heartbeat refresh.
         maybePersistProxyHeartbeat();
+        // SEE-1370 #4: the .state heartbeat rides the SAME tick (同源).
+        refreshStateHeartbeat();
     }, HEARTBEAT_INTERVAL_MS);
 }
 
@@ -288,6 +309,7 @@ export {
     markIntentionalRelease,
     releaseArbiterPort,
     refreshRegistryHeartbeat,
+    refreshStateHeartbeat,
     startHeartbeat,
     selfRegisterProxyPid,
 };

@@ -127,6 +127,27 @@ export function releaseRuntimeLock(runtimeId, ownerPid = process.pid) {
     }
 }
 
+// ---- FAILED_EXIT legacy terminal cleanup (SEE-1370 #6) ---------------------------
+// exitAuditAndReleaseLock(runtimeId, detail): the KOL_GIVEUP_REARM=0 legacy exit
+// paths (warmup.mjs T4 terminals, lease.mjs self-exit) used to process.exit(1)
+// directly — leaving neither a .state PROXY_EXIT audit line nor a released
+// held-runtime lock. Best-effort by contract — a failure must never block the
+// exit — but the outcome is returned so the caller logs it (no silent swallow).
+// MUST stay synchronous: it runs immediately before process.exit, which
+// abandons pending async work.
+export function exitAuditAndReleaseLock(runtimeId, detail = '') {
+    const out = { audited: false, lockReleased: false };
+    if (!runtimeId) return out;
+    try {
+        writeRuntimeState(runtimeId, {}, { event: 'PROXY_EXIT', detail });
+        out.audited = true;
+    } catch { /* exit path: audit failure must not block exit; caller logs out.audited */ }
+    try {
+        out.lockReleased = releaseRuntimeLock(runtimeId);
+    } catch { /* exit path: same discipline; caller logs out.lockReleased */ }
+    return out;
+}
+
 function pidAlive(pid) {
     try {
         process.kill(pid, 0);

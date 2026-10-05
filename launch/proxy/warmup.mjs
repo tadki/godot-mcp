@@ -26,7 +26,7 @@ import { cliConnectSignalExpected } from './npx.mjs';
 import { startRenderStableMonitor, tcpProbe, wsProbe } from './probes.mjs';
 import { maybeRefreshToolsCache } from './tools-cache.mjs';
 import { resolveWorktreeForSpawn } from './worktree.mjs';
-import { writeRuntimeState } from './state-file.mjs';
+import { writeRuntimeState, exitAuditAndReleaseLock } from './state-file.mjs';
 import { recordProxyTransition } from './proxy-state.mjs';
 import { RUNTIME_ID, GODOT_PORT as SOT_PORT } from './config.mjs';
 
@@ -190,6 +190,11 @@ async function warmupLoop() {
                     }
                     recordProxyTransition('T4_failed_exit', 'warm+recovering FAILED_EXIT (legacy terminal)');
                     S.warmupTimedOut = true;
+                    // SEE-1370 #6: same exit evidence as a clean shutdown
+                    // (PROXY_EXIT audit + held-runtime lock release);
+                    // best-effort, outcome logged — the exit never blocks.
+                    const exitCleanup = exitAuditAndReleaseLock(RUNTIME_ID, 'warm+recovering FAILED_EXIT (legacy terminal)');
+                    log(`proxy exit cleanup: audited=${exitCleanup.audited} lockReleased=${exitCleanup.lockReleased}`);
                     process.exit(1);
                 }
                 // SEE-1134 RECOVERING deadlock fix #2: when the CLI dies while we
@@ -518,6 +523,11 @@ async function warmupLoop() {
                         }
                         recordProxyTransition('T4_failed_exit', 'cold sustained probe failure (legacy terminal)');
                         S.warmupTimedOut = true;
+                        // SEE-1370 #6: same exit evidence as a clean shutdown
+                        // (PROXY_EXIT audit + held-runtime lock release);
+                        // best-effort, outcome logged — the exit never blocks.
+                        const exitCleanup = exitAuditAndReleaseLock(RUNTIME_ID, 'cold sustained probe failure (legacy terminal)');
+                        log(`proxy exit cleanup: audited=${exitCleanup.audited} lockReleased=${exitCleanup.lockReleased}`);
                         process.exit(1);
                     }
                     // healed=true：恢复轮已重开 spawn（同端口重钉），继续探 warm。

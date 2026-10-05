@@ -7,14 +7,21 @@
 //       heartbeat throttle (零事件零写入), get_info echo present/absent
 //   U3  L6 (§SPEC-L6-01): log tee single-point write + pid prefix + rotate
 //   U4  L2 (§SPEC-L2-01): resolveWorkdirHash SSOT consumer slot/path forms
+//   U5  SEE-1370 #4 (§SPEC-006): .state heartbeat rides the heartbeat tick —
+//       WARM-only disk-gated refresh + 30s throttle
+//   U6  SEE-1370 #5 (§SPEC-007): lease/stage tail incremental read — offset
+//       semantics, half-line discipline, rotation fallback
+//   U7  SEE-1370 #6 (§SPEC-008): FAILED_EXIT legacy exit audit — PROXY_EXIT on
+//       disk + held-runtime lock released (helper-level + real exit-path child)
 //
 // Sandbox: HOME / GODOT_MCP_HOME redirected to a mkdtemp before ANY import
 // (config.mjs reads env at import time).
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, statSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, statSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const SB = mkdtempSync(path.join(tmpdir(), 'see1356-units-'));
 process.env.HOME = SB;
@@ -28,11 +35,17 @@ const WT = path.join(SB, 'multica_workspaces', CONTAINER, SLOT, 'workdir', 'King
 mkdirSync(path.join(WT, 'launch'), { recursive: true });
 process.env.GODOT_MCP_WORKTREE = WT;
 mkdirSync(path.join(process.env.GODOT_MCP_HOME, 'godot-editor'), { recursive: true });
+// SEE-1370 U6: the lease tail's log path is import-frozen (config.mjs reads env
+// at import) — point it at the sandbox BEFORE the lease.mjs import below.
+process.env.GODOT_EDITOR_LOG_FILE = path.join(process.env.GODOT_MCP_HOME, 'editor.log');
 
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
 let PASS = 0; let FAIL = 0;
 function ok(name, fn) {
     try { fn(); PASS++; console.log(`  [PASS] ${name}`); } catch (e) { FAIL++; console.log(`  [FAIL] ${name} — ${e.message}`); }
+}
+async function okAsync(name, fn) {
+    try { await fn(); PASS++; console.log(`  [PASS] ${name}`); } catch (e) { FAIL++; console.log(`  [FAIL] ${name} — ${e.message}`); }
 }
 const REPO_URL = () => `file://${REPO}`;
 
@@ -171,6 +184,138 @@ ok('U4a slot form + path fallback via the bash SSOT', () => {
     const b = resolveWorkdirHash(REPO);
     assert.ok(/^[0-9a-f]{8}$/.test(b.workdir_hash) && b.hash_source === 'path', JSON.stringify(b));
     assert.equal(resolveWorkdirHash(''), null);
+});
+
+// ---- U5: SEE-1370 #4 (§SPEC-006) .state heartbeat rides the heartbeat tick ----
+const { refreshStateHeartbeat } = await import(`${REPO_URL()}/launch/proxy/lifecycle.mjs`);
+const sfU5 = await import(`${REPO_URL()}/launch/proxy/state-file.mjs`);
+const { S: SU5 } = await import(`${REPO_URL()}/launch/proxy/state.mjs`);
+const U5_STATE = sfU5.statePathFor('Units-111122223333');   // import-frozen RUNTIME_ID
+
+ok('U5a no record → refresh is a no-op, never invents a .state file', () => {
+    rmSync(U5_STATE, { force: true });
+    SU5.lastStateHeartbeatMs = 0;
+    refreshStateHeartbeat();
+    assert.ok(!existsSync(U5_STATE), 'no .state file must appear for a record-less runtime');
+});
+ok('U5b COLD record → heartbeat untouched (the gate is the DISK state, WARM only)', () => {
+    const old = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    sfU5.writeRuntimeState('Units-111122223333', { state: 'COLD', heartbeat_at: old });
+    refreshStateHeartbeat();
+    assert.equal(sfU5.readRuntimeState('Units-111122223333').state.heartbeat_at, old, 'COLD heartbeat must not be refreshed');
+    assert.equal(SU5.lastStateHeartbeatMs, 0, 'a skipped refresh must not arm the throttle');
+});
+ok('U5c WARM record → heartbeat refreshed, then throttled (no fsync churn)', () => {
+    const old = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    sfU5.writeRuntimeState('Units-111122223333', { state: 'WARM', heartbeat_at: old });
+    refreshStateHeartbeat();
+    const first = sfU5.readRuntimeState('Units-111122223333').state;
+    assert.ok(Date.parse(first.heartbeat_at) > Date.parse(old), 'WARM heartbeat_at must advance');
+    const updated1 = first.updated_at;
+    refreshStateHeartbeat();   // inside the 30s window → NO rewrite
+    assert.equal(sfU5.readRuntimeState('Units-111122223333').state.updated_at, updated1, 'throttled tick must not rewrite');
+});
+
+// ---- U6: SEE-1370 #5 (§SPEC-007) lease/stage tail incremental read ------------
+const leaseMod = await import(`${REPO_URL()}/launch/proxy/lease.mjs`);
+const { LEASE_EXITING_LINE } = await import(`${REPO_URL()}/launch/proxy/config.mjs`);
+const { S: SU6 } = await import(`${REPO_URL()}/launch/proxy/state.mjs`);
+const U6_LOG = process.env.GODOT_EDITOR_LOG_FILE;
+// checkLeaseTail reads live singleton gates — reset the ones the rearm path sets.
+function u6Reset() {
+    SU6.leaseExitDetected = false;
+    SU6.warmupTimedOut = false;
+    SU6.warmRespawnInFlight = false;
+}
+
+await okAsync('U6a incremental semantics: pre-offset lease line never re-scanned; appended lease line detected', async () => {
+    u6Reset();
+    writeFileSync(U6_LOG, `${LEASE_EXITING_LINE}\n` + 'filler line\n'.repeat(1000));   // early lease line + bulk
+    SU6.leaseOffset = statSync(U6_LOG).size;   // startLeaseMonitor seeds the offset past pre-existing content
+    appendFileSync(U6_LOG, '[godot-mcp] some noise line\n');
+    await leaseMod.checkLeaseTail();
+    assert.equal(SU6.leaseExitDetected, false, 'content before the offset must not be re-scanned');
+    assert.equal(SU6.leaseOffset, statSync(U6_LOG).size, 'offset must consume exactly the appended bytes');
+    appendFileSync(U6_LOG, `${LEASE_EXITING_LINE}\n`);
+    await leaseMod.checkLeaseTail();
+    assert.equal(SU6.leaseExitDetected, true, 'appended lease line must be detected');
+});
+await okAsync('U6b half-line discipline: a lease line without trailing newline is NOT consumed', async () => {
+    u6Reset();
+    appendFileSync(U6_LOG, LEASE_EXITING_LINE);   // a writer mid-line — no trailing \n yet
+    const off = SU6.leaseOffset;
+    await leaseMod.checkLeaseTail();
+    assert.equal(SU6.leaseExitDetected, false, 'a half line must wait for the next poll');
+    assert.equal(SU6.leaseOffset, off, 'offset must not advance past a half line');
+    appendFileSync(U6_LOG, '\n');                 // the writer completes the line
+    await leaseMod.checkLeaseTail();
+    assert.equal(SU6.leaseExitDetected, true, 'the completed line must be detected on the next poll');
+});
+await okAsync('U6c rotation fallback: file shrink resets the offset and re-reads from 0', async () => {
+    u6Reset();
+    const shrunk = `rotated fresh log\n${LEASE_EXITING_LINE}\n`;   // shorter than the current offset
+    assert.ok(Buffer.byteLength(shrunk) < SU6.leaseOffset, 'fixture must shrink below the offset');
+    writeFileSync(U6_LOG, shrunk);
+    await leaseMod.checkLeaseTail();
+    assert.equal(SU6.leaseExitDetected, true, 'rotated content must be scanned from 0');
+});
+
+// ---- U7: SEE-1370 #6 (§SPEC-008) FAILED_EXIT legacy exit audit + lock release --
+const { exitAuditAndReleaseLock } = await import(`${REPO_URL()}/launch/proxy/state-file.mjs`);
+const U7RID = 'See1370-u7';
+const U7_EVENTS = sfU5.eventsPathFor(U7RID);
+const U7_LOCK = path.join(process.env.GODOT_MCP_HOME, 'held-runtime', U7RID);
+
+ok('U7a exitAuditAndReleaseLock: PROXY_EXIT audit on disk + held-runtime lock released', () => {
+    sfU5.writeRuntimeState(U7RID, { state: 'WARM', port: 6599, heartbeat_at: new Date().toISOString() });
+    assert.equal(sfU5.acquireRuntimeLock(U7RID, { ownerPid: process.pid }).locked, true, 'fixture: lock held');
+    const r = exitAuditAndReleaseLock(U7RID, 'u7 fixture exit');
+    assert.deepEqual(r, { audited: true, lockReleased: true });
+    assert.ok(!existsSync(U7_LOCK), 'held-runtime lock dir must be released');
+    assert.equal(sfU5.readRuntimeState(U7RID).state.state, 'WARM', 'exit audit must NOT rewrite the state field');
+    const events = readFileSync(U7_EVENTS, 'utf8');
+    assert.ok(events.includes('"event":"PROXY_EXIT"'), 'PROXY_EXIT audit line missing');
+    assert.ok(events.includes('u7 fixture exit'), 'audit detail missing');
+});
+ok('U7b empty runtime id → explicit no-op result (no throw)', () => {
+    assert.deepEqual(exitAuditAndReleaseLock('', 'x'), { audited: false, lockReleased: false });
+});
+ok('U7c real exit path: lease self-exit legacy branch exits rc=1 with PROXY_EXIT + lock released', () => {
+    const childHome = mkdtempSync(path.join(tmpdir(), 'see1370-exit-'));
+    const childMcp = path.join(childHome, '.multica');
+    mkdirSync(path.join(childMcp, 'godot-editor'), { recursive: true });
+    const childLog = path.join(childMcp, 'editor.log');
+    writeFileSync(childLog, `${LEASE_EXITING_LINE}\n`);
+    const childScript = path.join(childHome, 'child.mjs');
+    writeFileSync(childScript, `
+        const sf = await import(${JSON.stringify(`${REPO_URL()}/launch/proxy/state-file.mjs`)});
+        const { S } = await import(${JSON.stringify(`${REPO_URL()}/launch/proxy/state.mjs`)});
+        const rid = process.env.GODOT_MCP_RUNTIME_ID;
+        sf.writeRuntimeState(rid, { state: 'WARM', port: 6599, heartbeat_at: new Date().toISOString() });
+        sf.acquireRuntimeLock(rid, { ownerPid: process.pid });
+        const lease = await import(${JSON.stringify(`${REPO_URL()}/launch/proxy/lease.mjs`)});
+        S.leaseOffset = 0;
+        await lease.checkLeaseTail();
+        console.log('UNREACHABLE — the legacy branch must process.exit(1)');
+    `);
+    const r = spawnSync('node', [childScript], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            HOME: childHome,
+            GODOT_MCP_HOME: childMcp,
+            GODOT_MCP_RUNTIME_ID: 'See1370-exit',
+            GODOT_EDITOR_LOG_FILE: childLog,
+            KOL_GIVEUP_REARM: '0',        // legacy terminal path — the #6 fix target
+            KOL_PROGRESS_PROTOCOL: 'off',
+        },
+    });
+    assert.equal(r.status, 1, `legacy exit must be rc=1, got ${r.status} stdout=${r.stdout} stderr=${r.stderr}`);
+    assert.ok(!r.stdout.includes('UNREACHABLE'), 'control flow must not pass the exit');
+    const events = readFileSync(path.join(childMcp, 'godot-editor', 'See1370-exit.events.jsonl'), 'utf8');
+    assert.ok(events.includes('"event":"PROXY_EXIT"'), 'PROXY_EXIT audit line missing on the real exit path');
+    assert.ok(!existsSync(path.join(childMcp, 'held-runtime', 'See1370-exit')), 'held-runtime lock must be released on exit');
+    rmSync(childHome, { recursive: true, force: true });
 });
 
 console.log(`\nSUMMARY: PASS=${PASS} FAIL=${FAIL}`);
