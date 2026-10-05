@@ -362,11 +362,79 @@ test('§4.2+ T28 内存计数器落盘：FAILED_CLEAN 写入携带 backoff/resta
     }
 });
 
-test('§4.2+ T29 EDITOR_GONE 落盘：post-warm 死亡将 .state 归 COLD（不留误导性 WARM）', () => {
-    const src = readSrc('proxy/spawn.mjs');
-    const block = src.slice(src.indexOf('function beginWarmEditorRespawn'), src.indexOf('function resetForRespawn'));
-    assert.ok(/event: 'EDITOR_GONE'/.test(block));
-    assert.ok(/state: 'COLD'/.test(block));
+// §SPEC-003 hardener (SEE-1370): T29 is now REAL EXECUTION — the production
+// write path (beginWarmEditorRespawn → writeRuntimeState) is invoked and the
+// ON-DISK outcome is asserted. The old form sliced spawn.mjs source and grep'd
+// two literals: it could not see a broken call site, a wrong fromState, or a
+// missing event line. The driver runs in a fresh child process because
+// config.mjs freezes GODOT_MCP_HOME and RUNTIME_ID at import time — the child
+// is the only honest seam that binds both (same shape as §SPEC-008 U7's real
+// exit-path subprocess).
+test('§4.2+ T29 EDITOR_GONE 落盘：真实调用 beginWarmEditorRespawn → 盘上 COLD + editor_pid 清空 + events.jsonl 审计行', () => {
+    const rid = 'harti-t29-editorgone';
+    const driver = `
+import fs from 'node:fs';
+process.env.GODOT_MCP_HOME = ${JSON.stringify(tmpHome)};
+process.env.GODOT_MCP_RUNTIME_ID = ${JSON.stringify(rid)};
+process.env.GODOT_PORT = '6579';
+const sf = await import(${JSON.stringify(path.join(LAUNCH, 'proxy', 'state-file.mjs'))});
+const { beginWarmEditorRespawn } = await import(${JSON.stringify(path.join(LAUNCH, 'proxy', 'spawn.mjs'))});
+sf.writeRuntimeState(${JSON.stringify(rid)}, {
+    schema_version: sf.STATE_SCHEMA_VERSION,
+    state: 'WARM',
+    port: 6579,
+    editor_pid: 424242,
+    editor_pid_source: 'wsl',
+    heartbeat_at: new Date().toISOString(),
+});
+beginWarmEditorRespawn();
+const after = JSON.parse(fs.readFileSync(sf.statePathFor(${JSON.stringify(rid)}), 'utf8'));
+const events = fs.readFileSync(sf.eventsPathFor(${JSON.stringify(rid)}), 'utf8')
+    .trim().split('\\n').map((line) => JSON.parse(line));
+process.stdout.write(JSON.stringify({ after, events }));
+`;
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e', driver], {
+        encoding: 'utf8',
+        env: { ...process.env, GODOT_MCP_HOME: tmpHome, GODOT_MCP_RUNTIME_ID: rid, GODOT_PORT: '6579' },
+    });
+    assert.equal(r.status, 0, `driver must exit 0, got ${r.status}\nstderr: ${r.stderr}`);
+    const { after, events } = JSON.parse(r.stdout);
+    assert.equal(after.state, 'COLD', `on-disk state must be COLD after the death call, got ${after.state}`);
+    assert.equal(after.editor_pid, null, 'editor_pid must be nulled on the record');
+    assert.equal(after.editor_pid_started_at, null, 'editor_pid_started_at must be nulled on the record');
+    assert.equal(after.port, 6579, 'record keeps the port for successor attribution');
+    const eg = events.filter((e) => e.event === 'EDITOR_GONE');
+    assert.equal(eg.length, 1, `exactly one EDITOR_GONE audit line expected, got ${eg.length}`);
+    assert.equal(eg[0].from_state, 'WARM', 'audit from_state must be WARM (the pre-death state)');
+    assert.equal(eg[0].to_state, 'COLD', 'audit to_state must be COLD');
+});
+
+// §SPEC-003 hardener (SEE-1370): global tripwire for the adjudication-deleted
+// legacy state name. Machine contract: zero occurrences anywhere under
+// launch/ INCLUDING tests (the adjudication's "合法居所空集"). The literal is
+// assembled from segments so this tripwire's own source stays zero-hit.
+// Division of labor (plan-debate record): the deleted reaper flag is guarded
+// behaviorally by the §SPEC-001 C1 rc=2 contract test above — its literal
+// legally lives in THAT test's source and must NEVER be added to this scan.
+// What this tripwire pins is the STATE NAME: readRuntimeState degrades any
+// unknown state to NO STATE (never wedges, T6), so a silent re-introduction
+// (producer or VALID_STATES member) would otherwise go green everywhere.
+test('§SPEC-003 全域绊线：被否决状态名于 launch/ 全域零命中（含 tests；分段字面量实现）', () => {
+    const forbidden = ['REAP', '_PENDING'].join('');
+    const hits = [];
+    const SKIP_DIRS = new Set(['node_modules', '.git', '.vitest-gen']);
+    const walk = (dir) => {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (e.isDirectory()) {
+                if (!SKIP_DIRS.has(e.name)) walk(path.join(dir, e.name));
+            } else if (fs.readFileSync(path.join(dir, e.name), 'utf8').includes(forbidden)) {
+                hits.push(path.relative(LAUNCH, path.join(dir, e.name)));
+            }
+        }
+    };
+    walk(LAUNCH);
+    assert.deepStrictEqual(hits, [],
+        `forbidden legacy state name resurfaced (adjudication SEE-1370 deleted it; runbook §非目标 records why): ${hits.join(', ')}`);
 });
 
 // ---- P1 QA 缺陷 #1 (HIGH, Revy 复测): startupHandoff 调用形态回归 ---------------
