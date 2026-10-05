@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { spawn as childSpawn } from 'node:child_process';
+import { spawn as childSpawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -342,11 +342,17 @@ test('§4.2+ T26d WP7 spawn.mjs 接线：editorAlive 进决策 + editorPidAlive 
     assert.ok(/editor_alive=/.test(src), 'stageLog carries the editor liveness verdict');
 });
 
-test('§4.2+ T27 reaper executor 模式：--from-state 只执行 REAP_PENDING（裁决权在 proxy）', () => {
-    const src = readSrc('reap-stale-leases.sh');
-    assert.ok(/--from-state/.test(src));
-    assert.ok(/REAP_PENDING/.test(src));
-    assert.ok(/exit 0/.test(src.split('--from-state EXECUTOR mode')[1]?.split('REAPED=0')[0] || ''), 'executor mode exits before legacy scan');
+// §SPEC-001 C1: the executor mode is DELETED, so --from-state is no longer a
+// code path — it is an explicit unknown-arg failure contract. Real execution
+// against the sandbox home (never source grep). The old T27 grep test asserted
+// the mode EXISTED; this replaces it in the same commit so C1 lands green.
+test('§SPEC-001 C1 reaper: --from-state 已是 rc=2 显式失败契约（executor 死模式已删除）', () => {
+    const r = spawnSync('bash', [path.join(LAUNCH, 'reap-stale-leases.sh'), '--from-state', '--dry-run'], {
+        encoding: 'utf8',
+        env: { ...process.env, GODOT_MCP_HOME: tmpHome },
+    });
+    assert.equal(r.status, 2, `unknown flag must exit 2, got status=${r.status} stderr=${r.stderr}`);
+    assert.match(r.stderr, /unknown arg: --from-state/);
 });
 
 test('§4.2+ T28 内存计数器落盘：FAILED_CLEAN 写入携带 backoff/restart/round 全量预算', () => {
