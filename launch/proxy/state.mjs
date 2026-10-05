@@ -87,6 +87,7 @@ export const S = {
     resolvedGodotMcpCmd: null,
     lastRegistryRefreshMs: 0,
     lastEditorPidBackfillMs: 0,   // SEE-1348 WP4: heartbeat editor_pid backfill throttle
+    lastStateHeartbeatMs: 0,      // SEE-1370 #4: .state heartbeat refresh throttle
     proxyPidRegistered: false,
     warmProbeFailures: 0,
     recoveryRound: 0,

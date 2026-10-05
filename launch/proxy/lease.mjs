@@ -1,11 +1,11 @@
 // proxy/lease.mjs — independent editor-log lease monitor + stage-milestone
 // tail scanner (extracted from godot-mcp-proxy.mjs, SEE-1334 Phase 0a):
 // offset-tracked tail, exact lease-death line fast-fail, SEE-1110 milestones.
-import { readFile, stat } from 'node:fs/promises';
+import { open, stat } from 'node:fs/promises';
 import { S } from './state.mjs';
 import {
     EDITOR_LOG_FILE, GIVEUP_REARM_ENABLED, KOL_PROGRESS_PROTOCOL,
-    LEASE_EXITING_LINE, LEASE_POLL_INTERVAL_MS,
+    LEASE_EXITING_LINE, LEASE_POLL_INTERVAL_MS, RUNTIME_ID,
 } from './config.mjs';
 import { STAGE_ENUM, scanStageLines } from '../warmup-stage-parser.mjs';
 import { log, stageLog } from './log.mjs';
@@ -13,6 +13,7 @@ import { maybeNotifyStageChange, warmupDiagnostic } from './diagnostics.mjs';
 import { rejectQueue } from './router.mjs';
 import { beginWarmEditorRespawn, giveUpAndRearm } from './spawn.mjs';
 import { recordProxyTransition } from './proxy-state.mjs';
+import { exitAuditAndReleaseLock } from './state-file.mjs';
 
 // SEE-1077: independent lease monitor. Watches EDITOR_LOG_FILE for the exact
 // "exiting editor to release the port" line; on match, takes the existing T4
@@ -73,14 +74,29 @@ async function checkLeaseTail() {
         S.leaseOffset = 0;
     }
     if (st.size === S.leaseOffset) return;
-    let fd;
+    // SEE-1370 #5: incremental read — open + read only the bytes appended since
+    // leaseOffset (the old whole-file readFile was O(size) per 500ms poll on
+    // MB-scale editor logs). The size<offset branch above (rotation/truncate)
+    // is the only path that re-reads from 0.
+    let slice;
     try {
-        fd = await readFile(EDITOR_LOG_FILE, 'utf-8');
+        const fh = await open(EDITOR_LOG_FILE, 'r');
+        try {
+            const buf = Buffer.allocUnsafe(st.size - S.leaseOffset);
+            const { bytesRead } = await fh.read(buf, 0, buf.length, S.leaseOffset);
+            const lastNlByte = bytesRead > 0 ? buf.lastIndexOf(0x0a, bytesRead - 1) : -1;
+            // Consume complete lines only: a half-written tail line waits for
+            // the next poll, so a lease/stage line is never split across two
+            // reads and missed by its pattern.
+            if (lastNlByte === -1) return;
+            slice = buf.subarray(0, lastNlByte + 1).toString('utf-8');
+            S.leaseOffset += lastNlByte + 1;
+        } finally {
+            await fh.close();
+        }
     } catch {
         return;
     }
-    const slice = fd.slice(S.leaseOffset);
-    S.leaseOffset = st.size;
     if (KOL_PROGRESS_PROTOCOL !== 'off') scanTailStages(slice);
     if (slice.indexOf(LEASE_EXITING_LINE) !== -1) {
         // Editor lease self-exit detected. Take the T4 FAILED_EXIT path so the
@@ -101,6 +117,12 @@ async function checkLeaseTail() {
             giveUpAndRearm('lease_exit', LEASE_EXITING_LINE);
         } else {
             S.warmupTimedOut = true;
+            // SEE-1370 #6: the legacy exit must leave the same audit + lock
+            // evidence as a clean shutdown (lifecycle.mjs PROXY_EXIT) — best-
+            // effort, the exit itself is never blocked, but the outcome is
+            // logged (no silent swallow).
+            const exitCleanup = exitAuditAndReleaseLock(RUNTIME_ID, 'lease self-exit FAILED_EXIT (legacy terminal)');
+            log(`proxy exit cleanup: audited=${exitCleanup.audited} lockReleased=${exitCleanup.lockReleased}`);
             process.exit(1);
         }
     }
