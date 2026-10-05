@@ -3,6 +3,10 @@
 // the exit-code harness test_see1240_screenshot_contract.mjs (untouched);
 // this file is the StrykerJS mutation face for the contract module.
 // Pure module (fs/promises + path only) — no env-freeze constraints.
+// Runner contract (SEE-1370 hardener): this suite belongs to the SEE-1356 StrykerJS face —
+// run it via `npx vitest run --config launch/vitest.see1356.config.ts` (root=launch/). The
+// relative imports resolve against launch/ ONLY under that config; plain `node --test`
+// or the main vitest config will NOT resolve them (misdiagnosed as env failure 2026-10-05).
 import { describe, expect, test } from 'vitest';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
