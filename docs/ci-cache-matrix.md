@@ -53,6 +53,8 @@
 
 ## 4. 对账说明
 
+**gqt 消费口径（SEE-1396 独立拆分）**：gqt 不再作为 KOL submodule 分发，本库判据脚本一律依赖 WSL 全局独立安装的 `gqt` CLI（安装自 godot-qa-toolkit 独立规范检出，任务工作树之外的可持久路径；`steps_see1356*.py` 直接 `import godot_qa_toolkit` 由该全局安装满足）。
+
 本表对账基准（2026-09-12 实读；②c 落地后回改状态）：
 
 - godot-mcp（本库）：`gh workflow list` 6 条；fast tier 4m39s、special 43s 实测 run 全绿（SEE-1291）；②c drift 收敛 -2（ws4/t16 毕业，launch-ci.yml +2 项 / launch-special.yml -2 项，清单 diff=0 已对账）；**AC-DECPL-006 Godot 缓存已落地**——launch-ci.yml shell-harnesses 接入 actions/cache（key `godot-Linux-4.6.2-stable`），t1_import 类测试毕业进 fast tier；缓存证据 run 35072315866（cache not found，写入）→ 35072836458（cache hit，`Cache restored from key: godot-Linux-4.6.2-stable`）双 run success。

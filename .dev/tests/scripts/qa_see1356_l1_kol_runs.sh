@@ -6,22 +6,23 @@
 # unchanged, then re-run the run_error regression test.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-QATK="$(cd "$HERE/../../../../godot-qa-toolkit" && pwd)"
+# SEE-1396: gqt 不再作为 KOL 工作树内同级检出消费——依赖 WSL 全局独立安装
+# （gqt 规范检出 pip install -e），可用 GQT_BIN 覆盖指向其他安装。
 KOL="${KOL_ROOT:-/home/jerry/multica_workspaces/seed-478690824e46/see-1356-ef9f21ac6d16/workdir/KingOfLikes-Godot}"
-GQT="$QATK/.venv/bin/gqt"
+GQT="${GQT_BIN:-$(command -v gqt || true)}"
 TARGET="${L1_TARGET:-utils/yaml_parser.gd}"
 TESTS_GLOB="${L1_TESTS:-res://tests/unit/utils/}"
 SB="$(mktemp -d)"
 PASS=0; FAIL=0
 ok() { if [[ "$2" == "1" ]]; then PASS=$((PASS+1)); echo "  [PASS] $1"; else FAIL=$((FAIL+1)); echo "  [FAIL] $1${3:+ — $3}"; fi; }
 
-[[ -x "$GQT" ]] || { echo "gqt venv missing at $GQT"; exit 1; }
+if [[ -z "$GQT" ]] || ! [[ -x "$GQT" ]]; then echo "global gqt CLI not found (install from godot-qa-toolkit checkout: scripts/install.sh)"; exit 1; fi
 rm -rf "$KOL/.qa-cache/gqt-timing"
 
 run_mutation() { # $1=out-json
     local t0 t1
     t0=$(date +%s)
-    ( cd "$KOL" && PYTHONPATH="$QATK/src" "$GQT" mutation "$TARGET" --project-root "$KOL" --tests "$TESTS_GLOB" --budget 12 ) > "$1" 2> "$SB/gqt-err.log"
+    ( cd "$KOL" && "$GQT" mutation "$TARGET" --project-root "$KOL" --tests "$TESTS_GLOB" --budget 12 ) > "$1" 2> "$SB/gqt-err.log"
     local rc=$?
     t1=$(date +%s)
     echo "$((t1 - t0)) $rc"
@@ -53,7 +54,18 @@ K2="$(jq -r '.summary | keys | sort | join(",")' "$SB/run2.json" 2>/dev/null)"
 ok "JSON 契约键集不变（run1 == run2）" "$([[ -n "$K1" && "$K1" == "$K2" ]] && echo 1 || echo 0)" "$K1"
 
 echo "== run_error 复测 =="
-( cd "$QATK" && PYTHONPATH="$QATK/src" .venv/bin/python -m pytest tests/unit/test_timing_l1.py::test_baseline_timeout_run_error_carries_suggested_action -q ) > "$SB/pytest.log" 2>&1
+# timing reg 测试归 gqt 库（qa-toolkit tests/unit）；在 gqt 规范检出内运行
+# （SEE-1396：gqt 为独立检出，不再有 KOL 同级 .dev/qa-toolkit 树；同级检出
+# 仅作 QATK_ROOT 未设置且规范检出缺失时的兜底）。
+QATK="${QATK_ROOT:-/home/jerry/tools/godot-qa-toolkit}"
+if [[ ! -d "$QATK/tests/unit" ]]; then
+    fallback="$(cd "$HERE/../../.." && pwd)/godot-qa-toolkit"
+    [[ -d "$fallback" ]] && QATK="$(cd "$fallback" && pwd)"
+fi
+if [[ ! -d "$QATK/tests/unit" ]]; then
+    echo "gqt 规范检出缺失（设置 QATK_ROOT=<gqt checkout> 或安装规范检出至 ~/tools/godot-qa-toolkit）"; exit 1
+fi
+( cd "$QATK" && python3 -m pytest tests/unit/test_timing_l1.py::test_baseline_timeout_run_error_carries_suggested_action -q ) > "$SB/pytest.log" 2>&1
 PYRC=$?
 ok "test_baseline_timeout_returns_run_error_json_not_crash 全绿" \
     "$([[ "$PYRC" == "0" ]] && echo 1 || echo 0)" "rc=$PYRC $(tail -1 "$SB/pytest.log")"
