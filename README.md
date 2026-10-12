@@ -14,6 +14,10 @@ A Godot editor addon + MCP (Model Context Protocol) server that gives your AI as
 - **Multi-agent control plane** — per-agent editor instances, port allocation, sidecar lease lifecycle, proxy that masks editor cold starts.
 - **Battle-tested** — 180+ test files across shell/Node/Python, six PR-gate CI jobs including a mutation gate.
 
+## Origins
+
+This project began as a fork of [satelliteoflove/godot-mcp](https://github.com/satelliteoflove/godot-mcp) and has since evolved into an independent repository with its own identity. The upstream project provided the original MCP server and editor addon; everything on top — the multi-agent launch control plane, the sidecar lease lifecycle, the port arbiter and reaper, and the extended test suites — is developed and maintained here. Commit history from the fork period is fully preserved.
+
 ## Quick start
 
 ```bash
