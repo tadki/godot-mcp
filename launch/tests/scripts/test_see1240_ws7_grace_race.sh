@@ -64,6 +64,12 @@ fi
 if [[ -n "\${GODOT_EDITOR_LOG_FILE:-}" ]]; then
     echo "[godot-mcp] [stage=WS_BIND_OK] [t=+${delay}000ms] port=\${GODOT_PORT:-}" >> "\$GODOT_EDITOR_LOG_FILE"
 fi
+# G4 discriminator (SEE-1410 rev2): when the scenario sets MOCK_HANDSHAKE=1 the
+# mock ALSO publishes an in-generation handshake event — the strongest live
+# evidence, which must void any bind-delay eviction.
+if [[ "\${MOCK_HANDSHAKE:-}" == "1" && -n "\${GODOT_EDITOR_LOG_FILE:-}" ]]; then
+    echo "[godot-mcp] Client connected from 127.0.0.1:\${GODOT_PORT:-}" >> "\$GODOT_EDITOR_LOG_FILE"
+fi
 exit 0
 EOF
     chmod +x "$sh"
@@ -195,6 +201,51 @@ if [[ "$(count_lines "$START3")" -eq 2 ]] && [[ "$(grep -c 'GRACE_RACE_GUARD' "$
     ok "G3.1: guard fired exactly once across the persistently slow round (no loop)"
 else
     ko "G3.1: guard looped or under-fired (spawns=$(count_lines "$START3"), logs=$(grep -c 'GRACE_RACE_GUARD' "$PROXY_ERR"))"
+fi
+stop_proxy
+
+# ---- G4 (SEE-1410 rev2 事件优先级判别力锁): handshake event voids eviction ----
+sep "G4: slow-bind editor WITH a handshake event is never evicted (event beats wall clock)"
+# The rev2 guard's own kill criterion: once THIS generation's log carries a
+# Client connected/handshake event, every bind-delay eviction path is void —
+# the event outranks the >150s threshold inference. G1 alone cannot see the
+# difference (its mock never handshakes), so a regression that drops the
+# !handshakeSeenThisGeneration conjunct (event condition relaxed back to a
+# wall-clock-only eviction) stays GREEN on G1..G3. G4 makes it red.
+PORT4=$(find_free_port)
+START4="$TMPDIR/start4.count"; : > "$START4"
+START_SH4=$(make_slow_start_mock "$START4" 3)
+start_proxy \
+    "MOCK_HANDSHAKE=1" \
+    "GODOT_PORT=$PORT4" \
+    "KOL_AGENT_NAME=Bachi" \
+    "KOL_WORKTREE=$MOCK_WORKTREE" \
+    "KOL_CONFIGURE_SH=$CFG_SH" \
+    "KOL_START_SH=$START_SH4" \
+    "KOL_CONFIGURE_COUNTER=$CFG_COUNTER" \
+    "KOL_START_COUNTER=$START4" \
+    "KOL_WARMUP_TIMEOUT_MS=60000" \
+    "KOL_PROBE_INTERVAL_MS=200" \
+    "KOL_GRACE_RACE_BIND_S=2" \
+    "KOL_REAP_SH=$REAP_SH" \
+    "GODOT_EDITOR_LOG_FILE=$TMPDIR/editor-g4.log" \
+    "MOCK_NPX_LOG=$TMPDIR/npx4.log"
+send_line "$INIT_LINE"
+wait_for "$PROXY_OUT" '"id":1' 1500 || ko "G4.pre: initialize not answered"
+send_line "$(call_line 2)"
+# The same slow-bind evidence as G1 (3s > 2s threshold) PLUS a handshake event
+# in the same generation: the guard must stay silent.
+if wait_for "$PROXY_OUT" '"id":2' 45000; then
+    ok "G4.1: call flushed with the slow-bind editor still serving (no eviction)"
+else
+    ko "G4.1: held call id=2 never flushed"
+fi
+wait_spawn_count "$START4" 1 || true
+sleep 6   # 竞态窗口语义（CLAUDE.md 边界）：给守卫一个完整观测窗，负向断言"零驱逐"须窗已过
+if [[ "$(count_lines "$START4")" -eq 1 ]] && ! grep -q 'GRACE_RACE_GUARD' "$PROXY_ERR"; then
+    ok "G4.2: guard stayed silent — handshake event voided the bind-delay eviction"
+else
+    ko "G4.2: guard fired despite the in-generation handshake event (spawns=$(count_lines "$START4"), logs=$(grep -c 'GRACE_RACE_GUARD' "$PROXY_ERR"))"
 fi
 stop_proxy
 
