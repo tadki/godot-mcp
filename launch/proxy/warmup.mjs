@@ -162,6 +162,16 @@ async function warmupLoop() {
                 // self-heal window inside the state — whichever expires first
                 // forces the cold restart. form-B 根治点.
                 if (S.recovering && (nowWait - S.recoveringEnteredAt) >= RECOVERING_HARD_CAP_MS) {
+                    // SEE-1410 rev2 event override (mirrors the cold branch):
+                    // an in-generation WS handshake event plus a live CLI session
+                    // outrank the wall-clock cap — no cold restart of a provably
+                    // serving editor; wait for the CLI to re-handshake instead.
+                    if (S.stageTimestamps.WS_HANDSHAKE !== null && S.npxCliConnected) {
+                        S.recovering = false;
+                        recordProxyTransition('r2_event_override', 'warm-branch hard cap reached but WS_HANDSHAKE event + live CLI session prove the editor serves; recovery closed without eviction');
+                        log(`RECOVERING hard cap reached on the warm branch, but the in-generation WS_HANDSHAKE event + live CLI session prove the editor is serving — closing recovery without eviction (event beats wall clock).`);
+                        break;   // exit the warmFlushed loop; outer loop re-arms
+                    }
                     log(`ERROR: RECOVERING absolute hard cap ${Math.floor(RECOVERING_HARD_CAP_MS / 1000)}s reached (2× cold timeout); forcing cold restart (R2).`);
                     rejectQueue(
                         `RECOVERING hard cap (${Math.floor(RECOVERING_HARD_CAP_MS / 1000)}s) reached; forcing cold restart — please retry`,
@@ -277,10 +287,18 @@ async function warmupLoop() {
             // milestone-gate plumbing: firstProbeOkAt + renderStable entry).
             // The legacy lane (no fork CLI — mock seams, frozen) keeps probing.
             const forkLane = cliConnectSignalExpected();
-            const probeOk = forkLane ? true : await wsProbe();
+            // SEE-1410 rev2: bind is a persistent state, but the REAL probe
+            // still runs every tick (SEE-1338 contract: legacy lane keeps its
+            // wsProbe; the live result owns lastTcpOkAt → T4 death detection).
+            // The GATE reachability is latched on firstProbeOkAt: an
+            // intermittent probe false must not skip the gate tick right after
+            // the WS_BIND_OK event lands (the grace-race evidence-arrival
+            // window would be missed and the guard starved).
+            const probeOkRaw = forkLane ? true : await wsProbe();
+            const probeOk = forkLane ? true : (probeOkRaw || S.firstProbeOkAt > 0);
             const now = Date.now();
 
-            if (probeOk) {
+            if (probeOkRaw) {
                 lastTcpOkAt = now;
                 // WS-7: when the editor log is unavailable the SERVER_LISTENING
                 // milestone never lands, so the grace-race guard would measure
@@ -339,12 +357,62 @@ async function warmupLoop() {
                     // FAILED_EXIT; a genuinely bound editor is still served once
                     // the CLI connects (recovering_connected flush path), and a
                     // readable log opens the gate on real milestone evidence.
+                    // SEE-1410 (fork lane cli-slot deadlock — third recurrence of
+                    // the SEE-1325 family): the fork CLI WS-handshakes the editor
+                    // at CLI BOOT (SEE-1338 QA defect #1) and HOLDS the addon's
+                    // single WS slot with a live session. On a manual/adopted (or
+                    // otherwise log-orphaned) editor, the CLI can own that slot
+                    // long before SERVER_LISTENING/WS_HANDSHAKE land in THIS
+                    // proxy's log slice — the double-milestone conjunct then never
+                    // opens the gate while a perfectly warm editor serves our CLI
+                    // (Revy real-machine: handshake complete, every warmup tick
+                    // rejected with 4001, RECOVERING grind to FAILED_EXIT). A
+                    // connected CLI is the strongest live-server evidence there is
+                    // (the addon completes a full HTTP-Upgrade handshake for
+                    // exactly ONE client): fold it into the gate so CLI-slot
+                    // occupation flips from deadlock cause into warm proof
+                    // （连接复用语义，§SPEC-008；gate 仍受 renderStable 约束）.
+                    // SEE-1410 rev2 evidence-arrival hold: the tail scanner runs
+                    // on its own 500ms poll, so the editor's WS_BIND_OK event
+                    // can land a few hundred ms AFTER probeOk first turns true.
+                    // Deciding the grace-race question on that tick would judge
+                    // the editor with bind_ok_ms=null — the exact "wall clock
+                    // beats event" inversion this repair removes. While the
+                    // evidence is pending, hold the flip (the block below falls
+                    // through to the plain re-probe hold; RECOVERING is NOT
+                    // entered). The window is anchored on firstProbeOkAt (reset
+                    // per spawn round) and sized to ONE tail-poll beat (500ms) —
+                    // the editor publishes the event at bind time, so it lands
+                    // entered). The window is anchored on firstProbeOkAt (reset
+                    // per spawn round) and sized to 1.5s (3× tail poll) — the
+                    // editor publishes the event at bind time, so it lands well
+                    // within; an old editor build that never publishes warms
+                    // after the window with bind_ok_ms=null (no eviction —
+                    // fail-safe, at most +1.5s of warm latency; post-re-warm
+                    // calls are sent only after the warm signal, so the hold
+                    // never covers them).
+                    const bindEvidencePending = S.wsBindOkDelayMs === null
+                        && S.firstProbeOkAt > 0
+                        && (now - S.firstProbeOkAt) < 1500;
+                    // Hold state exposed to the router: calls arriving during
+                    // the hold must be HELD (hold-to-warm FIFO) rather than
+                    // answered with the respawn hint — the flip is ≤1.5s away.
+                    S.bindEvidenceHoldActive = bindEvidencePending;
                     const handoffWarm = process.env.GODOT_MCP_HANDOFF_WARM === '1';
-                    const gateOpen = S.lastSpawnReused
+                    // SEE-1410 rev2: the editor's own WS_BIND_OK event is bind
+                    // readiness evidence from the booting process itself — a
+                    // slow-bind editor that has published the event is bound and
+                    // must reach the grace-race evaluation (whose guard then
+                    // reads the SAME event's delay); without this clause a slow
+                    // bind would never open the gate and the guard could never
+                    // see its own trigger event.
+                    const gateOpen = !bindEvidencePending && (S.lastSpawnReused
                         || handoffWarm
                         || (!S.logTailAvailable && !forkLane)
+                        || (forkLane && S.npxCliConnected)
+                        || S.wsBindOkDelayMs !== null
                         || (S.stageTimestamps.SERVER_LISTENING !== null
-                            && S.stageTimestamps.WS_HANDSHAKE !== null);
+                            && S.stageTimestamps.WS_HANDSHAKE !== null));
                     // 缺陷 #6 (SEE-1111): a real WS handshake must be proven
                     // reachable before buffered calls are flushed. With the
                     // production wsProbe, probeOk ALREADY means a full HTTP Upgrade
@@ -372,18 +440,38 @@ async function warmupLoop() {
                         // lands with full grace. One-shot per spawn round
                         // (graceRaceGuardFired) so a genuinely slow machine
                         // cannot loop.
-                        const bindStart = S.stageTimestamps.SERVER_LISTENING ?? S.firstProbeOkAt ?? 0;
-                        const bindDelayMs = (bindStart > 0 && S.stageTimestamps.EDITOR_SPAWNED !== null)
-                            ? bindStart - S.stageTimestamps.EDITOR_SPAWNED
-                            : (bindStart > 0 ? bindStart - (S.spawnStartedAt || S.startedAt) : 0);
+                        // SEE-1410 rev2 (Owner 2026-10-14 15:00, event-driven):
+                        // the grace-race eviction is now defined ONLY by log
+                        // events, never by wall-clock inference:
+                        //   1. bind delay is measured by the EDITOR'S OWN CLOCK
+                        //      from the `[stage=WS_BIND_OK] [t=+Nms]` stage line
+                        //      (S.wsBindOkDelayMs) — the old algorithm (milestone
+                        //      fill-time minus spawnStartedAt) measured tail-scan
+                        //      scheduling, not the event (Revy real-machine: CLI
+                        //      already handshook at +141s, guard evicted a healthy
+                        //      editor at +505s from a late FILLED milestone).
+                        //   2. once ANY connection/handshake event of this log
+                        //      generation is observed (WS_HANDSHAKE milestone =
+                        //      "Client connected from" / "WebSocket handshake
+                        //      complete"), every bind-delay eviction path is
+                        //      permanently void — the event outranks any
+                        //      threshold inference (事件优先级高于一切墙钟推测).
+                        //   3. spawn-attempt attribution kept: the guard only
+                        //      evaluates editors this proxy itself spawned.
+                        // A missing WS_BIND_OK line (old editor build) degrades to
+                        // NO eviction — absence of the event never triggers a kill.
+                        const handshakeSeenThisGeneration = S.stageTimestamps.WS_HANDSHAKE !== null;
                         if (GRACE_RACE_GUARD_ENABLED
                             && !S.lastSpawnReused
                             && !S.graceRaceGuardFired
-                            && bindDelayMs > GRACE_RACE_BIND_MS
+                            && S.spawnAttempts > 0
+                            && !handshakeSeenThisGeneration
+                            && S.wsBindOkDelayMs !== null
+                            && S.wsBindOkDelayMs > GRACE_RACE_BIND_MS
                             && S.spawnAttempts < SPAWN_MAX_ATTEMPTS) {
                             S.graceRaceGuardFired = true;
-                            stageLog('GRACE_RACE_GUARD', `bind_delay_ms=${bindDelayMs} > ${GRACE_RACE_BIND_MS}; evicting slow-bind editor for a warm-cache respawn`);
-                            log(`WARNING: editor bound after ${Math.floor(bindDelayMs / 1000)}s (addon grace would leave <${Math.max(0, 300 - Math.floor((now - (S.stageTimestamps.EDITOR_SPAWNED || now)) / 1000))}s for the client); evicting and respawning against the now-warm import cache (WS-7).`);
+                            stageLog('GRACE_RACE_GUARD', `editor_clock_bind_delay_ms=${S.wsBindOkDelayMs} > ${GRACE_RACE_BIND_MS}; evicting slow-bind editor for a warm-cache respawn`);
+                            log(`WARNING: editor's own clock reports a ${Math.floor(S.wsBindOkDelayMs / 1000)}s boot→bind delay (addon grace would leave <${Math.max(0, 300 - Math.floor(S.wsBindOkDelayMs / 1000))}s for the client); evicting and respawning against the now-warm import cache (WS-7).`);
                             S.warm = false;          // undo the WARM transition above
                             warmFlushed = false;
                             S.graceRaceRespawn = true;
@@ -497,6 +585,20 @@ async function warmupLoop() {
                     // clue, clear the round, respawn. Bounded by
                     // forceRestartCount; after K restarts FAILED_CLEAN owns
                     // the retry loop (form-B 根治点).
+                    // SEE-1410 rev2 (Owner 2026-10-14 15:00, event-driven): the
+                    // wall-clock cap YIELDS to in-generation events. When THIS
+                    // generation's log already carries a WS handshake event AND
+                    // our CLI still holds the session, the editor is provably
+                    // serving — forcing a cold restart would kill a healthy
+                    // editor (the Revy +505s eviction chain). Close recovery and
+                    // let the event-gated warm path (CLI connection → gateOpen)
+                    // converge instead; no eviction, no respawn.
+                    if (S.stageTimestamps.WS_HANDSHAKE !== null && S.npxCliConnected) {
+                        S.recovering = false;
+                        recordProxyTransition('r2_event_override', 'hard cap reached but in-generation WS_HANDSHAKE event + live CLI session prove the editor serves; recovery closed without eviction');
+                        log(`RECOVERING hard cap reached, but this generation's WS_HANDSHAKE event + live CLI session prove the editor is serving — closing recovery without eviction (event beats wall clock).`);
+                        break;   // exit the probe loop; outer loop re-arms clean
+                    }
                     log(`ERROR: RECOVERING absolute hard cap ${Math.floor(RECOVERING_HARD_CAP_MS / 1000)}s reached (2× cold timeout); forcing cold restart (R2).`);
                     rejectQueue(
                         `RECOVERING hard cap (${Math.floor(RECOVERING_HARD_CAP_MS / 1000)}s) reached; forcing cold restart — please retry`,
@@ -552,6 +654,7 @@ async function warmupLoop() {
             S.lastSpawnReused = false;
             S.tcpReceivedCount = 0;
             S.firstProbeOkAt = 0;          // fresh round re-measures the bind delay
+            S.bindEvidenceHoldUsed = false; // fresh round re-arms the evidence-arrival hold
             for (const s of STAGE_ENUM) S.stageTimestamps[s] = null;
             S.stageTimestamps.LAUNCHER_EXEC = S.startedAt;
             S.stage = 'EDITOR_SPAWNED';    // spawn is about to re-run; milestones re-derive

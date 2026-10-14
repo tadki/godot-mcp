@@ -57,6 +57,13 @@ echo x >> "\${KOL_START_COUNTER:-$counter}"
 if [[ -n "\${GODOT_PORT:-}" ]]; then
     ( sleep "$delay"; nohup env "LISTEN_PORT=\${GODOT_PORT}" node "$LISTENER_SCRIPT" </dev/null >/dev/null 2>"$TMPDIR/listener-slow.err" & ) >/dev/null 2>&1
 fi
+# SEE-1410 rev2: the guard reads bind delay from the editor's OWN stage line
+# ("[stage=WS_BIND_OK] [t=+Nms]"). The mock is the editor stand-in, so it must
+# publish the bind event itself — absence of the event now means "no eviction"
+# (fail-safe), which would make the G1 slow-bind scenario untestable.
+if [[ -n "\${GODOT_EDITOR_LOG_FILE:-}" ]]; then
+    echo "[godot-mcp] [stage=WS_BIND_OK] [t=+${delay}000ms] port=\${GODOT_PORT:-}" >> "\$GODOT_EDITOR_LOG_FILE"
+fi
 exit 0
 EOF
     chmod +x "$sh"
@@ -89,6 +96,7 @@ start_proxy \
     "KOL_PROBE_INTERVAL_MS=200" \
     "KOL_GRACE_RACE_BIND_S=2" \
     "KOL_REAP_SH=$REAP_SH" \
+    "GODOT_EDITOR_LOG_FILE=$TMPDIR/editor-g1.log" \
     "MOCK_NPX_LOG=$TMPDIR/npx.log"
 
 send_line "$INIT_LINE"
@@ -141,6 +149,7 @@ start_proxy \
     "KOL_GRACE_RACE_BIND_S=2" \
     "KOL_GRACE_RACE_GUARD=0" \
     "KOL_REAP_SH=$REAP_SH" \
+    "GODOT_EDITOR_LOG_FILE=$TMPDIR/editor-g2.log" \
     "MOCK_NPX_LOG=$TMPDIR/npx2.log"
 send_line "$INIT_LINE"
 wait_for "$PROXY_OUT" '"id":1' 1500 || ko "G2.pre: initialize not answered"
@@ -175,6 +184,7 @@ start_proxy \
     "KOL_PROBE_INTERVAL_MS=200" \
     "KOL_GRACE_RACE_BIND_S=2" \
     "KOL_REAP_SH=$REAP_SH" \
+    "GODOT_EDITOR_LOG_FILE=$TMPDIR/editor-g3.log" \
     "MOCK_NPX_LOG=$TMPDIR/npx3.log"
 send_line "$INIT_LINE"
 wait_for "$PROXY_OUT" '"id":1' 1500 || ko "G3.pre: initialize not answered"

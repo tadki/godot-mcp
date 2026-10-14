@@ -510,7 +510,11 @@ function handleClaudeMessage(line) {
         // in flight. The editor is NOT cold-warming (it was warm and died) — a
         // generic "冷启动预热" hint would be wrong. Give the distinct restart
         // hint so the agent retries (the retry will re-trigger the spawn).
-        if (S.warmEditorDead) {
+        // SEE-1410 rev2: during the bind-evidence hold (≤1.5s after the
+        // respawned editor's probe first succeeds) the flip is imminent — hold
+        // the call in the FIFO instead of hinting, so the client is served by
+        // the gate flush with zero retries (hold-to-warm semantics).
+        if (S.warmEditorDead && !S.bindEvidenceHoldActive) {
             if (id !== undefined) {
                 dropToolsCallId(id);
                 sendToClaude(warmupHintResponse(id, 'warming', buildRespawnHintText()));
