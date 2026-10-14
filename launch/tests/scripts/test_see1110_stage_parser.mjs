@@ -27,6 +27,8 @@ const {
     stageOrdinal,
     handshakeSubstate,
     handshakePendingMs,
+    resetGeneration,
+    WS_BIND_OK_RE,
 } = await import(PARSER_PATH);
 
 const RESULTS = [];
@@ -142,6 +144,59 @@ record('scanStageLines returns a fresh state (immutability)', () => {
     const st = scanStageLines(before, COLD_SLICE, T0 + 1000);
     assert.deepEqual(before, frozen);
     assert.notEqual(before, st);
+});
+
+// --- SEE-1410 rev2: WS_BIND_OK editor-clock evidence ---
+
+// 12. The editor's own bind-delay line is parsed into wsBindOkDelayMs.
+record('WS_BIND_OK line yields editor-clock bind delay', () => {
+    const st = createStageState(T0);
+    const slice = '[godot-mcp] [stage=WS_BIND_OK] [t=+44213ms] [ts=2026-10-14T14:20:00] port=6560 bind=172.17.192.1\n';
+    const out = scanStageLines(st, slice, T0 + 5000);
+    assert.equal(out.wsBindOkDelayMs, 44213, 'editor-clock delay parsed verbatim');
+    assert.equal(typeof WS_BIND_OK_RE.test('x'), 'boolean', 'regex exported');
+});
+
+// 13. Evidence is fire-once per generation: a second line does not overwrite.
+record('WS_BIND_OK evidence is fire-once', () => {
+    let st = createStageState(T0);
+    const line = '[godot-mcp] [stage=WS_BIND_OK] [t=+44213ms] port=1\n';
+    st = scanStageLines(st, line, T0 + 1000);
+    st = scanStageLines(st, '[godot-mcp] [stage=WS_BIND_OK] [t=+99000ms] port=1\n', T0 + 2000);
+    assert.equal(st.wsBindOkDelayMs, 44213, 'first observation wins');
+});
+
+// 14. resetGeneration keeps the spawn-chain anchors, drops all log-domain
+// milestones — a new boot's gate can only be satisfied by the new boot's lines.
+record('resetGeneration anchors survive, log milestones drop', () => {
+    let st = createStageState(T0);
+    st = scanStageLines(st, [
+        '[godot-mcp] Plugin initialized',
+        '[godot-mcp] Server listening on 172.17.192.1:6560 [WSL]',
+        '[godot-mcp] TCP connection received from 1.2.3.4:5, awaiting WebSocket handshake...',
+        '[godot-mcp] Client connected from 1.2.3.4:5',
+    ].join('\n') + '\n', T0 + 3000);
+    assert.equal(st.timestamps.WS_HANDSHAKE !== null, true, 'precondition: milestones fired');
+    st.wsBindOkDelayMs = 44213;
+    st.tcpReceivedCount = 3;
+
+    const gen2 = resetGeneration(st);
+    assert.equal(gen2.stage, 'EDITOR_SPAWNED', 'stage re-anchored to spawn');
+    assert.equal(gen2.timestamps.LAUNCHER_EXEC, T0, 'LAUNCHER_EXEC anchor survives');
+    assert.equal(gen2.timestamps.EDITOR_SPAWNED, st.timestamps.EDITOR_SPAWNED, 'EDITOR_SPAWNED anchor survives');
+    for (const s of ['PLUGIN_INIT', 'SERVER_LISTENING', 'TCP_CONNECTED', 'WS_HANDSHAKE', 'MCP_INITIALIZED', 'WARM']) {
+        assert.equal(gen2.timestamps[s], null, `${s} cleared for the new generation`);
+    }
+    assert.equal(gen2.tcpReceivedCount, 0, 'tcp counter reset');
+    assert.equal(gen2.wsBindOkDelayMs, null, 'bind evidence reset');
+});
+
+// 15. Old editor builds (no WS_BIND_OK line) yield null — absence of the event
+// never fabricates a bind-delay value.
+record('missing WS_BIND_OK line leaves wsBindOkDelayMs null', () => {
+    const st = createStageState(T0);
+    const out = scanStageLines(st, '[godot-mcp] Server listening on 1.2.3.4:5 [WSL]\n', T0 + 1000);
+    assert.equal(out.wsBindOkDelayMs, null);
 });
 
 console.log(`\n--- Summary ---`);

@@ -194,7 +194,10 @@ test('AMEND-1 R2 busy_foreign/reuse 判定保持「活 holder 不杀」原语义
 test('QA#1 R1 warm-gate：fork 车道 wsProbe 完全退出生产路径（线性单源）', () => {
     const src = readSrc('proxy/warmup.mjs');
     // P1 线性单源裁决: fork lane never schedules wsProbe; legacy lane keeps it.
-    assert.ok(/const forkLane = cliConnectSignalExpected\(\);\s*\n\s*const probeOk = forkLane \? true : await wsProbe\(\);/.test(src),
+    // SEE-1410 rev2: the live result is probeOkRaw (owns lastTcpOkAt/T4); the
+    // gate reachability latches on firstProbeOkAt — the fork lane stays
+    // structurally probe-free and the legacy lane still awaits wsProbe.
+    assert.ok(/const probeOkRaw = forkLane \? true : await wsProbe\(\);\s*\n\s*const probeOk = forkLane \? true : \(probeOkRaw \|\| S\.firstProbeOkAt > 0\);/.test(src),
         'fork lane must bypass wsProbe structurally, legacy lane keeps it');
 });
 

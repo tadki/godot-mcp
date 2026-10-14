@@ -7,7 +7,7 @@ import {
     EDITOR_LOG_FILE, GIVEUP_REARM_ENABLED, KOL_PROGRESS_PROTOCOL,
     LEASE_EXITING_LINE, LEASE_POLL_INTERVAL_MS, RUNTIME_ID,
 } from './config.mjs';
-import { STAGE_ENUM, scanStageLines } from '../warmup-stage-parser.mjs';
+import { STAGE_ENUM, resetGeneration, scanStageLines } from '../warmup-stage-parser.mjs';
 import { log, stageLog } from './log.mjs';
 import { maybeNotifyStageChange, warmupDiagnostic } from './diagnostics.mjs';
 import { rejectQueue } from './router.mjs';
@@ -34,8 +34,17 @@ function startLeaseMonitor() {
     // must NOT fast-fail us — that's the whole point of offset tracking.
     S.leaseOffset = 0;
     stat(EDITOR_LOG_FILE)
-        .then((st) => { S.leaseOffset = st.size; })
-        .catch(() => { S.leaseOffset = 0; })
+        .then((st) => {
+            S.leaseOffset = st.size;
+            // SEE-1410 (rev2): log-generation binding — the inode observed at
+            // monitor start anchors generation 0; any later inode change is a
+            // new editor boot and resets the generation (see checkLeaseTail).
+            S.leaseInode = st.ino;
+        })
+        .catch(() => {
+            S.leaseOffset = 0;
+            S.leaseInode = null;
+        })
         .finally(() => {
             S.leaseTimer = setInterval(() => {
                 if (S.shutdownRequested || S.warmupTimedOut) {
@@ -48,9 +57,34 @@ function startLeaseMonitor() {
         });
 }
 
+// SEE-1410 (rev2, log-generation binding): a different inode means the editor
+// log was recreated for a NEW boot (start-godot-editor rm -f) or a
+// runtime-scoped symlink retargeted — the previous generation's lines are
+// foreign evidence for this boot. Restart the tail at the new file's beginning
+// and drop every log-domain milestone so the current boot's gate can only ever
+// be satisfied by THIS boot's events（事件归属区分，而非 offset 猜测）.
+function applyLogGenerationBinding(st) {
+    if (S.leaseInode === null || st.ino === S.leaseInode) return;
+    S.leaseInode = st.ino;
+    S.leaseOffset = 0;
+    const prevStage = S.stage;
+    const gen = resetGeneration({
+        stage: S.stage,
+        timestamps: S.stageTimestamps,
+        tcpReceivedCount: S.tcpReceivedCount,
+        wsBindOkDelayMs: S.wsBindOkDelayMs ?? null,
+    });
+    S.stage = gen.stage;
+    S.stageTimestamps = gen.timestamps;
+    S.tcpReceivedCount = gen.tcpReceivedCount;
+    S.wsBindOkDelayMs = gen.wsBindOkDelayMs;
+    stageLog('LOG_GENERATION_RESET', `ino=${st.ino} prev_stage=${prevStage}`);
+    recordProxyTransition('log_generation_reset', `editor log inode changed (${st.ino}); previous-boot milestones invalidated for this generation`);
+    log(`INFO: editor log generation changed (inode ${st.ino}); previous-boot milestones invalidated (stage back to ${S.stage}).`);
+}
+
 // eslint-disable-next-line sonarjs/cognitive-complexity -- SEE-1334 baseline: legacy function, complexity gate applies to new code only (plan §5)
-async function checkLeaseTail() {
-    if (!EDITOR_LOG_FILE || S.shutdownRequested || S.warmupTimedOut) return;
+async function checkLeaseTail() {    if (!EDITOR_LOG_FILE || S.shutdownRequested || S.warmupTimedOut) return;
     let st;
     try {
         st = await stat(EDITOR_LOG_FILE);
@@ -69,8 +103,9 @@ async function checkLeaseTail() {
         return;
     }
     if (KOL_PROGRESS_PROTOCOL !== 'off') S.logTailAvailable = true;
+    applyLogGenerationBinding(st);
     if (st.size < S.leaseOffset) {
-        // File was truncated/rotated; reset and scan only the new content.
+        // Same-file truncation/rotation; reset and scan only the new content.
         S.leaseOffset = 0;
     }
     if (st.size === S.leaseOffset) return;
@@ -139,13 +174,9 @@ async function checkLeaseTail() {
 // The scan itself is delegated to the pure module (warmup-stage-parser.mjs,
 // unit-tested in isolation); the proxy just diffs the returned snapshot against
 // its mutable state and fires notifications on stage advance.
-function scanTailStages(slice) {
-    const next = scanStageLines(
-        { stage: S.stage, timestamps: S.stageTimestamps, tcpReceivedCount: S.tcpReceivedCount },
-        slice,
-        Date.now()
-    );
-    const stageAdvanced = next.stage !== S.stage;
+// SEE-1410 (rev2): fire-once copies from a fresh parser snapshot into S —
+// extracted from scanTailStages to keep both under the complexity gate.
+function absorbMilestones(next) {
     // Copy any newly-observed milestone timestamps (fire-once: only fill nulls).
     for (const s of STAGE_ENUM) {
         if (next.timestamps[s] !== null && S.stageTimestamps[s] === null) {
@@ -157,6 +188,22 @@ function scanTailStages(slice) {
             }
         }
     }
+    // The editor-clock bind-delay evidence lands with its own diagnostic so
+    // gates and post-mortems read the event, not the scan time.
+    if (next.wsBindOkDelayMs !== null && S.wsBindOkDelayMs === null) {
+        S.wsBindOkDelayMs = next.wsBindOkDelayMs;
+        stageLog('WS_BIND_OK_OBSERVED', `editor_clock_bind_delay_ms=${S.wsBindOkDelayMs}`);
+    }
+}
+
+function scanTailStages(slice) {
+    const next = scanStageLines(
+        { stage: S.stage, timestamps: S.stageTimestamps, tcpReceivedCount: S.tcpReceivedCount, wsBindOkDelayMs: S.wsBindOkDelayMs ?? null },
+        slice,
+        Date.now()
+    );
+    const stageAdvanced = next.stage !== S.stage;
+    absorbMilestones(next);
     if (stageAdvanced) {
         S.stage = next.stage;
         maybeNotifyStageChange();

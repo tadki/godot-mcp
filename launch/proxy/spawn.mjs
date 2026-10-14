@@ -152,6 +152,7 @@ function resetForRespawn() {
     S.stageTimestamps.LAUNCHER_EXEC = S.startedAt;
     S.tcpReceivedCount = 0;
     S.firstProbeOkAt = 0;   // WS-7: fresh round re-measures the bind delay
+    S.bindEvidenceHoldUsed = false; // WS-7: fresh round re-arms the evidence hold
     // 缺陷 #8: a fresh spawn round gets a fresh liveness-failure counter (the
     // probe fires again only once the new editor re-warms).
     S.warmProbeFailures = 0;
@@ -391,6 +392,25 @@ async function ensureEditor(t0) {
             // ADOPT it (hot reuse) instead of evicting.
             const holderWorktree = await readHolderWorktree();
             const ourWorktree = await resolveWorktreeForSpawn();
+            // SEE-1410 (manual/sidecar-less holder, §SPEC-009): connect-based
+            // adoption beats spawn records. The fork CLI WS-handshakes the editor
+            // at CLI boot (SEE-1338 QA defect #1), so by the time ensureEditor
+            // runs our CLI may ALREADY hold the addon's single WS slot on this
+            // slot's leased port with a manual (sidecar-less) editor. A live CLI
+            // session is hard evidence the editor on the leased port is serving
+            // this slot (the port is a per-runtime lease; the SEE-1129
+            // wrong-worktree surface is governed by the agent-scope principle
+            // #1/#2, and cross-worktree holders throw busy_foreign before this
+            // point when identifiable). Adopt as hot reuse — NEVER evict an
+            // editor our own CLI is actively talking to; the follow-up spawn
+            // would then hit "port already in use" and grind (s3y/s3x family).
+            if (!holderWorktree && S.npxCliConnected) {
+                S.lastSpawnReused = true;
+                S.spawnLastFailed = false;
+                const reused = await ensureReusedWorktreeConfigured(t0);
+                log(`arbiter verdict ${verdict} downgraded to CLI-ADOPTED reuse: our CLI already holds a live WS session with the editor on the leased port (sidecar-less/manual holder); adopting instead of evicting.`);
+                return { spawned: false, reused: true, staleHandoff: true, worktree: reused.worktree, reuseStatus: reused.status, configureRc: reused.configureRc, configureError: reused.configureError };
+            }
             if (holderWorktree && ourWorktree
                 && decideSidecarGuard(holderWorktree, ourWorktree) === 'reuse') {
                 S.lastSpawnReused = true;
@@ -467,6 +487,19 @@ async function ensureEditor(t0) {
         const ourWorktree = await resolveWorktreeForSpawn();
         const holderAgent = await readHolderAgent();
         const ourAgent = process.env.GODOT_MCP_AGENT_NAME || process.env.KOL_AGENT_NAME || '';
+
+        // SEE-1410 (manual/sidecar-less holder, §SPEC-009): same adoption rule
+        // as the arbiter channel above — a connected CLI is live-editor proof;
+        // sidecar absence alone must not route into evictStaleHolder (which
+        // would kill the editor our own CLI is holding a WS session with and
+        // then fail its own respawn on the still-held port).
+        if (!holderWorktree && S.npxCliConnected) {
+            S.lastSpawnReused = true;
+            S.spawnLastFailed = false;
+            const reused = await ensureReusedWorktreeConfigured(t0);
+            log(`sidecar guard downgraded to CLI-ADOPTED reuse: our CLI already holds a live WS session with the editor on the leased port (sidecar-less/manual holder); adopting instead of evicting.`);
+            return { spawned: false, reused: true, staleHandoff: true, worktree: reused.worktree, reuseStatus: reused.status, configureRc: reused.configureRc, configureError: reused.configureError };
+        }
 
         // SEE-1129 Owner principle #5 (cross-agent contention): a holder on a
         // DIFFERENT agent means a duplicate/misconfigured port mapping — two
@@ -767,6 +800,7 @@ async function forceColdRestart(trigger) {
         S.lastSpawnReused = false;
         S.tcpReceivedCount = 0;
         S.firstProbeOkAt = 0;
+        S.bindEvidenceHoldUsed = false;
         for (const s of STAGE_ENUM) S.stageTimestamps[s] = null;
         S.stageTimestamps.LAUNCHER_EXEC = S.startedAt;
         S.stage = 'EDITOR_SPAWNED';

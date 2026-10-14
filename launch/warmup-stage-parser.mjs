@@ -43,6 +43,15 @@ export const STAGE_PATTERNS = [
 // after the milestone timestamp is set.
 export const TCP_RECEIVED_RE = /^\[godot-mcp\] TCP connection received from .* awaiting WebSocket handshake/mg;
 
+// SEE-1410 (rev2, event-driven bind evidence): the editor's own stage log line
+// for the WS bind carries the EDITOR-CLOCK delay from addon boot to bind
+// (`[stage=WS_BIND_OK] [t=+Nms]`, plugin.gd _stage_log). This is the only
+// authoritative bind-delay source: the old proxy-side algorithm (milestone
+// fill-time minus spawnStartedAt) measured tail-scan scheduling, not the
+// event. Parsed separately from the ordinal milestones (it is evidence data,
+// not a stage), fire-once per log generation.
+export const WS_BIND_OK_RE = /^\[godot-mcp\] \[stage=WS_BIND_OK\] \[t=\+(\d+)ms\]/m;
+
 export function stageOrdinal(stageName) {
     return STAGE_ENUM.indexOf(stageName);
 }
@@ -53,7 +62,21 @@ export function createStageState(startedAt) {
     const timestamps = {};
     for (const s of STAGE_ENUM) timestamps[s] = null;
     timestamps.LAUNCHER_EXEC = startedAt;
-    return { stage: 'LAUNCHER_EXEC', timestamps, tcpReceivedCount: 0 };
+    return { stage: 'LAUNCHER_EXEC', timestamps, tcpReceivedCount: 0, wsBindOkDelayMs: null };
+}
+
+// SEE-1410 (rev2, log-generation binding): each editor boot owns its own log
+// generation — a new file (rm -f recreate / symlink retarget, detected via
+// inode change in the tail scanner) invalidates every log-domain milestone of
+// the previous boot. Returns a fresh state anchored to the spawn chain
+// (LAUNCHER_EXEC/EDITOR_SPAWNED proxy-clock anchors survive) with all
+// log-domain milestones, the TCP-received counter, and the bind-delay evidence
+// cleared, so a stale previous boot can never satisfy this generation's gate.
+export function resetGeneration(state) {
+    const next = createStageState(state.timestamps.LAUNCHER_EXEC);
+    next.stage = 'EDITOR_SPAWNED';
+    next.timestamps.EDITOR_SPAWNED = state.timestamps.EDITOR_SPAWNED;
+    return next;
 }
 
 // Scan a post-spawn log slice against the milestone patterns. `now` is injected
@@ -66,8 +89,15 @@ export function scanStageLines(state, slice, now) {
         stage: state.stage,
         timestamps: { ...state.timestamps },
         tcpReceivedCount: state.tcpReceivedCount,
+        wsBindOkDelayMs: state.wsBindOkDelayMs ?? null,
     };
     if (!slice || typeof slice !== 'string' || slice.length === 0) return next;
+
+    // Editor-clock bind-delay evidence (fire-once per generation).
+    if (next.wsBindOkDelayMs === null) {
+        const bindOk = slice.match(WS_BIND_OK_RE);
+        if (bindOk) next.wsBindOkDelayMs = Number(bindOk[1]);
+    }
 
     for (const entry of STAGE_PATTERNS) {
         if (!entry) continue;

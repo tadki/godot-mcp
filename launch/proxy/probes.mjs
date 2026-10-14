@@ -68,7 +68,14 @@ function wsProbe() {
         timeout = setTimeout(() => finish(false), 3000);
         ws.onopen = () => finish(true);
         ws.onerror = () => finish(false);
-        ws.onclose = () => finish(false);
+        // SEE-1410 (§SPEC-008): honor the documented warm-equivalent semantics
+        // above — a 4001 close (CLOSE_REASON_ALREADY_CONNECTED, websocket_server
+        // .gd) means this probe completed a full HTTP Upgrade against a LIVE WS
+        // server that already serves a real client. That is a warm-equivalent
+        // signal, NOT an editor-not-ready failure; callers treat probeOk=true,
+        // and the addon has already handed the probe a clean coded close so the
+        // incumbent slot holder is untouched (protect-the-incumbent contract).
+        ws.onclose = (ev) => finish(!!ev && ev.code === 4001);
     });
 }
 
