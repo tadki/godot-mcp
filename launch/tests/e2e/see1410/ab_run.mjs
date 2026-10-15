@@ -27,10 +27,10 @@ const FORK = path.resolve(HERE, '..', '..', '..', '..');    // launch/tests/e2e/
 const KOL_ROOT = path.resolve(FORK, '..', 'KingOfLikes-Godot');
 const CTRL_ROOT = path.join(os.homedir(), 'see1410-ab-ctrl-worktree');
 const EVIDENCE = path.join(HERE, 'evidence');
-const WARMUP_MS = 45000;      // 压缩冷启动窗口（真实 300s）
-const FAILED_EXIT_MS = 120000;
-const R2_CAP_MS = 75000;      // 压缩 R2 硬顶（真实 2×cold timeout）
-const HARNESS_BUDGET_MS = 330000; // warmup(45s)+R2(75s)+驱逐链/收敛+余量
+const WARMUP_MS = parseInt(process.env.AB_WARMUP_MS || '150000', 10);   // 冷启动窗口：本机编辑器 bind 实测 ~84s（Revy 复核），150s 留余量
+const FAILED_EXIT_MS = parseInt(process.env.AB_FAILED_EXIT_MS || '120000', 10);
+const R2_CAP_MS = parseInt(process.env.AB_R2_CAP_MS || '300000', 10);   // R2 硬顶：2×cold 语义按窗口比例放大（真实 2×300s）
+const HARNESS_BUDGET_MS = parseInt(process.env.AB_BUDGET_MS || '780000', 10); // warmup(150s)+驱逐/收敛链+bind(~84s)+余量
 const CTRL_COMMIT = '04611b8';
 
 const [arm, roundStr, portStr] = process.argv.slice(2, 5);
