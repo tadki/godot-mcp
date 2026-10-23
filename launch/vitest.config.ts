@@ -256,6 +256,7 @@ launch/tests/scripts/test_see1240_ws7_grace_race.sh
 launch/tests/scripts/test_see1244_shim_degrade.sh
 launch/tests/scripts/test_see1244_tier1_wait.sh
 launch/tests/scripts/test_see1288_build_fallback_negative.sh
+launch/tests/scripts/test_see1458_deployment_bootstrap_layouts.sh
 launch/tests/scripts/test_see990_live_gate_race.sh
 launch/tests/scripts/see1129/test_multi_path_drift_assertion.sh
 launch/tests/scripts/see1129/test_multi_slot_reuse_predicate.sh
