@@ -43,11 +43,12 @@ run_bootstrap() {
     '
 }
 
-# make_env_file <path> <kind> — 测试夹具 env 文件: 钉 GODOT_MCP_HOME 到哨兵值
+# make_env_file <path> <kind> [home] — 测试夹具 env 文件: 钉 GODOT_MCP_HOME 到
+# 哨兵值 (跨层优先级判据用第 3 参区分各层哨兵值, 缺省同值)
 make_env_file() {
-    local file="$1" kind="$2"
+    local file="$1" kind="$2" home="${3:-/sentinel/multica-home}"
     mkdir -p "$(dirname "$file")"
-    printf 'export GODOT_MCP_HOME="/sentinel/multica-home"\nGMC_DEPL_SOURCE=%s\n' "$kind" > "$file"
+    printf 'export GODOT_MCP_HOME="%s"\nGMC_DEPL_SOURCE=%s\n' "$home" "$kind" > "$file"
 }
 
 BASE="$(mktemp -d)"
@@ -109,7 +110,20 @@ case "$r" in
 esac
 rm -rf "$BASE/.env"
 
-echo "== SEE-1458 §SPEC-101.6: 源码结构守卫 =="
+echo "== SEE-1458 §SPEC-101.6: 跨层优先级 — 最近 repo root 的 env 先命中 =="
+# 与 1.3 互补: 1.3 钉同层内新路径优先, 此处钉跨层「最近 root 先命中」的向上
+# 行走语义 (各层哨兵值/标签不同, 最远层先命中的变异在此转红)。
+make_env_file "$BASE/ws/a/.env/kol-mcp.env" near "/sentinel/near-home"
+make_env_file "$BASE/ws/.env/kol-mcp.env" far "/sentinel/far-home"
+r="$(run_bootstrap "$SD")"
+case "$r" in
+    "source=near home=/sentinel/near-home")
+        ok "跨层最近 root 优先: $r" ;;
+    *) bad "跨层优先级漂移 (got '$r')" ;;
+esac
+rm -rf "$BASE/ws/a/.env" "$BASE/ws/.env"
+
+echo "== SEE-1458 §SPEC-101.7: 源码结构守卫 =="
 if grep -q '\.env/kol-mcp\.env' "$LAUNCH/godot-mcp-launcher.sh" \
     && grep -q '\.dev/env/kol-mcp\.env' "$LAUNCH/godot-mcp-launcher.sh"; then
     ok "launcher 同时探测新/旧两路径"
