@@ -53,15 +53,25 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # a BLIND upward walk to whatever caller env file lay nearby. THIS block is a
 # SELF-LOCATION of the deployment config the library ships WITH its host
 # checkout: the fork lives at <kol_root>/addons/godot_mcp, so walking up from
-# SCRIPT_DIR and requiring the EXACT filename .dev/env/kol-mcp.env at a repo
-# root is "this checkout's own deployment defaults", not reading arbitrary
+# SCRIPT_DIR and requiring the EXACT filename .env/kol-mcp.env (new layout,
+# SEE-1430b) or .dev/env/kol-mcp.env (legacy layout, one compat round) at a
+# repo root is "this checkout's own deployment defaults", not reading arbitrary
 # caller state. K5 semantics unchanged: env.sh's alias chain only fills
 # variables the caller left unset (explicit canonical still wins). On a
-# standalone fork checkout (no .dev/env/) this is a silent no-op.
+# standalone fork checkout (no env file at either path) this is a silent
+# no-op. SEE-1457/1458: after the SEE-1430b .dev consolidation moved the file
+# to .env/, the legacy-only probe silently no-op'd and GODOT_MCP_HOME drifted
+# to env.sh's NEUTRAL default — the new path must win when both exist
+# (transitional trees), matching the .mcp.json chain which sources .env/.
 _gmc_depl_root="$SCRIPT_DIR"
 for _ in 1 2 3 4; do
     _gmc_depl_root="$(dirname "$_gmc_depl_root")"
     [ "$_gmc_depl_root" = "/" ] && break
+    if [ -f "$_gmc_depl_root/.env/kol-mcp.env" ]; then
+        # shellcheck source=/dev/null
+        . "$_gmc_depl_root/.env/kol-mcp.env"
+        break
+    fi
     if [ -f "$_gmc_depl_root/.dev/env/kol-mcp.env" ]; then
         # shellcheck source=/dev/null
         . "$_gmc_depl_root/.dev/env/kol-mcp.env"
