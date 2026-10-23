@@ -43,7 +43,7 @@ run_bootstrap() {
     '
 }
 
-# make_env_file <path> <kind> — 测试夹具 env 文件: 钉 GODOOT_MCP_HOME 到哨兵值
+# make_env_file <path> <kind> — 测试夹具 env 文件: 钉 GODOT_MCP_HOME 到哨兵值
 make_env_file() {
     local file="$1" kind="$2"
     mkdir -p "$(dirname "$file")"
