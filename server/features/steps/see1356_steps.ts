@@ -61,7 +61,8 @@ Given('the SEE-1356 L7 harness script in the launch test tree', function () {
 });
 
 function runHarness(w: HarnessWorld, face: HarnessFace): void {
-    const args = face === 'l7' ? [w.harnessPath as string] : [w.harnessPath as string, face];
+    const script = w.harnessPath as string;
+    const args = face === 'l7' ? [script] : [script, face];
     const result = spawnSync('bash', args, {
         encoding: 'utf8',
         timeout: HARNESS_BUDGET_MS,
@@ -87,20 +88,21 @@ When('the harness runs against mock seed-<id12> fixtures', { timeout: HARNESS_ST
     runHarness(this as HarnessWorld, 'l7');
 });
 
+// Shared assertion tail (SSOT stdout FAIL=0 + exit 0); the face label keeps
+// failure messages scenario-specific.
+function assertZeroFailures(w: HarnessWorld, face: string): void {
+    assert.match(w.stdout ?? '', /FAIL=0/, harnessFailure(w, `${face} reported failures`));
+    assert.equal(w.rc, 0, harnessFailure(w, `${face} harness exit code nonzero`));
+}
+
 Then('the capture face reports zero failures', function () {
-    const w = this as HarnessWorld;
-    assert.match(w.stdout ?? '', /FAIL=0/, harnessFailure(w, 'capture face reported failures'));
-    assert.equal(w.rc, 0, harnessFailure(w, 'capture face harness exit code nonzero'));
+    assertZeroFailures(this as HarnessWorld, 'capture face');
 });
 
 Then('the node_commands face reports zero failures', function () {
-    const w = this as HarnessWorld;
-    assert.match(w.stdout ?? '', /FAIL=0/, harnessFailure(w, 'node_commands face reported failures'));
-    assert.equal(w.rc, 0, harnessFailure(w, 'node_commands face harness exit code nonzero'));
+    assertZeroFailures(this as HarnessWorld, 'node_commands face');
 });
 
 Then('the harness reports zero failures across all groups', function () {
-    const w = this as HarnessWorld;
-    assert.match(w.stdout ?? '', /FAIL=0/, harnessFailure(w, 'L7 harness reported failures'));
-    assert.equal(w.rc, 0, harnessFailure(w, 'L7 harness exit code nonzero'));
+    assertZeroFailures(this as HarnessWorld, 'L7 harness');
 });
