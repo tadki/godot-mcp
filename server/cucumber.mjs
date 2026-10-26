@@ -6,7 +6,9 @@
 // pending fails the gherkin evidence.
 //
 // Task acceptance + nightly evidence runs (`npx cucumber-js --strict` from
-// server/); NOT in PR CI (plan §7, Owner 2026-09-21).
+// server/); NOT in PR CI (plan §7, Owner 2026-09-21). The suite-wide step
+// budget lives in features/steps/support/setup.ts because Cucumber v12 has
+// no `timeout` profile key.
 
 export default {
     paths: ['features/**/*.feature'],
@@ -16,9 +18,5 @@ export default {
     import: ['features/steps/**/*.ts', 'tsx'],
     strict: true,
     retry: 0,
-    // Step timeout: the warm handshake through the counting seams is budgeted
-    // at 15-20s in the steps (BUDGET) — the 5s cucumber default flakes under
-    // load (SEE-1348 WP5: full-feature run on a busy box hit it on warm Given).
-    timeout: 25_000,
     format: ['summary'],
 };

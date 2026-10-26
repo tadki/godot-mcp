@@ -1,3 +1,4 @@
+@see1356
 Feature: SEE-1356 L4 scene-structure write commands (§SPEC-L4-01)
   # connect_signal RE-ENABLED (Owner 2026-10-01 终局指示): registered again in
   # get_commands() and node.ts; the gd-faces N1 pin asserts the full registry

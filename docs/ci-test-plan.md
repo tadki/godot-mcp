@@ -26,7 +26,7 @@ Required checks（main 分支保护）：`build-and-test` / `shell-harnesses` / 
 | long-suites | 2 个 long 级套件（t14 reaper / ws5 给上重武装） | 15m | green gate（blocking on its own schedule） |
 | env-bound | dev-box-only 清单（e2e 真机桶） | 10m | documented skip（SPEC-050 红线） |
 | drift-watch | 51 项 drift 证据运行 | 20m | continue-on-error |
-| gherkin-evidence | 任务 spec 可执行条款（cucumber --strict 9 场景） | 10m | blocking Green（非 PR gate） |
+| gherkin-evidence | 任务 spec 可执行条款（cucumber --strict 20 场景 = 13 protocol + 7 SEE-1356；后者需 Godot 4.6.2） | 10m | blocking Green（非 PR gate） |
 | speed-audit | fast 层单项 >60s / job >8min 审计 | 20m | advisory 留痕 |
 | mutation-evidence | 全库变异（~3h）kill rate 报告 artifact 留档 14 天 | 240m | 只报告不闸门（SPEC-041） |
 

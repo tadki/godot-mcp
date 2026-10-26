@@ -269,8 +269,9 @@ jobs:
 
   # SEE-1334 Phase 3 (SPEC-030/031) — gherkin 任务 spec 可执行条款, nightly
   # evidence run (plan §7: 任务验收必跑 + nightly 证据；暂不入 PR CI).
-  # Strict cucumber: any failing/pending scenario blocks the job — the
-  # suite is protocol-level mocked and should be seconds-fast and stable.
+  # Strict cucumber: any failing/pending scenario blocks the job. SEE-1468
+  # M-mcp adds the SEE-1356 headless Godot faces, so provision the same cached
+  # 4.6.2 binary already used by speed-audit.
   gherkin-evidence:
     if: ${{ (github.event_name == 'schedule' && (github.event.schedule == '7 3 * * 0' || github.event.schedule == '13 3 * * 3')) || (github.event_name == 'workflow_dispatch' && (inputs.bucket == 'all' || inputs.bucket == 'gherkin')) }}
     runs-on: ubuntu-latest
@@ -282,6 +283,25 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: server/package-lock.json
+      - name: Cache Godot binary
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/godot
+          key: godot-${{ runner.os }}-4.6.2-stable
+      - name: Install Godot 4.x (cache miss path)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          GODOT_VERSION=4.6.2
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          sudo mv "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+          godot --version
+      # Fail fast on a corrupt shared cache entry instead of inside the
+      # blocking gherkin evidence run.
+      - name: Verify Godot binary health
+        run: godot --version
       - name: Complete root devDeps
         run: npm install --no-audit --no-fund --package-lock-only
       - run: npm ci --no-audit --no-fund

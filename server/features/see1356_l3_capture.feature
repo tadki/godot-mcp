@@ -1,3 +1,4 @@
+@see1356
 Feature: SEE-1356 L3 段1 capture format normalization (§SPEC-L3-02)
   Scenario: addon capture classification on headless-probeable pure helpers
     Given the SEE-1356 batch-2 gd-faces harness in the launch test tree

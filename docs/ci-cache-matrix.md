@@ -53,7 +53,7 @@
 
 ## 4. 对账说明
 
-**gqt 消费口径（SEE-1396 独立拆分）**：gqt 不再作为 KOL submodule 分发，本库判据脚本一律依赖 WSL 全局独立安装的 `gqt` CLI（安装自 godot-qa-toolkit 独立规范检出，任务工作树之外的可持久路径；`steps_see1356*.py` 直接 `import godot_qa_toolkit` 由该全局安装满足）。
+**gqt 消费口径（SEE-1396 独立拆分；SEE-1468 M-mcp 后更新）**：gqt 不再作为 KOL submodule 分发，KOL 判据脚本依赖 WSL 全局独立安装的 `gqt` CLI。本库原 `launch/tests/gherkin/steps_see1356*.py` 的 `godot_qa_toolkit.gherkin.runner` 胶水已退役：4 件 SEE-1356 场景收编为 `server/features/see1356_*.feature` + cucumber-js steps，`gherkin-evidence` 与 speed-audit 同款缓存并安装 Godot 4.6.2。
 
 本表对账基准（2026-09-12 实读；②c 落地后回改状态）：
 
