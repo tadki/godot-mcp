@@ -6,6 +6,9 @@
 - 端口被占 fail-fast 带诊断 / B1 懒加载拉起 / 单客户端独占拒绝（4001）/ 截图契约 /
   exec 约束拦截 —— 全部协议层 mock 可复现（ seam: `_see1085_helpers.sh` 同款 counting
   mocks + `ws-mock-listener.mjs` SSOT mock editor + mock npx on PATH），不依赖真机。
+- SEE-1356 四件（7 场景，`@see1356`）是本套件的 headless Godot 面：驱动既有
+  `launch/tests/scripts/test_see1356_*.sh` SSOT harness，需要 PATH 上有 Godot 4.6.2；
+  nightly `gherkin-evidence` 已按同款缓存安装。Python `gqt gherkin` 胶水已退役。
 - 运行命令（任务验收 + nightly 证据跑；暂不入 PR CI）：
 
 ```bash
@@ -25,16 +28,22 @@ cd server && npx cucumber-js --strict
 | exec 约束 SSOT：DENIED_TOKEN in-band 点名违反条目 | exec_constraints:「禁用 token 被 in-band 拒绝并点名」 | 错误 message 含 OS.kill；npx 传输日志无该 call id（in-band 拦截） |
 | exec 约束 SSOT：await 非法（SYNC ONLY） | exec_constraints:「await 拒绝为 SYNC_ONLY」 | 错误 message 含前缀「SYNC_ONLY:」 |
 | exec 约束 SSOT：action:help 返回完整约束摘要 | exec_constraints:「help 返回完整 SSOT 约束摘要」 | result 文本含「godot_exec constraints」+ OS.execute + SYNC ONLY |
+| SEE-1356 L3 capture 分类 / L4 node_commands 注册与 pure 决策面 / 方案A 注册面 / L7 seed-* layout | `see1356_*.feature` 全部 7 场景 | 既有 bash harness SSOT 输出 `FAIL=0` 且 exit 0；诊断保留末行输出、stderr tail、rc 与 spawn error |
 
 每条款 ≥1 场景；以上场景全部依赖既有测试资产（`ws-mock-listener.mjs`、
 `_see1085_helpers.sh` 的 counting-mock 契约、`proxy/errors.mjs` 分类器、
-`see1240-exec-constraints.mjs` SSOT）——不重复造 mock。
+`see1240-exec-constraints.mjs` SSOT；SEE-1356 另复用 `test_see1356_*.sh`
+headless Godot harness）——不重复造 mock。
 
 ## steps
 
-- `steps/protocol_steps.ts` — 全部 Given/When/Then（TS + tsx hook 加载）。
+- `steps/protocol_steps.ts` — 协议面全部 Given/When/Then（TS + tsx hook 加载）。
 - `steps/support/proxy_driver.ts` — 真实 stdio 驱动器（spawn `node launch/godot-mcp-proxy.mjs`，
   一次生成 wrapper、throwaway sandbox 隔离注册表状态）。
+- `steps/see1356_steps.ts` — SEE-1356 bash/Godot harness adapter；长 When 步骤本地
+  override Cucumber 超时。
+- `steps/support/setup.ts` — Cucumber v12 全套默认 25s step timeout（profile
+  `timeout` key 在 v12 无效）。
 
 ## 暴露真实 bug 的处理
 
