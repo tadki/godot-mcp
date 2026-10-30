@@ -134,10 +134,29 @@ bash "$HERE/../../scripts/see1129/test_runtime_registry_marker.sh" >/dev/null 2>
 # ---------- 5) AC-009 revert drill ----------
 # SEE-1287 run-context: the revert drill replays the archived T4 cutover
 # commit. It audits KOL repo git history — archive-only when run inside the
-# fork repo (no KOL checkout to audit) or when the pin is unreproducible.
+# fork repo (no KOL checkout to audit), when the pin is unreproducible, or
+# when the reverted gitlink is no longer reachable from the remote (SEE-1492
+# LOW-2).
 DRILLABLE=0
+DRILL_SKIP_REASON=""
 if [[ -d "$KOL/.git" ]]; then
   git -C "$KOL" cat-file -e "$T4_COMMIT" 2>/dev/null && DRILLABLE=1
+fi
+if (( DRILLABLE )); then
+  # SEE-1492 LOW-2: the drill's final arm materializes the reverted gitlink
+  # via `git submodule update --init`, which network-fetches $OLD_GITLINK.
+  # The archived snapshot SHA can rot out of the remote object graph (today:
+  # "not our ref"), so probe REAL reachability first and SKIP with an
+  # explicit, greppable reason instead of a guaranteed red. Reachable
+  # context: the drill below runs byte-identical.
+  if git init -q "$TMP/gitlink-probe" &&
+     git -C "$TMP/gitlink-probe" fetch -q --depth=1 "$FORK_URL" "$OLD_GITLINK" 2>"$TMP/gitlink-probe-fetch.err"; then
+    :
+  else
+    probe_err="$(head -n1 "$TMP/gitlink-probe-fetch.err" 2>/dev/null)"
+    DRILLABLE=0
+    DRILL_SKIP_REASON="gitlink $OLD_GITLINK unreachable from remote (${probe_err:-fetch failed})"
+  fi
 fi
 if (( DRILLABLE )); then
 git clone -q "$KOL" "$TMP/revert-drill" 2>/dev/null || git clone -q https://github.com/tadki/KingOfLikes-Godot.git "$TMP/revert-drill"
@@ -163,6 +182,8 @@ git submodule update --init addons/godot_mcp >/dev/null 2>&1
 else
   skip_arm "AC-009 revert drill (conflicts with history advanced past the T4 round)"
 fi
+elif [[ -n "$DRILL_SKIP_REASON" ]]; then
+  skip_arm "AC-009 revert drill ($DRILL_SKIP_REASON)"
 else
   skip_arm "AC-009 revert drill (T4 pin $T4_COMMIT not reproducible in current KOL history)"
 fi
