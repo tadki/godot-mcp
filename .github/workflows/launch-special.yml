@@ -73,6 +73,28 @@ jobs:
         working-directory: server
       - name: Install root dev tooling
         run: npm ci --no-audit --no-fund
+      # SEE-1492: see1273's long-tier harnesses moved here from launch-ci.yml
+      # (§SPEC-106) and lost that job's Godot provisioning — t1_import's
+      # `godot --headless --import` smoke needs the binary on PATH ("FAIL:
+      # godot-mcp plugin did not initialize" with giveup rc=1). Same cached
+      # 4.6.2 binary the speed-audit/gherkin/coverage jobs already use.
+      - name: Cache Godot binary
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/godot
+          key: godot-${{ runner.os }}-4.6.2-stable
+      - name: Install Godot 4.x (cache miss path)
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          GODOT_VERSION=4.6.2
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          sudo mv "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+          godot --version
+      - name: Verify Godot binary health
+        run: godot --version
       - name: Long green suites (slow but stable)
         # SEE-1334 Phase 2 (SPEC-020): the same 2 entries now run through the
         # vitest long-tier wrappers (launch/vitest.config.ts is the SSOT list);
