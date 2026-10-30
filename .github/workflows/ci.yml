@@ -95,3 +95,18 @@ jobs:
         run: python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet --disable-pip-version-check pyyaml
       - name: Check all workflow inline run scripts (bash -n)
         run: bash .github/scripts/check-workflow-run-syntax.sh
+
+  # SEE-1494 §SPEC-007: upstream fork-identity regression gate. The fork carried
+  # the original owner's namespace / package / URL identity for two years because
+  # no gate stopped it from flowing back in. This job freezes the repoint done in
+  # SEE-1494: every tracked file outside the documented 3-file allowlist must be
+  # free of the upstream owner token (case-insensitive, plus separator variants).
+  # Fail-closed on empty/wrong scan surface, missing allowlist paths, or a
+  # detector that cannot see a known positive (see the script header).
+  fork-identity-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Reject upstream fork-identity references outside the allowlist
+        run: bash .github/scripts/check-fork-identity.sh
