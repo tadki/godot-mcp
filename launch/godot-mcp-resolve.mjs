@@ -1,9 +1,9 @@
-// SEE-1085 usability: resolve how to launch @satelliteoflove/godot-mcp.
+// SEE-1085 usability: resolve how to launch @tadki/godot-mcp.
 //
 // Extracted from the proxy so the resolution logic (override → local install →
 // npx cache walk → fallback) is unit-testable without booting the proxy.
 //
-// Why this exists: `npx -y @satelliteoflove/godot-mcp` pays ~2.9s of
+// Why this exists: `npx -y @tadki/godot-mcp` pays ~2.9s of
 // resolution/registry overhead per cold spawn (measured), vs ~0.3s for
 // `node <bin>` on the same cached package — an order of magnitude. Fronti's
 // 5.77s/5.80s initialize/tools-list cold handshake is this npx cost. Spawning
@@ -18,7 +18,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-export const GODOT_MCP_PKG = '@satelliteoflove/godot-mcp';
+export const GODOT_MCP_PKG = '@tadki/godot-mcp';
 
 // SEE-1111 (cold-start one-shot): the owner's fork fixes the upstream cold-start
 // 'Not connected' failure by making the server's QUICK_TIMEOUT_MS configurable

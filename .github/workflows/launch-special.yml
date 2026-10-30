@@ -7,7 +7,7 @@ name: Launch Special (heavy/env tier)
 #             real clock; see1240 d1/ws5 minutes-scale). Green, just slow.
 #   env     — entries that need the WSL dev box: Windows Godot via /mnt/d,
 #             the KOL consumer checkout (KOL_ROOT), a live editor, or a real
-#             `npx @satelliteoflove/godot-mcp` against a bound addon. On a
+#             `npx @tadki/godot-mcp` against a bound addon. On a
 #             GitHub runner they cannot pass; kept here as documented stubs
 #             (preflight probe proves the requirement, then skips).
 #   drift   — residual entries after the SEE-1344 triage (Atlas final ruling):

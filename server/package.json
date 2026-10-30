@@ -1,5 +1,5 @@
 {
-  "name": "@satelliteoflove/godot-mcp",
+  "name": "@tadki/godot-mcp",
   "version": "4.1.0",
   "description": "MCP server that gives AI assistants eyes and hands in the Godot editor: scene editing, input injection, deterministic game-time control, and live runtime state for agent-driven playtesting",
   "type": "module",
@@ -15,12 +15,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/satelliteoflove/godot-mcp.git"
+    "url": "git+https://github.com/tadki/godot-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/satelliteoflove/godot-mcp/issues"
+    "url": "https://github.com/tadki/godot-mcp/issues"
   },
-  "homepage": "https://github.com/satelliteoflove/godot-mcp#readme",
+  "homepage": "https://github.com/tadki/godot-mcp#readme",
   "scripts": {
     "lint": "npm run lint --prefix ..",
     "build": "tsc && npm run copy-addon",
@@ -69,5 +69,5 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "mcpName": "io.github.satelliteoflove/godot-mcp"
+  "mcpName": "io.github.tadki/godot-mcp"
 }

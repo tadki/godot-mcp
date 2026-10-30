@@ -165,7 +165,7 @@ recordUnlessFork('T7.4: opt-in + npx cache walk picks newest mtime as node direc
             const r = resolveGodotMcpCommand();
             assert.equal(r.cmd, process.execPath, 'cmd is node (direct, skipping npx)');
             assert.equal(r.args.length, 1);
-            assert.match(r.args[0], /hash-newer\/node_modules\/@satelliteoflove\/godot-mcp\/dist\/cli\.js/);
+            assert.match(r.args[0], /hash-newer\/node_modules\/@tadki\/godot-mcp\/dist\/cli\.js/);
             assert.match(r.source, /npx-cache 4\.1\.0/);
         });
     } finally { rmSync(home, { recursive: true, force: true }); }

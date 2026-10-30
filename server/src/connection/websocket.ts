@@ -604,11 +604,11 @@ export async function initializeConnection(): Promise<void> {
 
   connection.on('version_mismatch', ({ serverVersion, addonVersion, projectPath }) => {
     console.error(`[godot-mcp] Version mismatch: server=${serverVersion}, addon=${addonVersion}`);
-    console.error(`[godot-mcp] Update addon with: npx @satelliteoflove/godot-mcp --install-addon "${projectPath}"`);
+    console.error(`[godot-mcp] Update addon with: npx @tadki/godot-mcp --install-addon "${projectPath}"`);
     logger.notice('Version mismatch detected', {
       serverVersion,
       addonVersion,
-      suggestion: 'Run: npx @satelliteoflove/godot-mcp --install-addon <project-path>',
+      suggestion: 'Run: npx @tadki/godot-mcp --install-addon <project-path>',
     });
   });
 

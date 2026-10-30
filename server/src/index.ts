@@ -44,7 +44,7 @@ export async function main(deps: MainDeps = {}) {
         'Eyes and hands in the Godot editor and the running game: scene and node editing, ' +
         'input injection, deterministic game-time control, and live runtime state for ' +
         'agent-driven playtesting.',
-      websiteUrl: 'https://github.com/satelliteoflove/godot-mcp',
+      websiteUrl: 'https://github.com/tadki/godot-mcp',
     },
     {
       capabilities: {

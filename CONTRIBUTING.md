@@ -102,4 +102,4 @@ For the full picture — connection lifecycle, the game bridge, release mechanic
 
 ## Questions?
 
-Open a [GitHub issue](https://github.com/satelliteoflove/godot-mcp/issues) or start a [discussion](https://github.com/satelliteoflove/godot-mcp/discussions).
+Open a [GitHub issue](https://github.com/tadki/godot-mcp/issues) or start a [discussion](https://github.com/tadki/godot-mcp/discussions).

@@ -96,7 +96,7 @@ describe('SEE-1348 补单 A: index.ts Server metadata + boot surface (in-process
       'Eyes and hands in the Godot editor and the running game: scene and node editing, ' +
       'input injection, deterministic game-time control, and live runtime state for ' +
       'agent-driven playtesting.');
-    expect(sv._serverInfo.websiteUrl).toBe('https://github.com/satelliteoflove/godot-mcp');
+    expect(sv._serverInfo.websiteUrl).toBe('https://github.com/tadki/godot-mcp');
   });
 
   it('Server metadata is pinned: name/title/version and the full instruction text (string-literal mutants)', async () => {

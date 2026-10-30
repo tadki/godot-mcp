@@ -43,7 +43,7 @@ Add to your MCP configuration:
   "mcpServers": {
     "godot-mcp": {
       "command": "npx",
-      "args": ["-y", "@satelliteoflove/godot-mcp"]
+      "args": ["-y", "@tadki/godot-mcp"]
     }
   }
 }

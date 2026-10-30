@@ -13,12 +13,12 @@ How to connect godot-mcp to your MCP client. If something refuses to connect aft
 Any MCP client that supports stdio transport can use godot-mcp. The command and arguments are the same regardless of client:
 
 - **Command:** `npx`
-- **Args:** `["-y", "@satelliteoflove/godot-mcp"]`
+- **Args:** `["-y", "@tadki/godot-mcp"]`
 
 If your client takes a single command string instead of command + args:
 
 ```
-npx -y @satelliteoflove/godot-mcp
+npx -y @tadki/godot-mcp
 ```
 
 Use this as a starting point and adapt to your client's config format.
@@ -35,7 +35,7 @@ Config file locations:
   "mcpServers": {
     "godot-mcp": {
       "command": "npx",
-      "args": ["-y", "@satelliteoflove/godot-mcp"]
+      "args": ["-y", "@tadki/godot-mcp"]
     }
   }
 }
@@ -52,7 +52,7 @@ Add a `.mcp.json` file to your project root:
   "mcpServers": {
     "godot-mcp": {
       "command": "npx",
-      "args": ["-y", "@satelliteoflove/godot-mcp"]
+      "args": ["-y", "@tadki/godot-mcp"]
     }
   }
 }
@@ -69,7 +69,7 @@ Add to `.vscode/mcp.json` in your project:
   "servers": {
     "godot-mcp": {
       "command": "npx",
-      "args": ["-y", "@satelliteoflove/godot-mcp"]
+      "args": ["-y", "@tadki/godot-mcp"]
     }
   }
 }
@@ -85,7 +85,7 @@ Configure via the `gh` CLI:
 gh copilot config set mcp-servers '{
   "godot-mcp": {
     "command": "npx",
-    "args": ["-y", "@satelliteoflove/godot-mcp"]
+    "args": ["-y", "@tadki/godot-mcp"]
   }
 }'
 ```
@@ -96,7 +96,7 @@ Or add to your Copilot CLI settings file (`~/.config/github-copilot/mcp.json`):
 {
   "godot-mcp": {
     "command": "npx",
-    "args": ["-y", "@satelliteoflove/godot-mcp"]
+    "args": ["-y", "@tadki/godot-mcp"]
   }
 }
 ```
@@ -117,7 +117,7 @@ Or add to your Copilot CLI settings file (`~/.config/github-copilot/mcp.json`):
 Example with environment variables:
 
 ```bash
-GODOT_HOST=192.168.1.100 GODOT_PORT=7000 npx -y @satelliteoflove/godot-mcp
+GODOT_HOST=192.168.1.100 GODOT_PORT=7000 npx -y @tadki/godot-mcp
 ```
 
 ### Read-only mode
@@ -125,7 +125,7 @@ GODOT_HOST=192.168.1.100 GODOT_PORT=7000 npx -y @satelliteoflove/godot-mcp
 Start the server with `--read-only` (or `GODOT_MCP_READ_ONLY=1`) to register only the 12 observation tools — no scene, node, animation, tilemap, or gridmap edits, no input injection, no running the game. Useful for agents that should inspect a project without being able to modify it:
 
 ```bash
-npx -y @satelliteoflove/godot-mcp --read-only
+npx -y @tadki/godot-mcp --read-only
 ```
 
 ## WSL Support
@@ -147,4 +147,4 @@ If you enable **Port override**, set `GODOT_PORT` on the server to match.
 
 ## Don't see your client?
 
-We only list configs that someone has actually tested. If you've got godot-mcp working with a client not listed here, open a [PR](https://github.com/satelliteoflove/godot-mcp/pulls) or [issue](https://github.com/satelliteoflove/godot-mcp/issues) with your verified setup instructions and we'll add it.
+We only list configs that someone has actually tested. If you've got godot-mcp working with a client not listed here, open a [PR](https://github.com/tadki/godot-mcp/pulls) or [issue](https://github.com/tadki/godot-mcp/issues) with your verified setup instructions and we'll add it.

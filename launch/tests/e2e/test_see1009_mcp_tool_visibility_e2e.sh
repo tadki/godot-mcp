@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SEE-1009 E2E regression: real npx @satelliteoflove/godot-mcp tool visibility.
+# SEE-1009 E2E regression: real npx @tadki/godot-mcp tool visibility.
 #
 # This is the END-STATE test for the SEE-1009 fix: the original symptom was that
 # Claude Code could not see any mcp__godot_mcp_* tools. Root cause was the addon's
@@ -10,7 +10,7 @@
 #
 # This test proves the END STATE directly: it runs the SHIPPED launcher against a
 # LIVE, healthy (display-attached) editor on a per-agent port, lets it exec the
-# REAL npx @satelliteoflove/godot-mcp package (no mock), and speaks the MCP
+# REAL npx @tadki/godot-mcp package (no mock), and speaks the MCP
 # JSON-RPC protocol over stdio (initialize -> tools/list). The pass criterion is
 # the exact thing the issue was opened to fix: the server returns a non-empty
 # tool list, and the launcher/npx stderr contains NO "WebSocket was closed before
