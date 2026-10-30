@@ -2,7 +2,7 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "package-name": "@satelliteoflove/godot-mcp",
+      "package-name": "@tadki/godot-mcp",
       "component": "godot-mcp",
       "include-component-in-tag": true,
       "changelog-path": "server/CHANGELOG.md",

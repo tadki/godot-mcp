@@ -51,7 +51,7 @@ If your client started the server while Godot was still in **Localhost** bind mo
 The MCP panel shows both the addon version and (when connected) the server version, and warns when they differ. The two are released together and expected to match. To update the addon in your project:
 
 ```bash
-npx @satelliteoflove/godot-mcp --install-addon /path/to/your/godot/project
+npx @tadki/godot-mcp --install-addon /path/to/your/godot/project
 ```
 
 Add `--force` if you intentionally need to downgrade. Restart the Godot editor afterwards.
@@ -68,7 +68,7 @@ Two different processes produce errors, and they surface in two different places
 To verify the server starts and can reach Godot without involving an MCP client, run it manually:
 
 ```bash
-npx -y @satelliteoflove/godot-mcp
+npx -y @tadki/godot-mcp
 ```
 
 Then paste these stdio JSON-RPC frames, one per line:
@@ -100,11 +100,11 @@ A healthy response carries the editor state:
 If step 1 works but step 2 times out, the server is fine and the problem is the WebSocket hop — work through the [checklist](#the-60-second-checklist) above. If you're using a port override, remember to start the server with matching env vars:
 
 ```bash
-GODOT_HOST=... GODOT_PORT=... npx -y @satelliteoflove/godot-mcp
+GODOT_HOST=... GODOT_PORT=... npx -y @tadki/godot-mcp
 ```
 
 Other useful CLI flags: `--version`, `--help`.
 
 ## Still stuck?
 
-Open a [GitHub issue](https://github.com/satelliteoflove/godot-mcp/issues) with your OS, Godot version, server version (`npx @satelliteoflove/godot-mcp --version`), and what the MCP panel shows. The more of the chain you've tested with the smoke test above, the faster we can pin it down.
+Open a [GitHub issue](https://github.com/tadki/godot-mcp/issues) with your OS, Godot version, server version (`npx @tadki/godot-mcp --version`), and what the MCP panel shows. The more of the chain you've tested with the smoke test above, the faster we can pin it down.

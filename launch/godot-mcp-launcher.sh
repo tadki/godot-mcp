@@ -1112,7 +1112,7 @@ exec {ORIG_STDIN}<&-
 # time. Opt-in via env so test harnesses that mock npx on PATH are unaffected.
 export GODOT_MCP_DIRECT_GODOT_MCP="${GODOT_MCP_DIRECT_GODOT_MCP:-${KOL_DIRECT_GODOT_MCP:-1}}"
 # SEE-1111 (fork wiring): serve godot-mcp from the OWNER's fork
-# (tadki/godot-mcp) instead of the upstream @satelliteoflove/godot-mcp package.
+# (tadki/godot-mcp) instead of the published npm package.
 # The fork fixes the cold-start 'Not connected' failure by making the server's
 # QUICK_TIMEOUT_MS configurable (GODOT_MCP_QUICK_TIMEOUT_MS, default stays 30s
 # upstream). The resolver (godot-mcp-resolve.mjs, the SINGLE server locator)

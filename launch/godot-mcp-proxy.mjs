@@ -14,7 +14,7 @@
 // real npx client with 4001. The TCP port is accepted as the warm signal because
 // the launcher has already run render-stable / orphan gates before exec'ing us.
 //
-// npx lifecycle (SEE-1043 cold-start fix): npx @satelliteoflove/godot-mcp answers
+// npx lifecycle (SEE-1043 cold-start fix): npx @tadki/godot-mcp answers
 // initialize/tools/list before it ever touches Godot, and reconnects to the
 // editor in the background — so it does not exit merely because Godot is cold.
 // To be robust against npx dying for any other reason (spawn glitch, OOM, a

@@ -1,10 +1,10 @@
 # godot-mcp
 
-[![npm version](https://img.shields.io/npm/v/%40satelliteoflove%2Fgodot-mcp?logo=npm&color=cb3837)](https://www.npmjs.com/package/@satelliteoflove/godot-mcp)
-[![CI](https://github.com/satelliteoflove/godot-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/satelliteoflove/godot-mcp/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/%40tadki%2Fgodot-mcp?logo=npm&color=cb3837)](https://www.npmjs.com/package/@tadki/godot-mcp)
+[![CI](https://github.com/tadki/godot-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/tadki/godot-mcp/actions/workflows/ci.yml)
 [![Godot 4.5+](https://img.shields.io/badge/Godot-4.5%2B-478cbf?logo=godotengine&logoColor=white)](https://godotengine.org)
 [![Node 20+](https://img.shields.io/badge/Node-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/satelliteoflove/godot-mcp/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/tadki/godot-mcp/blob/main/LICENSE)
 
 Give your AI assistant eyes and hands in the Godot editor — and a running game it can actually playtest.
 
@@ -38,14 +38,14 @@ Less copy-paste, more creating.
 
 ### 1. Configure your AI assistant
 
-Add godot-mcp to your MCP client. See the [Installation Guide](https://github.com/satelliteoflove/godot-mcp/blob/main/INSTALL.md) for config examples (Claude Desktop, Claude Code, VSCode/Copilot, and more). The short version:
+Add godot-mcp to your MCP client. See the [Installation Guide](https://github.com/tadki/godot-mcp/blob/main/INSTALL.md) for config examples (Claude Desktop, Claude Code, VSCode/Copilot, and more). The short version:
 
 ```json
 {
   "mcpServers": {
     "godot-mcp": {
       "command": "npx",
-      "args": ["-y", "@satelliteoflove/godot-mcp"]
+      "args": ["-y", "@tadki/godot-mcp"]
     }
   }
 }
@@ -54,18 +54,18 @@ Add godot-mcp to your MCP client. See the [Installation Guide](https://github.co
 ### 2. Install the Godot addon
 
 ```bash
-npx @satelliteoflove/godot-mcp --install-addon /path/to/your/godot/project
+npx @tadki/godot-mcp --install-addon /path/to/your/godot/project
 ```
 
 Enable it in Godot: **Project > Project Settings > Plugins > Godot MCP**
 
 ### 3. Start building
 
-Open your Godot project, restart your AI assistant, and start building. If anything refuses to connect, the [Troubleshooting Guide](https://github.com/satelliteoflove/godot-mcp/blob/main/docs/troubleshooting.md) has you covered.
+Open your Godot project, restart your AI assistant, and start building. If anything refuses to connect, the [Troubleshooting Guide](https://github.com/tadki/godot-mcp/blob/main/docs/troubleshooting.md) has you covered.
 
 ## What's in the box
 
-21 tools, 86 actions. Full API docs in the [Tools Reference](https://github.com/satelliteoflove/godot-mcp/blob/main/docs/tools/README.md).
+21 tools, 86 actions. Full API docs in the [Tools Reference](https://github.com/tadki/godot-mcp/blob/main/docs/tools/README.md).
 
 | Tool | What it does |
 |------|--------------|
@@ -99,7 +99,7 @@ A feel for what an agent can do with this, in plain prompts:
 - *"Profile ten seconds of gameplay and find what's causing the frame spikes."*
 - *"Add a hit-flash animation to the Player: modulate to red and back over 0.2 seconds."*
 
-For richer runtime observation, add key nodes to the `mcp_watch` group or give them a `_mcp_state()` method — see the [Runtime State Guide](https://github.com/satelliteoflove/godot-mcp/blob/main/docs/runtime-state-guide.md).
+For richer runtime observation, add key nodes to the `mcp_watch` group or give them a `_mcp_state()` method — see the [Runtime State Guide](https://github.com/tadki/godot-mcp/blob/main/docs/runtime-state-guide.md).
 
 ## How it works
 
@@ -110,27 +110,27 @@ For richer runtime observation, add key nodes to the `mcp_watch` group or give t
 └─────────────────┘            └─────────────────┘              └──────────────────┘             └──────────────┘
 ```
 
-The server talks to an editor addon over a local WebSocket; the addon reaches into the running game over Godot's own debugger protocol, so the game process needs no extra ports or setup. The addon binds to `127.0.0.1` by default. WSL2 is fully supported (auto-detection, host IP discovery, configurable bind modes) — see the [Installation Guide](https://github.com/satelliteoflove/godot-mcp/blob/main/INSTALL.md#wsl-support).
+The server talks to an editor addon over a local WebSocket; the addon reaches into the running game over Godot's own debugger protocol, so the game process needs no extra ports or setup. The addon binds to `127.0.0.1` by default. WSL2 is fully supported (auto-detection, host IP discovery, configurable bind modes) — see the [Installation Guide](https://github.com/tadki/godot-mcp/blob/main/INSTALL.md#wsl-support).
 
-Curious about connection lifecycles, the single-client policy, or how frozen-time stepping works under the hood? The [Architecture Guide](https://github.com/satelliteoflove/godot-mcp/blob/main/docs/architecture.md) goes deep.
+Curious about connection lifecycles, the single-client policy, or how frozen-time stepping works under the hood? The [Architecture Guide](https://github.com/tadki/godot-mcp/blob/main/docs/architecture.md) goes deep.
 
 ## Works well with minimal-godot-mcp
 
 [minimal-godot-mcp](https://github.com/ryanmazzolini/minimal-godot-mcp) by [@ryanmazzolini](https://github.com/ryanmazzolini) covers exactly what this server doesn't: LSP diagnostics for fast static GDScript checking, and the running game's console output over DAP. This server covers everything that needs an editor bridge. No overlap, no conflict — run both, and your agent gets static analysis and the game console alongside full editor and runtime control.
 
-One caveat: a Godot editor serves a single godot-mcp client at a time. Extra clients (a subagent inheriting your MCP config, say) wait their turn rather than hijacking your session — details in [Troubleshooting](https://github.com/satelliteoflove/godot-mcp/blob/main/docs/troubleshooting.md#one-client-at-a-time).
+One caveat: a Godot editor serves a single godot-mcp client at a time. Extra clients (a subagent inheriting your MCP config, say) wait their turn rather than hijacking your session — details in [Troubleshooting](https://github.com/tadki/godot-mcp/blob/main/docs/troubleshooting.md#one-client-at-a-time).
 
 ## Documentation
 
-- [Installation Guide](https://github.com/satelliteoflove/godot-mcp/blob/main/INSTALL.md) — MCP client configs for Claude Desktop, Claude Code, VSCode/Copilot, and more
-- [Migrating to v4](https://github.com/satelliteoflove/godot-mcp/blob/main/docs/migrating-to-v4.md) — renamed tools, removed actions, allowlist updates
-- [Troubleshooting](https://github.com/satelliteoflove/godot-mcp/blob/main/docs/troubleshooting.md) — connection checklist, CLI smoke test, common fixes
-- [Claude Code Setup Guide](https://github.com/satelliteoflove/godot-mcp/blob/main/docs/claude-code-setup.md) — CLAUDE.md template for Godot projects
-- [Runtime State Guide](https://github.com/satelliteoflove/godot-mcp/blob/main/docs/runtime-state-guide.md) — expose game state to agents via `mcp_watch` and `_mcp_state()`
-- [Tools Reference](https://github.com/satelliteoflove/godot-mcp/blob/main/docs/tools/README.md) — all 21 tools with full API docs
-- [Architecture Guide](https://github.com/satelliteoflove/godot-mcp/blob/main/docs/architecture.md) — how the server, addon, and game bridge fit together
-- [Contributing](https://github.com/satelliteoflove/godot-mcp/blob/main/CONTRIBUTING.md) — dev setup, adding tools, release process
-- [Changelog](https://github.com/satelliteoflove/godot-mcp/blob/main/server/CHANGELOG.md) — release history
+- [Installation Guide](https://github.com/tadki/godot-mcp/blob/main/INSTALL.md) — MCP client configs for Claude Desktop, Claude Code, VSCode/Copilot, and more
+- [Migrating to v4](https://github.com/tadki/godot-mcp/blob/main/docs/migrating-to-v4.md) — renamed tools, removed actions, allowlist updates
+- [Troubleshooting](https://github.com/tadki/godot-mcp/blob/main/docs/troubleshooting.md) — connection checklist, CLI smoke test, common fixes
+- [Claude Code Setup Guide](https://github.com/tadki/godot-mcp/blob/main/docs/claude-code-setup.md) — CLAUDE.md template for Godot projects
+- [Runtime State Guide](https://github.com/tadki/godot-mcp/blob/main/docs/runtime-state-guide.md) — expose game state to agents via `mcp_watch` and `_mcp_state()`
+- [Tools Reference](https://github.com/tadki/godot-mcp/blob/main/docs/tools/README.md) — all 21 tools with full API docs
+- [Architecture Guide](https://github.com/tadki/godot-mcp/blob/main/docs/architecture.md) — how the server, addon, and game bridge fit together
+- [Contributing](https://github.com/tadki/godot-mcp/blob/main/CONTRIBUTING.md) — dev setup, adding tools, release process
+- [Changelog](https://github.com/tadki/godot-mcp/blob/main/server/CHANGELOG.md) — release history
 
 ## Requirements
 
@@ -150,11 +150,11 @@ npm run generate-docs
 
 There is also an agentic eval harness (`npm run eval`) that runs realistic
 tasks through headless Claude Code against a real project — see
-[server/evals/README.md](https://github.com/satelliteoflove/godot-mcp/blob/main/server/evals/README.md). It never starts Godot; you
+[server/evals/README.md](https://github.com/tadki/godot-mcp/blob/main/server/evals/README.md). It never starts Godot; you
 bring the open editor.
 
-Contributions welcome — this project favors tools that solve real, time-wasting problems. Read [CONTRIBUTING.md](https://github.com/satelliteoflove/godot-mcp/blob/main/CONTRIBUTING.md) before building something big, or open an issue and we'll figure out the right shape together.
+Contributions welcome — this project favors tools that solve real, time-wasting problems. Read [CONTRIBUTING.md](https://github.com/tadki/godot-mcp/blob/main/CONTRIBUTING.md) before building something big, or open an issue and we'll figure out the right shape together.
 
 ## License
 
-[MIT](https://github.com/satelliteoflove/godot-mcp/blob/main/LICENSE)
+[MIT](https://github.com/tadki/godot-mcp/blob/main/LICENSE)

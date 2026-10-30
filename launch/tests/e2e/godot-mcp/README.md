@@ -1,7 +1,7 @@
 # godot-mcp E2E Tests
 
 E2E tests for all KingOfLikes game systems, driven from WSL2 through the
-`@satelliteoflove/godot-mcp` MCP server against the running Windows Godot
+`@tadki/godot-mcp` MCP server against the running Windows Godot
 editor. Follows the contract in
 [`docs/project/e2e-mcp-workflow.md`](../../../../../docs/project/e2e-mcp-workflow.md).
 
@@ -12,7 +12,7 @@ editor. Follows the contract in
   like `<WSL2 gateway>:6550 [WSL]` (the exact IP is auto-detected by the addon
   from the `vEthernet (WSL)` adapter).
 - WSL2 with Node.js 20+ and `npx`.
-- No other `npx @satelliteoflove/godot-mcp` client connected (the addon
+- No other `npx @tadki/godot-mcp` client connected (the addon
   accepts a single client; stale processes must be killed first).
 
 ## Layout

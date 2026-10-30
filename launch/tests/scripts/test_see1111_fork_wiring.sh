@@ -2,7 +2,7 @@
 # test_see1111_fork_wiring.sh
 #
 # SEE-1111 (fork wiring) — verifies the launcher serves godot-mcp from the
-# OWNER's fork (tadki/godot-mcp) instead of upstream @satelliteoflove/godot-mcp,
+# OWNER's fork (tadki/godot-mcp) instead of the published npm package,
 # with the configurable server timeout cranked past the cold-boot window.
 #
 # Background: the upstream server's socket timeout (QUICK_TIMEOUT_MS, 30s) can

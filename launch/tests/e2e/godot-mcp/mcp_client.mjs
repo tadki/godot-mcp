@@ -38,7 +38,7 @@ export class GodotMcpClient {
   async connect() {
     await this.client.connect(new StdioClientTransport({
       command: "npx",
-      args: ["-y", "@satelliteoflove/godot-mcp"],
+      args: ["-y", "@tadki/godot-mcp"],
       env: { ...process.env, GODOT_HOST, GODOT_PORT },
     }));
     this.connected = true;

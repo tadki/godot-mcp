@@ -86,7 +86,7 @@ if grep -q '/mnt/d' "$TMP/chainA.log"; then bad "form A: D-drive literal leaked 
 # SEE-1292 毕业轮: the npx-cache CLI lookup fails on a fresh runner (no
 # upstream package cached) — the form B seam arm is then archive-only, not a
 # FAIL. The seam itself is proven by the CI job's fork-CLI build + form A.
-FORKCLI="$(ls "$HOME"/.npm/_npx/*/node_modules/@satelliteoflove/godot-mcp/dist/cli.js 2>/dev/null | head -1)"
+FORKCLI="$(ls "$HOME"/.npm/_npx/*/node_modules/@tadki/godot-mcp/dist/cli.js 2>/dev/null | head -1)"
 if [[ -n "$FORKCLI" ]]; then
   export GODOT_MCP_FORK_CLI="$FORKCLI"
   # Distinct consumer clone: same-worktree contention fast-fails if form A's

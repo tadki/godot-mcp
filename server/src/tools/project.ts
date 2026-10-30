@@ -74,7 +74,7 @@ export const project = defineTool({
               connected: false,
               server_version: serverVersion,
               recommendation:
-                'Not connected to Godot. Ask user for their project path, then install with: npx @satelliteoflove/godot-mcp --install-addon <path>',
+                'Not connected to Godot. Ask user for their project path, then install with: npx @tadki/godot-mcp --install-addon <path>',
             }
           );
         }
@@ -94,7 +94,7 @@ export const project = defineTool({
             godot_version: godot.godotVersion,
             recommendation: versionsMatch
               ? null
-              : `Version mismatch. Close Godot and run: npx @satelliteoflove/godot-mcp --install-addon "${projectPath}"`,
+              : `Version mismatch. Close Godot and run: npx @tadki/godot-mcp --install-addon "${projectPath}"`,
           }
         );
       }

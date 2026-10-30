@@ -68,7 +68,7 @@ The standard cross-boundary setup is Godot on Windows with the MCP server inside
 The server and addon are released together and share one version number:
 
 - [release-please](https://github.com/googleapis/release-please) drives versioning from conventional commits; the release workflow syncs the version into the addon's `plugin.cfg` and regenerates docs.
-- The npm package bundles the addon, which is what `npx @satelliteoflove/godot-mcp --install-addon <path>` copies into your project. Each GitHub release also attaches the addon as a zip.
+- The npm package bundles the addon, which is what `npx @tadki/godot-mcp --install-addon <path>` copies into your project. Each GitHub release also attaches the addon as a zip.
 - The MCP panel shows both versions and warns on mismatch.
 
 ## Repo layout
