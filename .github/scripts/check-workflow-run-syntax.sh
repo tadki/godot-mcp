@@ -14,7 +14,7 @@
 # numbered placeholders (GHA templates are not shell; the surrounding quoting
 # must still parse), and runs `bash -n` on each extracted script.
 #
-# Two detection arms, both per run block:
+# Three detection arms, all per run block:
 #   arm 1 — bash -n (parse errors)
 #   arm 2 — backslash-at-EOL whose next line starts with a `#` comment. The
 #           splice always destroys the continuation: either the remnants fail
@@ -22,6 +22,12 @@
 #           loses its arguments (parse-valid, invisible to bash -n). A comment
 #           line can never legitimately sit inside a continuation, so this is
 #           a zero-false-positive shape check.
+#   arm 3 — bash -n rc=0 whose stderr carries the unclosed-heredoc signature
+#           (`here-document at line N delimited by end-of-file`). bash -n
+#           parses an unclosed heredoc without error (SEE-1492 LOW-1, Revy R1
+#           §4.5), but the delimiter is never reached, so at runtime the
+#           heredoc swallows the rest of the script. A legally closed heredoc
+#           never emits the signature — zero false positives.
 #
 # Known boundary: a `\` whose next line is a *non-comment* word list is a
 # normal multi-line command — not decidable statically, not checked.
@@ -201,7 +207,23 @@ note_block() { case "$bad_blocks" in *"|$1|"*) ;; *) bad_blocks="$bad_blocks|$1|
 
 while IFS=$'\t' read -r idx loc; do
     if bash -n "$tmpdir/blocks/$idx.sh" 2>"$tmpdir/blocks/$idx.err"; then
-        pass=$((pass + 1))
+        # arm 3: bash -n rc=0 does NOT clear an unclosed heredoc — bash only
+        # warns on stderr while still parsing (so the heredoc would swallow
+        # the rest of the script at runtime). Signature, not rc, is the
+        # verdict (SEE-1492 LOW-1).
+        if grep -Eq 'here-document at line [0-9]+ delimited by end-of-file' \
+            "$tmpdir/blocks/$idx.err"; then
+            bad=$((bad + 1))
+            note_block "$idx"
+            {
+                printf 'HEREDOC-EOF-FAIL\t%s: bash -n rc=0 but stderr carries the unclosed\n' "$loc"
+                printf '    here-document signature — at runtime the heredoc swallows the rest of\n'
+                printf '    the script\n'
+                sed 's/^/    /' "$tmpdir/blocks/$idx.err"
+            } >> "$fail_log"
+        else
+            pass=$((pass + 1))
+        fi
     else
         bad=$((bad + 1))
         note_block "$idx"
@@ -227,10 +249,10 @@ fi
 total_blocks=$(wc -l < "$tmpdir/manifest.tsv" | tr -d ' ')
 failed_blocks=$(printf '%s' "$bad_blocks" | tr -cd '|' | wc -c | tr -d ' ')
 failed_blocks=$((failed_blocks / 2))
-echo "checked run blocks: $total_blocks (arm 1: bash -n after \${{ }} substitution; arm 2: continuation-comment scan)"
+echo "checked run blocks: $total_blocks (arm 1: bash -n after \${{ }} substitution; arm 2: continuation-comment scan; arm 3: unclosed-heredoc stderr signature)"
 cat "$fail_log"
 if [ "$bad" -gt 0 ]; then
     fail "$bad defect finding(s) across $failed_blocks run block(s)"
 fi
-echo "PASS: all inline run scripts in scanned workflow YAML passed the gate (bash -n + continuation-comment scan)"
+echo "PASS: all inline run scripts in scanned workflow YAML passed the gate (bash -n + continuation-comment scan + unclosed-heredoc stderr signature)"
 exit 0
