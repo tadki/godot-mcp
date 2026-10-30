@@ -171,8 +171,11 @@ jobs:
           # 2 件偶发红事件驱动加固后毕业 FAST，e5_concurrent 迁 long（真实时钟
           # 并发窗），t1_tree_consistency 删除（retired archive 语义）。
           # 清单保留为空骨架：未来新漂移回归仍走本 job 逐项 evidence run。
+          # (intentionally empty — SEE-1344 drift cleared; future entries go as
+          # one <path> \ line between `for t in \` and `; do`. A comment line
+          # INSIDE the continuation would swallow the trailing `\` and orphan
+          # the `; do` — bash syntax error, SEE-1492.)
           for t in \
-            # (intentionally empty — SEE-1344 drift cleared) \
           ; do
             [ -f "$t" ] || { echo "[special:drift] MISSING $t"; continue; }
             echo "::group::$t"
