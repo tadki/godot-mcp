@@ -9,11 +9,13 @@
 set -uo pipefail
 KOL="${KOL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
 FORK_URL="https://github.com/tadki/godot-mcp.git"
-# Run context (SEE-1287): EXPECTED_FORK/GITLINK_SHA are SEE-1273 T3 round pins.
-# Pass EXPECTED_FORK=<sha> to pin another round; the default reproduces the
-# archived T3 verification.
+# Run context (SEE-1287): EXPECTED_FORK is a live resolution of fork main tip.
+# SEE-1492: GITLINK_SHA no longer defaults to the SEE-1273 snapshot pin — that
+# SHA rotted out of the remote object graph (unreachable → `git fetch <sha>`
+# fails intermittently with "not our ref"), so the default now derives a
+# reachable ancestor of fork main at use time (see GAP-1 section). Override
+# with GITLINK_SHA=<sha> to pin another round.
 EXPECTED_FORK="${EXPECTED_FORK:-$(git ls-remote "$FORK_URL" refs/heads/main | awk '{print $1}')}"
-GITLINK_SHA="${GITLINK_SHA:-5719847800eaab676e73cc614c809214f2f8cd28}"
 # Legacy compat shim (.dev/godot-mcp/launch/) was retired by SEE-1273 T5-F.
 # SEE-1292 毕业轮: the shim source is now the fork's OWN shim (submodule-internal
 # equivalent — T5-F retired the KOL compat shim landing, so the submodule shim
@@ -158,6 +160,14 @@ bash launch/test_see1273_t2_param.sh >/dev/null 2>&1 && ok "T2 param 32/32" || b
 # here so the harness no longer depends on a KOL checkout. Same verdicts as the
 # retired lib's qa_gitlink_classify: fetch-probe cross-check + tips ancestry,
 # with local-tip-missing → probe-fail (T3-D1 rule).
+# GAP-1 anchor (SEE-1492): parent of fork main — reachable (GitHub serves
+# reachable SHAs to `git fetch <sha>`, the rotted snapshot pin did not), an
+# ancestor of the advertised tip, and never the tip itself: exactly the GAP-1
+# shape the probe re-derives (gitlink behind remote, child lacking tip objects
+# → probe-fail, not dangling). Resolved from the section-5 clone, which holds
+# the just-fetched origin/main.
+GITLINK_SHA="${GITLINK_SHA:-$(git -C "$TMP/fork" rev-parse 'origin/main~1')}"
+[[ -n "$GITLINK_SHA" ]] || { echo "FAIL: GAP-1 anchor unresolved ($TMP/fork has no origin/main~1 — fork clone step failed?)"; exit 1; }
 git init -q "$TMP/probe-child" && (cd "$TMP/probe-child" && git remote add origin "$FORK_URL" && git fetch -q --depth=1 origin "$GITLINK_SHA")
 [[ "$(git -C "$TMP/probe-child" cat-file -t "$GITLINK_SHA" 2>/dev/null)" == "commit" ]] && ok "probe-child has gitlink sha" || bad "probe-child setup failed"
 # Re-derivation of qa_gitlink_classify's probe-fail branch (T3-D1 follow-up):
