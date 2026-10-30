@@ -78,3 +78,20 @@ jobs:
             reports/mutation/mutation.json
             .stryker-tmp/**/*.log
           retention-days: 7
+
+  # SEE-1492 §SPEC-006: static syntax gate for every inline `run:` script in
+  # the workflow YAML. The SEE-1492 drift-watch break (an in-continuation
+  # comment swallowing a `\`) was invisible to every existing gate — it is not
+  # a .sh file, so bash -n batches and lint:bash never saw it — and sat red
+  # for a month. This job runs bash -n over all extracted run blocks (all
+  # workflow files, incl. launch-special.yml's drift-watch) so the class
+  # cannot land again.
+  workflow-run-syntax-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Ensure PyYAML (gate dependency, fail-closed without it)
+        run: python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet --disable-pip-version-check pyyaml
+      - name: Check all workflow inline run scripts (bash -n)
+        run: bash .github/scripts/check-workflow-run-syntax.sh
