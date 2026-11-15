@@ -2,7 +2,7 @@
 
 Resident minimal Godot project hosting GUT guard tests for the game_bridge GD
 surface (mcp_qa.gd, mcp_runtime_state_sampler.gd). `gqt mutation` /
-`gqt coverage --project-root tests/gd` run directly against the godot-mcp repo.
+`gqt measure coverage --project-root tests/gd` run directly against the godot-mcp repo.
 
 - `addons/gut/` — vendored GUT (third-party open-source test framework; the
   ONLY dependency inside this fixture; zero KingOfLikes code or paths).
