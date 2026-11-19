@@ -21,4 +21,9 @@
 #   sleep 25 会话窗改日志行收口（FORK_WIRED/WARNING/LAUNCHER_EXEC + release
 #   guard，QA D2）；1356 pipe 会话窗改 T2 snapshot 谓询（baseline 9→8，终态 =
 #   产品树 2 + fixture 5 + 1244 shim_degrade stdin pacing 1）。
-8
+# SEE-1602: stop-godot-editor.sh 端口复检的独立 sleep 1 收敛进带上限 predicate
+# 轮询(豁免形态),违例 8→7。
+
+# SEE-1602: stop-godot-editor.sh 端口复检的独立 sleep 1 收敛进带上限 predicate
+# 轮询（豁免形态），违例 8→7。
+7

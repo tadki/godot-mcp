@@ -117,6 +117,119 @@ echo "[stop-godot-editor] label        : $LABEL"
 echo "[stop-godot-editor] port         : ${PORT:-(unset)}"
 echo "[stop-godot-editor] pid file     : $PID_FILE"
 
+# Windows-aware probe semantics (SEE-1602 §SPEC-001): every verdict is
+# tri-state. A probe that cannot execute must never collapse into "dead" or
+# "free" — the 2026-11-19 A2 incident was exactly that collapse (interop
+# iostream exception → "no live process" → exit 0 with the editor alive).
+
+# win_tool <name> → absolute path of a Windows interop tool, or rc 1.
+# PATH first, then the well-known System32 location: interop PATH entries
+# vanish under stripped/non-interactive shells (observed live in the SEE-1602
+# A2 rerun — bare `command -v tasklist.exe` missed and the unix kill branch
+# then misread `kill -0` on a Windows pid as "dead"), so availability is
+# judged on the RESOLVED tool, never on bare PATH. Fallback dir is env-
+# overridable for hermetic tests (same pattern as GODOT_MCP_HOME).
+win_tool() {
+    local t="$1" fallback="${KOL_WIN_TOOL_FALLBACK_DIR:-/mnt/c/Windows/System32}"
+    if command -v "$t" >/dev/null 2>&1; then
+        command -v "$t"
+        return 0
+    fi
+    if [[ -x "$fallback/$t" ]]; then
+        echo "$fallback/$t"
+        return 0
+    fi
+    return 1
+}
+
+# win_pid_state <pid> → alive | dead | unknown (echoed).
+# tasklist first: its CSV output survived the interop exception that
+# killed powershell stdout in the A2 incident. Only a row containing the pid
+# proves alive; only an explicit no-match notice proves dead; anything else
+# (empty output, garbage, non-zero) falls through to the powershell tier and
+# finally to "unknown".
+win_pid_state() {
+    local pid="$1" out tasklist powershell
+    tasklist="$(win_tool tasklist.exe)" || tasklist=""
+    powershell="$(win_tool powershell.exe)" || powershell=""
+    if [[ -n "$tasklist" ]]; then
+        out="$("$tasklist" /FI "PID eq $pid" /FO CSV /NH 2>/dev/null)" || out=""
+        if [[ -n "$out" ]]; then
+            if grep -q "\"$pid\"" <<<"$out"; then
+                echo alive; return 0
+            fi
+            if grep -qi "INFO:" <<<"$out"; then
+                echo dead; return 0
+            fi
+        fi
+    fi
+    if [[ -n "$powershell" ]]; then
+        # exit 0 with the pid = alive; exit 0 with empty output = dead
+        # (SilentlyContinue swallows the miss); any other exit = probe broken.
+        if out="$("$powershell" -NoProfile -Command "(Get-Process -Id $pid -ErrorAction SilentlyContinue).Id" 2>/dev/null)"; then
+            if [[ -n "$out" ]]; then
+                echo alive; return 0
+            fi
+            echo dead; return 0
+        fi
+    fi
+    echo unknown; return 0
+}
+
+# win_pid_image <pid> → process image name, or "" when unresolvable. Used to
+# gate the forced-kill channel: taskkill /F is only allowed on a pid we could
+# confirm is a Godot editor image (never a blind force-kill by number).
+win_pid_image() {
+    local pid="$1" out tasklist
+    tasklist="$(win_tool tasklist.exe)" || tasklist=""
+    [[ -n "$tasklist" ]] || { echo ""; return 0; }
+    out="$("$tasklist" /FI "PID eq $pid" /FO CSV /NH 2>/dev/null)" || out=""
+    if [[ -n "$out" ]] && grep -q "\"$pid\"" <<<"$out"; then
+        # CSV row: "image","pid",... — first field before the first comma.
+        sed 's/^"//; s/".*//' <<<"$(grep "\"$pid\"" <<<"$out" | head -n1)"
+        return 0
+    fi
+    echo ""
+    return 0
+}
+
+# port_state <port> → listening | free | unknown (echoed).
+# Tier order reused from start-godot-editor.sh port_in_use
+# (Get-NetTCPConnection → netstat.exe → ss); tri-state so a tier that cannot
+# execute is skipped, and "unknown" is reported instead of "free" when no
+# tier could actually answer (Linux-side ss cannot see the Windows-side
+# listener on the WSL gateway IP — the other half of the A2 false negative).
+port_state() {
+    local p="$1" out powershell netstat
+    powershell="$(win_tool powershell.exe)" || powershell=""
+    if [[ -n "$powershell" ]]; then
+        if out="$("$powershell" -NoProfile -Command "if (Get-NetTCPConnection -LocalPort ${p} -State Listen -ErrorAction SilentlyContinue) { 'LISTEN' } else { 'FREE' }" 2>/dev/null)"; then
+            if grep -q LISTEN <<<"$out"; then
+                echo listening; return 0
+            fi
+            echo free; return 0
+        fi
+    fi
+    netstat="$(win_tool netstat.exe)" || netstat=""
+    if [[ -n "$netstat" ]]; then
+        if out="$("$netstat" -ano -p tcp 2>/dev/null)"; then
+            if grep -E "LISTENING" <<<"$out" | grep -qE ":${p}\\b"; then
+                echo listening; return 0
+            fi
+            echo free; return 0
+        fi
+    fi
+    if command -v ss >/dev/null 2>&1; then
+        if out="$(ss -H -tln 2>/dev/null)"; then
+            if grep -qE ":${p}\\b" <<<"$out"; then
+                echo listening; return 0
+            fi
+            echo free; return 0
+        fi
+    fi
+    echo unknown; return 0
+}
+
 # 1. Resolve the editor PID. The pidfile may be absent (never started) or stale.
 EDITOR_PID=""
 if [[ -f "$PID_FILE" ]]; then
@@ -126,32 +239,78 @@ if [[ -z "$EDITOR_PID" || "$EDITOR_PID" == "pending" ]]; then
     # pidfile empty / pending / absent — try to resolve by port listener as a
     # fallback so a crashed-start residue still gets cleaned.
     if [[ -n "${PORT:-}" ]] && command -v ss >/dev/null 2>&1; then
-        EDITOR_PID="$(ss -tlnp 2>/dev/null | awk -v p=":${PORT}" '$4 ~ p {match($0,/pid=([0-9]+)/,a); if(a[1])print a[1]}' | head -n1)"
+        # probe may fail (broken interop / stubbed env) — a failed probe is
+        # "no pid resolved", never a reason to abort the stop (set -e guard)
+        EDITOR_PID="$(ss -tlnp 2>/dev/null | awk -v p=":${PORT}" '$4 ~ p {match($0,/pid=([0-9]+)/,a); if(a[1])print a[1]}' | head -n1 || true)"
     fi
 fi
 
-# 2. Terminate the editor process if it is alive. The PID recorded by
-#    start-godot-editor.sh is the real Windows Godot PID (resolved via CIM), so
-#    on WSL we must use powershell.exe Stop-Process — a native kill on the PID
-#    does nothing to the Windows process.
-STOPPED=""
+# 2. Terminate the editor process if it is alive; every "stopped" verdict
+#    comes from a re-probe, never from the kill channel's exit code
+#    (SEE-1602 §SPEC-001). The PID recorded by start-godot-editor.sh is the
+#    real Windows Godot PID (resolved via CIM), so on WSL a native kill on
+#    the PID does nothing to the Windows process — and `kill -0` failing on
+#    such a pid means NOTHING about its liveness, so the unix branch may only
+#    run when no Windows interop tool is resolvable at all (PATH or System32
+#    fallback via win_tool).
+STOP_RC=0
 if [[ -n "${EDITOR_PID:-}" ]] && [[ "$EDITOR_PID" =~ ^[0-9]+$ ]]; then
-    if command -v powershell.exe >/dev/null 2>&1; then
-        # Stop-Process is idempotent: a non-existent Id is a non-terminating error
-        # (suppressed by -ErrorAction SilentlyContinue), so this is safe to call
-        # unconditionally on the recorded PID.
-        if powershell.exe -NoProfile -Command "Stop-Process -Id $EDITOR_PID -ErrorAction SilentlyContinue" >/dev/null 2>&1; then
-            STOPPED="stopped-windows-pid-${EDITOR_PID}"
-            echo "[stop-godot-editor] terminated Windows editor pid=$EDITOR_PID via Stop-Process."
+    STATE="$(win_pid_state "$EDITOR_PID")"
+    if [[ "$STATE" == "dead" ]]; then
+        echo "[stop-godot-editor] editor pid=$EDITOR_PID already dead per probe; nothing to terminate."
+    elif win_tool tasklist.exe >/dev/null 2>&1 || win_tool powershell.exe >/dev/null 2>&1; then
+        # Windows-editor path (WSL interop). Channel 1: Stop-Process
+        # (idempotent on a gone pid via SilentlyContinue). Channel 2:
+        # taskkill.exe /F, gated on a probe-confirmed Godot image so a
+        # recycled pid can never be force-killed blindly (owner rule: only
+        # the exact pid this task started may be cleaned up).
+        POWERSHELL="$(win_tool powershell.exe)" || POWERSHELL=""
+        TASKKILL="$(win_tool taskkill.exe)" || TASKKILL=""
+        if [[ -n "$POWERSHELL" ]]; then
+            "$POWERSHELL" -NoProfile -Command "Stop-Process -Id $EDITOR_PID -ErrorAction SilentlyContinue" >/dev/null 2>&1 \
+                && echo "[stop-godot-editor] sent Stop-Process for pid=$EDITOR_PID."
+        fi
+        if [[ "$(win_pid_state "$EDITOR_PID")" != "dead" ]]; then
+            IMAGE="$(win_pid_image "$EDITOR_PID")"
+            if [[ -n "$TASKKILL" ]] && grep -qi godot <<<"$IMAGE"; then
+                "$TASKKILL" /F /PID "$EDITOR_PID" >/dev/null 2>&1 \
+                    && echo "[stop-godot-editor] sent taskkill /F for pid=$EDITOR_PID (image=$IMAGE)."
+            fi
+        fi
+        # kill delivery is asynchronous on Windows (taskkill /F returns before
+        # the process finishes terminating): confirm death with a bounded
+        # predicate poll, never a single immediate probe (SEE-1602 live A2:
+        # single-shot re-probe raced the teardown and misreported FAILURE).
+        STATE="unknown"
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            STATE="$(win_pid_state "$EDITOR_PID")"
+            [[ "$STATE" == "dead" ]] && break
+            sleep 1
+        done
+        if [[ "$STATE" == "dead" ]]; then
+            echo "[stop-godot-editor] terminated editor pid=$EDITOR_PID (probe confirms dead)."
+        else
+            echo "[stop-godot-editor] ERROR: editor pid=$EDITOR_PID not confirmed dead (probe=$STATE)." >&2
+            echo "[stop-godot-editor] retry hint: verify with tasklist.exe /FI \"PID eq $EDITOR_PID\" /FO CSV /NH, then taskkill.exe /F /PID $EDITOR_PID, then re-run this script." >&2
+            STOP_RC=1
         fi
     else
+        # Native-Linux editor: no Windows interop resolvable anywhere — unix
+        # kill is the right channel; kill -0 is the verification probe.
         if kill "$EDITOR_PID" 2>/dev/null; then
-            STOPPED="stopped-unix-pid-${EDITOR_PID}"
             echo "[stop-godot-editor] terminated editor pid=$EDITOR_PID via kill."
         fi
+        if kill -0 "$EDITOR_PID" 2>/dev/null; then
+            echo "[stop-godot-editor] ERROR: editor pid=$EDITOR_PID still alive after kill." >&2
+            echo "[stop-godot-editor] retry hint: kill -9 $EDITOR_PID, then re-run this script." >&2
+            STOP_RC=1
+        else
+            echo "[stop-godot-editor] editor pid=$EDITOR_PID confirmed dead (kill -0)."
+        fi
     fi
+else
+    echo "[stop-godot-editor] no pid on file (absent or non-numeric: ${EDITOR_PID:-none}); relying on port probe."
 fi
-[[ -n "$STOPPED" ]] || echo "[stop-godot-editor] no live editor process found for pid=${EDITOR_PID:-none}; nothing to terminate."
 
 # 3. Release the per-worktree lease sidecar. The worktree sidecar file records
 #    which worktree the editor opened; release THAT worktree's lease. Fall back
@@ -179,28 +338,50 @@ else
     echo "[stop-godot-editor] lease release fell back to CWD-anchored restore (worktree sidecar absent or project.godot missing)."
 fi
 
-# 4. Confirm the port is free (best-effort, informational — never fatal).
+# 4. Confirm the port is free under the same tri-state contract: a real
+#    "free" verdict is required for success; "listening" after the grace
+#    recheck and "unknown" (no usable probe answered) are both failures.
+#    Linux-side ss cannot see the Windows-side listener on the WSL gateway
+#    IP — the other half of the A2 false negative.
+PORT_RC=0
 if [[ -n "${PORT:-}" ]]; then
-    if command -v ss >/dev/null 2>&1; then
-        if ss -tln 2>/dev/null | awk '$4 ~ ":'"$PORT"'$" {found=1} END{exit !found}'; then
-            # Still listening — give Stop-Process a brief moment, then recheck once.
-            sleep 1   # 产品语义：端口释放余量（单次复检，非同步等待手段）
-            if ss -tln 2>/dev/null | awk '$4 ~ ":'"$PORT"'$" {found=1} END{exit !found}'; then
-                HOLDER="$(ss -tlnp 2>/dev/null | awk -v p=":$PORT" '$4 ~ p {print $0}' | head -n1)"
-                echo "[stop-godot-editor] WARNING: port ${PORT} still listening after cleanup: $HOLDER"
-            else
-                echo "[stop-godot-editor] port ${PORT} freed."
-            fi
-        else
-            echo "[stop-godot-editor] port ${PORT} free."
-        fi
+    PSTATE="$(port_state "$PORT")"
+    if [[ "$PSTATE" == "listening" ]]; then
+        # listener teardown trails process death by a moment: bounded poll
+        # (short sleeps inside the loop = lint-exempt predicate form)
+        for _ in 1 2 3 4 5; do
+            sleep 1
+            PSTATE="$(port_state "$PORT")"
+            [[ "$PSTATE" != "listening" ]] && break
+        done
     fi
+    case "$PSTATE" in
+        free)
+            echo "[stop-godot-editor] port ${PORT} free."
+            ;;
+        listening)
+            NETSTAT_HOLDER="$(win_tool netstat.exe 2>/dev/null || echo netstat.exe)"
+            HOLDER="$("$NETSTAT_HOLDER" -ano -p tcp 2>/dev/null | grep "LISTENING" | grep -E ":${PORT}\\b" | head -n1 || true)"
+            echo "[stop-godot-editor] ERROR: port ${PORT} still listening after cleanup${HOLDER:+ (holder: $HOLDER)}." >&2
+            echo "[stop-godot-editor] retry hint: netstat.exe -ano -p tcp | findstr :${PORT} — find the owning pid, taskkill.exe /F /PID <pid>, then re-run this script." >&2
+            PORT_RC=1
+            ;;
+        unknown)
+            echo "[stop-godot-editor] ERROR: port ${PORT} state unknown — no usable probe (powershell.exe/netstat.exe/ss all unavailable or failing)." >&2
+            echo "[stop-godot-editor] retry hint: verify manually with netstat.exe -ano -p tcp, or re-run where Windows interop or ss is available." >&2
+            PORT_RC=1
+            ;;
+    esac
 fi
 
-# 5. Clean up this label's lifecycle files. They are stale the moment the editor
-#    is gone; leaving them would mislead the next start into thinking a holder
-#    exists. Logs are kept (debugging); pid + worktree sidecars are removed.
-rm -f "$PID_FILE" "$WORKTREE_FILE" 2>/dev/null || true
-echo "[stop-godot-editor] removed pid + worktree sidecar (log retained at $LOG_FILE)."
-echo "[stop-godot-editor] done."
-exit 0
+# 5. Clean up this label's lifecycle files — only on a fully verified stop.
+#    On failure the pid sidecar is retained: it is the retryable diagnostic
+#    (SEE-1602 §SPEC-001); removing it would orphan the retry.
+if [[ "${STOP_RC:-0}" -eq 0 && "${PORT_RC:-0}" -eq 0 ]]; then
+    rm -f "$PID_FILE" "$WORKTREE_FILE" 2>/dev/null || true
+    echo "[stop-godot-editor] removed pid + worktree sidecar (log retained at $LOG_FILE)."
+    echo "[stop-godot-editor] done."
+    exit 0
+fi
+echo "[stop-godot-editor] FAILED: stop incomplete (process_rc=${STOP_RC:-0}, port_rc=${PORT_RC:-0}); pid/worktree sidecars retained for retry (pid=${EDITOR_PID:-none}, file=$PID_FILE)." >&2
+exit 1

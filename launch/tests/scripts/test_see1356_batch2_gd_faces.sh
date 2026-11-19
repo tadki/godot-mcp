@@ -96,8 +96,9 @@ func check(group: String, cond: bool, detail: String) -> void:
 
 func _init() -> void:
 	# Face selector rides the command line as a user arg (after `--`), NOT the
-	# environment: the local godot is a WSL wrapper around the Windows engine
-	# binary, and custom env vars do not cross that boundary.
+	# environment: the selector predates SEE-1602 (the local godot wrapper now
+	# execs the Linux ELF and env vars would cross), but user args keep the
+	# face channel engine-agnostic across win64-interop and Linux wrappers.
 	var face := "all"
 	var user_args := OS.get_cmdline_user_args()
 	if user_args.size() > 0:
