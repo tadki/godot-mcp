@@ -1,6 +1,10 @@
 # godot-mcp 编码规范（Agent 指引）
 
-本库定位为独立 runtime library（无 KingOfLikes 业务概念）。本文件约束在本库内写代码（生产与测试）时的同步等待方式。
+本库定位为独立 runtime library（无 KingOfLikes 业务概念）。本文件约束在本库内写代码（生产与测试）时的测试脚本隔离与同步等待方式。
+
+## 测试脚本自包含
+
+测试脚本必须自包含：每个脚本自带 before_each/after_each 还原其触达的全部全局状态（autoload 单例、user:// 存档、场景树），不得依赖其他脚本的执行顺序或残留状态。
 
 ## 同步等待：事件驱动优先，禁止固定 sleep
 
