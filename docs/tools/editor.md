@@ -90,7 +90,7 @@ Capture a lossless PNG of an editor viewport. Same context cost as screenshot_ga
 
 ## godot_editor_edit
 
-Drive the editor: select a node, run or stop the project, restart the editor, and center/zoom the 2D viewport. Use run with frozen=true as the deterministic-playtest entry point (game time holds at frame 0 until godot_game_time steps or thaws it). To test edited gameplay scripts just stop then run — the launched game loads .gd/.tscn fresh from disk; reserve restart for EDITOR-side staleness (edited @tool/addon code, a stale project.godot, or a cached .gdshader). For observation only (state, selection, logs, screenshots) use godot_editor_read instead; restart does not start a cold editor, so one must already be running.
+Drive the editor: select a node, run or stop the project, restart the editor, center/zoom the 2D viewport, or switch the main screen (set_main_screen: 2D/3D/Script/AssetLib — the programmatic cross-platform form of the editor tab switch, self-verifying via the echoed actual screen). Use run with frozen=true as the deterministic-playtest entry point (game time holds at frame 0 until godot_game_time steps or thaws it). To test edited gameplay scripts just stop then run — the launched game loads .gd/.tscn fresh from disk; reserve restart for EDITOR-side staleness (edited @tool/addon code, a stale project.godot, or a cached .gdshader). For observation only (state, selection, logs, screenshots) use godot_editor_read instead; restart does not start a cold editor, so one must already be running.
 
 ### Actions
 
@@ -135,6 +135,14 @@ Center and/or zoom the 2D editor viewport. Pass at least one parameter; omitted 
 | `center_y` | number | No | Y coordinate to center the 2D viewport on (omitted = keep current Y) |
 | `zoom` | number | No | Zoom level, e.g. 1.0 = 100%, 2.0 = 200% (omitted = keep current zoom) |
 
+#### `set_main_screen`
+
+Switch the editor's main screen (2D / 3D / Script / AssetLib) — the same switch as the top-right editor tabs, programmatic and cross-platform. The response echoes the screen the editor reports AFTER the switch, so the effect is self-verifying.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `screen` | `2D`, `3D`, `Script`, `AssetLib` | Yes | Main screen to switch to |
+
 ### Examples
 
 ```json
@@ -159,7 +167,7 @@ Center and/or zoom the 2D editor viewport. Pass at least one parameter; omitted 
 }
 ```
 
-*2 more actions available: `restart`, `set_viewport_2d`*
+*3 more actions available: `restart`, `set_viewport_2d`, `set_main_screen`*
 
 ---
 
